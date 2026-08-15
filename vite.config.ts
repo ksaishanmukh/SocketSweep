@@ -26,8 +26,13 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. Do not watch Rust sources or build output.
+      //
+      // `target/` is at the repo root since the Cargo workspace was introduced,
+      // so ignoring only src-tauri leaves Vite watching every build artifact.
+      // It then dies with EBUSY the moment cargo rewrites socketsweep_lib.dll,
+      // taking `tauri dev` down with it.
+      ignored: ["**/src-tauri/**", "**/target/**", "**/crates/**"],
     },
   },
 }));
