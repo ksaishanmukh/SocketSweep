@@ -38,24 +38,28 @@ jobs:
 
       - run: npm ci
 
-      # Cheapest checks first so the common failures surface fastest.
+      # Cheapest checks first so the common failures surface fastest. These
+      # need nothing but node_modules.
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
 
-      # tauri-build reads frontendDist, so the frontend must exist before
-      # anything touches the Rust crate.
-      - run: npm run build
+      # Everything below touches the Rust crate, and tauri-build validates both
+      # frontendDist and every declared bundle resource at build-script time.
+      # src-tauri/bin is gitignored, so without these three steps clippy fails
+      # with "resource path bin/daemon doesn't exist" before linting anything.
+      - name: Build frontend (tauri-build reads frontendDist)
+        run: npm run build
+      - name: Fetch ADB (a declared bundle resource)
+        run: npm run setup
+      # Doubles as the cross-compile check: crates/daemon is outside
+      # default-members, so nothing else would catch a break in it.
+      - name: Build device daemon (cross-compile check, and a bundle resource)
+        run: npm run build:daemon
 
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-
-      # crates/daemon is excluded from default-members (it only builds for a
-      # Linux-family target), so nothing above would catch a break in it.
-      # Writes to src-tauri/bin/daemon, which this job never bundles.
-      - name: Verify the device daemon cross-compiles for Android
-        run: npm run build:daemon
 
   build:
     needs: check
