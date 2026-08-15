@@ -23,6 +23,7 @@ export function FileList({
   onOpen,
   onDelete,
   onReveal,
+  showBar = true,
   emptyMessage = "This folder is empty.",
 }: {
   rows: Row[];
@@ -31,6 +32,12 @@ export function FileList({
   onDelete: (row: Row) => void;
   /** Navigate to a row's containing folder. Only meaningful for cross-tree results. */
   onReveal?: (row: Row) => void;
+  /**
+   * The bar costs 96px. In the narrow side panel that is the difference
+   * between reading "Documents" and reading "Doc…", and the treemap beside it
+   * already shows proportion.
+   */
+  showBar?: boolean;
   emptyMessage?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -81,6 +88,7 @@ export function FileList({
                 onOpen={onOpen}
                 onDelete={onDelete}
                 onReveal={onReveal}
+                showBar={showBar}
               />
             </div>
           );
@@ -96,12 +104,14 @@ function FileRow({
   onOpen,
   onDelete,
   onReveal,
+  showBar,
 }: {
   row: Row;
   totalSize: number;
   onOpen: (row: Row) => void;
   onDelete: (row: Row) => void;
   onReveal?: (row: Row) => void;
+  showBar: boolean;
 }) {
   const ratio = totalSize > 0 ? row.size / totalSize : 0;
 
@@ -157,7 +167,7 @@ function FileRow({
         </span>
       )}
 
-      <SizeBar ratio={ratio} />
+      {showBar && <SizeBar ratio={ratio} />}
 
       <span className="w-20 text-right text-xs font-mono text-zinc-500 flex-shrink-0 tabular-nums">
         {formatBytes(row.size)}

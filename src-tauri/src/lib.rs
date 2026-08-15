@@ -200,13 +200,17 @@ fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> Cmd
     *state.tree.lock().unwrap() = None;
     *state.watching.lock().unwrap() = arena::ROOT;
 
+    // The label the user recognises, kept separate from the resolved path the
+    // daemon reports.
+    let requested_root = root_bytes.clone();
+
     let mut last_push = std::time::Instant::now();
     let mut scan_error: Option<String> = None;
 
     let result = session.scan(&root_bytes, |frame| {
         match frame {
             Frame::ScanStarted { root } => {
-                *state.tree.lock().unwrap() = Some(Arena::new(&root));
+                *state.tree.lock().unwrap() = Some(Arena::new_labelled(&root, &requested_root));
             }
             Frame::Dir { path, entries } => {
                 {

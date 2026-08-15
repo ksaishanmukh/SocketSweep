@@ -223,6 +223,7 @@ export function ResultScreen({
             onOpen={(row) => onOpen(row.id)}
             onDelete={onDelete}
             onReveal={searching ? onReveal : undefined}
+            showBar={false}
             emptyMessage={searching ? "No matches." : "This folder is empty."}
           />
         </div>

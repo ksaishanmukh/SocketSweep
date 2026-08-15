@@ -174,7 +174,19 @@ impl std::fmt::Display for ArenaError {
 
 impl Arena {
     pub fn new(root_path: &[u8]) -> Self {
-        let name = basename(root_path).to_vec().into_boxed_slice();
+        Self::new_labelled(root_path, root_path)
+    }
+
+    ///  keys the directory index and must match what the daemon
+    /// sends;  only supplies the root's display name.
+    ///
+    /// They differ on a real device: the daemon canonicalises, so the resolved
+    /// root is /storage/emulated/0 and its basename is the bare "0" — a
+    /// breadcrumb reading "0" tells nobody anything. The label comes from the
+    /// path the user actually asked for.
+    pub fn new_labelled(resolved: &[u8], requested: &[u8]) -> Self {
+        let root_path = resolved;
+        let name = basename(requested).to_vec().into_boxed_slice();
         let root = Node {
             name,
             parent: NONE,
