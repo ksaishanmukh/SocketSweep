@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Treemap, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
+import { formatBytes, formatNumber } from "./lib/format";
 import "./App.css";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -33,18 +34,6 @@ interface Toast {
 type AppPhase = "setup" | "connecting" | "scanning" | "result";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-function formatNumber(n: number): string {
-  return n.toLocaleString("en-US");
-}
 
 function findNodeByPath(root: FileNode, targetPath: string): FileNode | null {
   if (root.path === targetPath) return root;
@@ -98,7 +87,7 @@ function countNodeStats(node: FileNode): { size: number; files: number; dirs: nu
 
 function removeNodeByPath(
   root: FileNode,
-  targetPath: string
+  targetPath: string,
 ): { removed: boolean; size: number; files: number; dirs: number } {
   if (!root.children) return { removed: false, size: 0, files: 0, dirs: 0 };
 
@@ -129,7 +118,13 @@ function removeNodeByPath(
 function IconFolder({ className = "" }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M1.5 3C1.5 2.44772 1.94772 2 2.5 2H6.29289L7.64645 3.35355L7.85355 3.5H8H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3Z" fill="currentColor" opacity="0.2" stroke="currentColor" strokeWidth="1"/>
+      <path
+        d="M1.5 3C1.5 2.44772 1.94772 2 2.5 2H6.29289L7.64645 3.35355L7.85355 3.5H8H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3Z"
+        fill="currentColor"
+        opacity="0.2"
+        stroke="currentColor"
+        strokeWidth="1"
+      />
     </svg>
   );
 }
@@ -137,45 +132,90 @@ function IconFolder({ className = "" }: { className?: string }) {
 function IconFile({ className = "" }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M4 1.5h5.586L13 4.914V14a.5.5 0 01-.5.5h-8A.5.5 0 014 14V2a.5.5 0 01.5-.5z" stroke="currentColor" strokeWidth="1" fill="none"/>
-      <path d="M9.5 1.5V5H13" stroke="currentColor" strokeWidth="1" fill="none"/>
+      <path
+        d="M4 1.5h5.586L13 4.914V14a.5.5 0 01-.5.5h-8A.5.5 0 014 14V2a.5.5 0 01.5-.5z"
+        stroke="currentColor"
+        strokeWidth="1"
+        fill="none"
+      />
+      <path d="M9.5 1.5V5H13" stroke="currentColor" strokeWidth="1" fill="none" />
     </svg>
   );
 }
 
 function IconChevron({ open, className = "" }: { open: boolean; className?: string }) {
   return (
-    <svg className={`transition-transform duration-200 ${open ? "rotate-90" : ""} ${className}`} width="14" height="14" viewBox="0 0 14 14" fill="none">
-      <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg
+      className={`transition-transform duration-200 ${open ? "rotate-90" : ""} ${className}`}
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+    >
+      <path
+        d="M5 3l4 4-4 4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 
 function IconUsb() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 22v-8m0 0V6m0 8l4-2v-2m-4 4l-4-2v-2"/>
-      <circle cx="12" cy="4" r="2"/>
-      <circle cx="8" cy="10" r="1"/>
-      <rect x="15" y="9" width="2" height="2" rx="0.5"/>
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 22v-8m0 0V6m0 8l4-2v-2m-4 4l-4-2v-2" />
+      <circle cx="12" cy="4" r="2" />
+      <circle cx="8" cy="10" r="1" />
+      <rect x="15" y="9" width="2" height="2" rx="0.5" />
     </svg>
   );
 }
 
 function IconNuke() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-      <path d="M2 3.5h10M5.5 3.5V2.5a1 1 0 011-1h1a1 1 0 011 1v1M3.5 3.5l.5 8.5a1 1 0 001 1h4a1 1 0 001-1l.5-8.5"/>
-      <path d="M5.5 6v4M8.5 6v4"/>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+    >
+      <path d="M2 3.5h10M5.5 3.5V2.5a1 1 0 011-1h1a1 1 0 011 1v1M3.5 3.5l.5 8.5a1 1 0 001 1h4a1 1 0 001-1l.5-8.5" />
+      <path d="M5.5 6v4M8.5 6v4" />
     </svg>
   );
 }
 
 function Spinner({ size = 20, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg className={`animate-spin ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2"/>
-      <path d="M12 2a10 10 0 019.95 9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+    <svg
+      className={`animate-spin ${className}`}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+    >
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2" />
+      <path
+        d="M12 2a10 10 0 019.95 9"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -184,7 +224,13 @@ function Spinner({ size = 20, className = "" }: { size?: number; className?: str
 
 let toastId = 0;
 
-function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+function ToastContainer({
+  toasts,
+  onDismiss,
+}: {
+  toasts: Toast[];
+  onDismiss: (id: number) => void;
+}) {
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm" id="toast-container">
       {toasts.map((t) => (
@@ -193,11 +239,12 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
           className={`
             ${t.exiting ? "animate-toast-out" : "animate-toast-in"}
             flex items-start gap-3 px-4 py-3 rounded-lg border shadow-xl cursor-pointer
-            ${t.type === "error"
-              ? "bg-red-950/80 border-red-800/50 text-red-200"
-              : t.type === "success"
-              ? "bg-emerald-950/80 border-emerald-800/50 text-emerald-200"
-              : "bg-zinc-800/80 border-zinc-700/50 text-zinc-200"
+            ${
+              t.type === "error"
+                ? "bg-red-950/80 border-red-800/50 text-red-200"
+                : t.type === "success"
+                  ? "bg-emerald-950/80 border-emerald-800/50 text-emerald-200"
+                  : "bg-zinc-800/80 border-zinc-700/50 text-zinc-200"
             }
             backdrop-blur-md
           `}
@@ -217,7 +264,7 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
 
 function TerminalLog({ logs }: { logs: string[] }) {
   const endRef = useRef<HTMLDivElement>(null);
-  
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
@@ -244,11 +291,13 @@ function SetupScreen({ onConnect, loading }: { onConnect: () => void; loading: b
     <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in-up">
       {/* Hero */}
       <div className="flex flex-col items-center gap-6">
-        <div className={`
+        <div
+          className={`
           w-24 h-24 rounded-2xl bg-gradient-to-br from-accent-500/20 to-accent-700/10
           border border-accent-500/20 flex items-center justify-center
           ${loading ? "animate-pulse-glow" : ""}
-        `}>
+        `}
+        >
           <span className="text-accent-400">
             <IconUsb />
           </span>
@@ -274,9 +323,10 @@ function SetupScreen({ onConnect, loading }: { onConnect: () => void; loading: b
         className={`
           group relative px-8 py-3 rounded-xl font-semibold text-sm
           transition-all duration-300 cursor-pointer
-          ${loading
-            ? "bg-zinc-800 text-zinc-500 cursor-wait"
-            : "bg-gradient-to-r from-accent-600 to-accent-500 text-white hover:from-accent-500 hover:to-accent-400 hover:shadow-lg hover:shadow-accent-500/20 hover:-translate-y-0.5"
+          ${
+            loading
+              ? "bg-zinc-800 text-zinc-500 cursor-wait"
+              : "bg-gradient-to-r from-accent-600 to-accent-500 text-white hover:from-accent-500 hover:to-accent-400 hover:shadow-lg hover:shadow-accent-500/20 hover:-translate-y-0.5"
           }
         `}
       >
@@ -310,9 +360,21 @@ function ScanningScreen({ statusText }: { statusText: string }) {
     <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in-up">
       <div className="relative w-32 h-32">
         <div className="absolute inset-0 rounded-full border-2 border-accent-500/20" />
-        <svg className="absolute inset-0 animate-spin" style={{ animationDuration: "2s" }} viewBox="0 0 128 128">
-          <circle cx="64" cy="64" r="62" fill="none" stroke="url(#scanGrad)" strokeWidth="2.5"
-            strokeLinecap="round" strokeDasharray="120 280" />
+        <svg
+          className="absolute inset-0 animate-spin"
+          style={{ animationDuration: "2s" }}
+          viewBox="0 0 128 128"
+        >
+          <circle
+            cx="64"
+            cy="64"
+            r="62"
+            fill="none"
+            stroke="url(#scanGrad)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeDasharray="120 280"
+          />
           <defs>
             <linearGradient id="scanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="oklch(0.60 0.18 180)" />
@@ -385,29 +447,30 @@ function FileTreeNode({
         }}
       >
         <span className="w-4 flex-shrink-0 flex items-center justify-center">
-          {isDir ? (
-            <IconChevron open={open} className="text-zinc-500" />
-          ) : (
-            <span className="w-3" />
-          )}
+          {isDir ? <IconChevron open={open} className="text-zinc-500" /> : <span className="w-3" />}
         </span>
 
         <span className={isDir ? "text-accent-400" : "text-zinc-500"}>
           {isDir ? <IconFolder /> : <IconFile />}
         </span>
 
-        <span className={`flex-1 truncate text-sm ${isDir ? "text-zinc-200 font-medium" : "text-zinc-400"}`}>
+        <span
+          className={`flex-1 truncate text-sm ${isDir ? "text-zinc-200 font-medium" : "text-zinc-400"}`}
+        >
           {node.name}
         </span>
 
         {/* Action Buttons */}
         {isDir && (
-           <button
-             className="opacity-0 group-hover:opacity-100 mr-2 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider bg-accent-500/10 text-accent-400 border border-accent-500/20 hover:bg-accent-500/30"
-             onClick={(e) => { e.stopPropagation(); onZoom(node.path); }}
-           >
-             Zoom
-           </button>
+          <button
+            className="opacity-0 group-hover:opacity-100 mr-2 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider bg-accent-500/10 text-accent-400 border border-accent-500/20 hover:bg-accent-500/30"
+            onClick={(e) => {
+              e.stopPropagation();
+              onZoom(node.path);
+            }}
+          >
+            Zoom
+          </button>
         )}
 
         <SizeBar ratio={ratio} />
@@ -454,11 +517,21 @@ function FileTreeNode({
 
 // ── Stat Card ───────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function StatCard({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
   return (
     <div className="glass-card rounded-xl px-5 py-4 flex flex-col gap-1">
       <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{label}</span>
-      <span className={`text-xl font-bold font-mono tracking-tight ${accent ? "text-accent-400" : "text-zinc-100"}`}>
+      <span
+        className={`text-xl font-bold font-mono tracking-tight ${accent ? "text-accent-400" : "text-zinc-100"}`}
+      >
         {value}
       </span>
     </div>
@@ -486,12 +559,24 @@ const TreemapContent = (props: any) => {
         }}
       />
       {width > 50 && height > 30 && name && (
-        <text x={x + 6} y={y + 18} fill="#fff" fontSize={11} className="font-sans font-medium pointer-events-none drop-shadow-md truncate max-w-full">
+        <text
+          x={x + 6}
+          y={y + 18}
+          fill="#fff"
+          fontSize={11}
+          className="font-sans font-medium pointer-events-none drop-shadow-md truncate max-w-full"
+        >
           {name}
         </text>
       )}
       {width > 50 && height > 45 && value !== undefined && (
-        <text x={x + 6} y={y + 32} fill="#94a3b8" fontSize={9} className="font-mono pointer-events-none">
+        <text
+          x={x + 6}
+          y={y + 32}
+          fill="#94a3b8"
+          fontSize={9}
+          className="font-mono pointer-events-none"
+        >
           {formatBytes(value)}
         </text>
       )}
@@ -513,19 +598,25 @@ function ResultScreen({
   onNuke: (path: string, name: string) => void;
 }) {
   const [zoomPath, setZoomPath] = useState<string>(data.tree.path);
-  
+
   // Find node to render based on zoom
   const renderNode = findNodeByPath(data.tree, zoomPath) || data.tree;
 
   const bgColors = [
-    "#0d9488", "#0284c7", "#4f46e5", "#7c3aed", 
-    "#c026d3", "#e11d48", "#ea580c", "#ca8a04",
+    "#0d9488",
+    "#0284c7",
+    "#4f46e5",
+    "#7c3aed",
+    "#c026d3",
+    "#e11d48",
+    "#ea580c",
+    "#ca8a04",
   ];
 
   // Flatten immediate children for a clean 1-level treemap
   const treemapData = (renderNode.children || [])
-    .filter(c => c.size > 0)
-    .map(c => ({
+    .filter((c) => c.size > 0)
+    .map((c) => ({
       name: c.name,
       size: c.size,
       path: c.path,
@@ -543,15 +634,13 @@ function ResultScreen({
           <div className="flex items-center text-xs text-zinc-500 font-mono">
             {breadcrumbs.map((crumb, idx) => (
               <span key={crumb.path} className="inline-flex items-center">
-                <button 
+                <button
                   onClick={() => setZoomPath(crumb.path)}
-                  className={`hover:text-zinc-300 transition-colors ${idx === breadcrumbs.length - 1 ? 'text-zinc-300 font-semibold' : ''}`}
+                  className={`hover:text-zinc-300 transition-colors ${idx === breadcrumbs.length - 1 ? "text-zinc-300 font-semibold" : ""}`}
                 >
                   {crumb.name}
                 </button>
-                {idx < breadcrumbs.length - 1 && (
-                  <span className="mx-2 opacity-50">&gt;</span>
-                )}
+                {idx < breadcrumbs.length - 1 && <span className="mx-2 opacity-50">&gt;</span>}
               </span>
             ))}
           </div>
@@ -607,7 +696,7 @@ function ResultScreen({
                 if (e && e.path) setZoomPath(e.path);
               }}
             >
-              <RechartsTooltip 
+              <RechartsTooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const p = payload[0].payload;
@@ -630,8 +719,12 @@ function ResultScreen({
       {/* File tree */}
       <div className="flex-1 overflow-y-auto px-3 pb-4 min-h-0">
         <div className="flex items-center gap-2 px-3 py-2 mb-1">
-          <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex-1">Storage Map</span>
-          <span className="text-xs text-zinc-600">{data.errors > 0 ? `${data.errors} access errors skipped` : ""}</span>
+          <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex-1">
+            Storage Map
+          </span>
+          <span className="text-xs text-zinc-600">
+            {data.errors > 0 ? `${data.errors} access errors skipped` : ""}
+          </span>
         </div>
         <FileTreeNode
           node={renderNode}
@@ -664,9 +757,7 @@ function App() {
     const id = ++toastId;
     setToasts((prev) => [...prev, { id, message, type }]);
     const timer = setTimeout(() => {
-      setToasts((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, exiting: true } : t))
-      );
+      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
       setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 300);
     }, 5000);
     timerRefs.current.set(id, timer);
@@ -678,9 +769,7 @@ function App() {
       clearTimeout(timer);
       timerRefs.current.delete(id);
     }
-    setToasts((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, exiting: true } : t))
-    );
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 300);
   }, []);
 
@@ -750,7 +839,7 @@ function App() {
     setPhase("setup");
   }, [pushToast, addLog]);
 
-  const [confirmDelete, setConfirmDelete] = useState<{path: string, name: string} | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ path: string; name: string } | null>(null);
 
   // ── Nuke (Delete) ───────────────────────────────────────────────────────
   const handleNuke = useCallback((path: string, name: string) => {
@@ -785,7 +874,9 @@ function App() {
             updated.total_files -= result.files;
             updated.total_dirs -= result.dirs;
             updated.total_size -= result.size;
-            addLog(`[DELETE] Tree updated locally (removed ${result.files} files, ${result.dirs} dirs, ${formatBytes(result.size)})`);
+            addLog(
+              `[DELETE] Tree updated locally (removed ${result.files} files, ${result.dirs} dirs, ${formatBytes(result.size)})`,
+            );
           }
           setScanData(updated);
         }
@@ -801,7 +892,9 @@ function App() {
 
   useEffect(() => {
     const timers = timerRefs.current;
-    return () => { timers.forEach((t) => clearTimeout(t)); };
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+    };
   }, []);
 
   return (
