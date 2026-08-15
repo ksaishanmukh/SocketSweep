@@ -1,0 +1,18 @@
+[package]
+name = "socketsweep-daemon"
+description = "SocketSweep on-device scan daemon (Android aarch64)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "socketsweep-daemon"
+path = "src/main.rs"
+
+[dependencies]
+socketsweep-protocol = { workspace = true }
+socketsweep-scanner = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
