@@ -1,28 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Treemap, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { formatBytes, formatNumber } from "./lib/format";
+import * as ipc from "./lib/ipc";
+import { ROOT_ID, type Crumb, type Row, type Stats, type View } from "./lib/types";
 import "./App.css";
 
 // ── Types ───────────────────────────────────────────────────────────────────
-
-interface FileNode {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  size: number;
-  children?: FileNode[];
-}
-
-interface ScanResponse {
-  status: string;
-  scan_time_ms: number;
-  total_files: number;
-  total_dirs: number;
-  total_size: number;
-  errors: number;
-  tree: FileNode;
-}
 
 interface Toast {
   id: number;
@@ -32,86 +15,6 @@ interface Toast {
 }
 
 type AppPhase = "setup" | "connecting" | "scanning" | "result";
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-function findNodeByPath(root: FileNode, targetPath: string): FileNode | null {
-  if (root.path === targetPath) return root;
-  if (!root.children) return null;
-  for (const child of root.children) {
-    if (targetPath.startsWith(child.path)) {
-      const found = findNodeByPath(child, targetPath);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-function buildBreadcrumbs(root: FileNode, targetPath: string): { name: string; path: string }[] {
-  const breadcrumbs: { name: string; path: string }[] = [];
-  let current: FileNode | null = root;
-
-  while (current) {
-    breadcrumbs.push({ name: current.name, path: current.path });
-    if (current.path === targetPath) break;
-
-    let next: FileNode | null = null;
-    if (current.children) {
-      for (const child of current.children) {
-        if (targetPath === child.path || targetPath.startsWith(child.path + "/")) {
-          next = child;
-          break;
-        }
-      }
-    }
-    current = next;
-  }
-  return breadcrumbs;
-}
-
-function countNodeStats(node: FileNode): { size: number; files: number; dirs: number } {
-  if (node.type === "file") {
-    return { size: node.size, files: 1, dirs: 0 };
-  }
-  let files = 0;
-  let dirs = 1;
-  if (node.children) {
-    for (const child of node.children) {
-      const stats = countNodeStats(child);
-      files += stats.files;
-      dirs += stats.dirs;
-    }
-  }
-  return { size: node.size, files, dirs };
-}
-
-function removeNodeByPath(
-  root: FileNode,
-  targetPath: string,
-): { removed: boolean; size: number; files: number; dirs: number } {
-  if (!root.children) return { removed: false, size: 0, files: 0, dirs: 0 };
-
-  const index = root.children.findIndex((child) => child.path === targetPath);
-  if (index !== -1) {
-    const node = root.children[index];
-    const stats = countNodeStats(node);
-    root.children.splice(index, 1);
-    root.size -= stats.size;
-    return { removed: true, ...stats };
-  }
-
-  for (const child of root.children) {
-    if (targetPath.startsWith(child.path + "/")) {
-      const result = removeNodeByPath(child, targetPath);
-      if (result.removed) {
-        root.size -= result.size;
-        return result;
-      }
-    }
-  }
-
-  return { removed: false, size: 0, files: 0, dirs: 0 };
-}
 
 // ── Icons (inline SVG) ──────────────────────────────────────────────────────
 
@@ -143,26 +46,6 @@ function IconFile({ className = "" }: { className?: string }) {
   );
 }
 
-function IconChevron({ open, className = "" }: { open: boolean; className?: string }) {
-  return (
-    <svg
-      className={`transition-transform duration-200 ${open ? "rotate-90" : ""} ${className}`}
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-    >
-      <path
-        d="M5 3l4 4-4 4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function IconUsb() {
   return (
     <svg
@@ -183,7 +66,7 @@ function IconUsb() {
   );
 }
 
-function IconNuke() {
+function IconTrash() {
   return (
     <svg
       width="14"
@@ -262,6 +145,9 @@ function ToastContainer({
 
 // ── Terminal Log ────────────────────────────────────────────────────────────
 
+/** Capped so a long session cannot grow it without bound. */
+const MAX_LOG_LINES = 200;
+
 function TerminalLog({ logs }: { logs: string[] }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -289,7 +175,6 @@ function TerminalLog({ logs }: { logs: string[] }) {
 function SetupScreen({ onConnect, loading }: { onConnect: () => void; loading: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in-up">
-      {/* Hero */}
       <div className="flex flex-col items-center gap-6">
         <div
           className={`
@@ -315,7 +200,6 @@ function SetupScreen({ onConnect, loading }: { onConnect: () => void; loading: b
         </div>
       </div>
 
-      {/* Connect Button */}
       <button
         id="btn-connect"
         onClick={onConnect}
@@ -343,11 +227,10 @@ function SetupScreen({ onConnect, loading }: { onConnect: () => void; loading: b
         )}
       </button>
 
-      {/* Requirements hint */}
+      {/* ADB is bundled with the app, so it is deliberately not listed here. */}
       <div className="flex flex-col items-center gap-1.5 text-xs text-zinc-600">
         <p>• Android device connected via USB</p>
         <p>• USB Debugging enabled in Developer Options</p>
-        <p>• ADB installed and in your PATH</p>
       </div>
     </div>
   );
@@ -355,7 +238,11 @@ function SetupScreen({ onConnect, loading }: { onConnect: () => void; loading: b
 
 // ── Scanning Screen ─────────────────────────────────────────────────────────
 
-function ScanningScreen({ statusText }: { statusText: string }) {
+/**
+ * Live counts rather than a static string. A scan takes several seconds and the
+ * whole pitch of the app is speed, so this is the moment worth showing.
+ */
+function ScanningScreen({ stats, current }: { stats: Stats | null; current: string }) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in-up">
       <div className="relative w-32 h-32">
@@ -391,7 +278,13 @@ function ScanningScreen({ statusText }: { statusText: string }) {
 
       <div className="text-center">
         <h2 className="text-lg font-semibold text-zinc-200">Scanning Storage</h2>
-        <p className="mt-1 text-sm text-zinc-500 font-mono">{statusText}</p>
+        <p className="mt-2 text-2xl font-mono font-bold text-accent-400 tabular-nums">
+          {stats ? formatBytes(stats.size) : "—"}
+        </p>
+        <p className="mt-1 text-sm text-zinc-500 font-mono tabular-nums">
+          {stats ? `${formatNumber(stats.files)} files · ${formatNumber(stats.dirs)} folders` : ""}
+        </p>
+        <p className="mt-2 text-xs text-zinc-600 font-mono truncate max-w-sm">{current}</p>
       </div>
     </div>
   );
@@ -399,151 +292,147 @@ function ScanningScreen({ statusText }: { statusText: string }) {
 
 // ── Size Bar ────────────────────────────────────────────────────────────────
 
+/**
+ * Proportional to the total on screen, in a single hue.
+ *
+ * The previous version measured each row against its immediate parent and
+ * mapped that to red/amber/teal, which made the root row permanently red and
+ * gave "red" no meaning. Red now belongs to destructive actions only.
+ */
 function SizeBar({ ratio }: { ratio: number }) {
-  const pct = Math.max(0.5, ratio * 100);
-  const hue = ratio > 0.8 ? 15 : ratio > 0.5 ? 45 : 180; // red / amber / teal
+  const pct = Math.max(0.5, Math.min(1, ratio) * 100);
   return (
     <div className="w-24 h-1.5 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0">
       <div
-        className="h-full rounded-full size-bar-inner"
-        style={{
-          width: `${pct}%`,
-          background: `oklch(0.60 0.16 ${hue})`,
-        }}
+        className="h-full rounded-full size-bar-inner bg-accent-500"
+        style={{ width: `${pct}%` }}
       />
     </div>
   );
 }
 
-// ── File Tree Node ──────────────────────────────────────────────────────────
+// ── Row ─────────────────────────────────────────────────────────────────────
 
-function FileTreeNode({
-  node,
-  parentSize,
-  depth,
-  onNuke,
-  onZoom,
+function FileRow({
+  row,
+  totalSize,
+  onOpen,
+  onDelete,
 }: {
-  node: FileNode;
-  parentSize: number;
-  depth: number;
-  onNuke: (path: string, name: string) => void;
-  onZoom: (path: string) => void;
+  row: Row;
+  totalSize: number;
+  onOpen: (row: Row) => void;
+  onDelete: (row: Row) => void;
 }) {
-  const [open, setOpen] = useState(depth < 1);
-  const isDir = node.type === "directory";
-  const ratio = parentSize > 0 ? node.size / parentSize : 0;
+  const ratio = totalSize > 0 ? row.size / totalSize : 0;
 
   return (
-    <div className="animate-fade-in-up" style={{ animationDelay: `${depth * 20}ms` }}>
-      <div
-        className={`
-          file-row flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer
-          group select-none
-        `}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
-        onClick={() => {
-          if (isDir) setOpen(!open);
-        }}
-      >
-        <span className="w-4 flex-shrink-0 flex items-center justify-center">
-          {isDir ? <IconChevron open={open} className="text-zinc-500" /> : <span className="w-3" />}
-        </span>
+    <div
+      className="file-row flex items-center gap-3 px-3 py-1.5 rounded-md group select-none"
+      onDoubleClick={() => row.isDir && onOpen(row)}
+    >
+      <span className={row.isDir ? "text-accent-400" : "text-zinc-500"}>
+        {row.isDir ? <IconFolder /> : <IconFile />}
+      </span>
 
-        <span className={isDir ? "text-accent-400" : "text-zinc-500"}>
-          {isDir ? <IconFolder /> : <IconFile />}
-        </span>
-
-        <span
-          className={`flex-1 truncate text-sm ${isDir ? "text-zinc-200 font-medium" : "text-zinc-400"}`}
+      {row.isDir ? (
+        <button
+          className="flex-1 truncate text-left text-sm text-zinc-200 font-medium hover:text-accent-300 focus-visible:outline-2 focus-visible:outline-accent-500 rounded"
+          onClick={() => onOpen(row)}
         >
-          {node.name}
+          {row.name}
+        </button>
+      ) : (
+        <span className="flex-1 truncate text-sm text-zinc-400">{row.name}</span>
+      )}
+
+      {!row.complete && (
+        <span
+          className="text-[10px] uppercase tracking-wider text-zinc-600"
+          title="Still being scanned"
+        >
+          …
         </span>
+      )}
 
-        {/* Action Buttons */}
-        {isDir && (
-          <button
-            className="opacity-0 group-hover:opacity-100 mr-2 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider bg-accent-500/10 text-accent-400 border border-accent-500/20 hover:bg-accent-500/30"
-            onClick={(e) => {
-              e.stopPropagation();
-              onZoom(node.path);
-            }}
-          >
-            Zoom
-          </button>
-        )}
+      <SizeBar ratio={ratio} />
 
-        <SizeBar ratio={ratio} />
+      <span className="w-20 text-right text-xs font-mono text-zinc-500 flex-shrink-0 tabular-nums">
+        {formatBytes(row.size)}
+      </span>
 
-        <span className="w-20 text-right text-xs font-mono text-zinc-500 flex-shrink-0">
-          {formatBytes(node.size)}
-        </span>
+      {/*
+        Visible on focus as well as hover: the previous version was
+        opacity-0/group-hover only, so keyboard users could not reach it at all.
+      */}
+      <button
+        className="btn-nuke opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ml-1 px-2 py-1 rounded-md
+          bg-danger-600/20 border border-danger-500/30 text-danger-400
+          hover:bg-danger-500/30 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1
+          cursor-pointer focus-visible:outline-2 focus-visible:outline-danger-500"
+        onClick={() => onDelete(row)}
+        title={`Delete ${row.name}`}
+        aria-label={`Delete ${row.name}`}
+      >
+        <IconTrash />
+        <span className="hidden sm:inline">Delete</span>
+      </button>
+    </div>
+  );
+}
 
-        {depth > 0 && (
-          <button
-            className="btn-nuke opacity-0 group-hover:opacity-100 ml-1 px-2 py-1 rounded-md
-              bg-danger-600/20 border border-danger-500/30 text-danger-400
-              hover:bg-danger-500/30 hover:text-danger-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1
-              cursor-pointer"
-            onClick={(e) => {
-              e.stopPropagation();
-              onNuke(node.path, node.name);
-            }}
-            title={`Delete ${node.name}`}
-          >
-            <IconNuke />
-            <span className="hidden sm:inline">Delete</span>
-          </button>
-        )}
-      </div>
+// ── Stat strip ──────────────────────────────────────────────────────────────
 
-      {isDir && open && node.children && (
-        <div>
-          {node.children.map((child, i) => (
-            <FileTreeNode
-              key={`${child.path}-${i}`}
-              node={child}
-              parentSize={node.size}
-              depth={depth + 1}
-              onNuke={onNuke}
-              onZoom={onZoom}
-            />
-          ))}
-        </div>
+function StatStrip({ stats, elapsedMs }: { stats: Stats; elapsedMs: number | null }) {
+  return (
+    <div className="flex items-center gap-4 px-6 py-3 text-sm shrink-0 border-b border-zinc-800/60">
+      <span className="font-mono font-bold text-accent-400 tabular-nums">
+        {formatBytes(stats.size)}
+      </span>
+      <span className="text-zinc-600">·</span>
+      <span className="text-zinc-400 tabular-nums">{formatNumber(stats.files)} files</span>
+      <span className="text-zinc-600">·</span>
+      <span className="text-zinc-400 tabular-nums">{formatNumber(stats.dirs)} folders</span>
+      {elapsedMs !== null && (
+        <>
+          <span className="text-zinc-600">·</span>
+          <span className="text-zinc-500 tabular-nums">{(elapsedMs / 1000).toFixed(1)}s</span>
+        </>
       )}
     </div>
   );
 }
 
-// ── Stat Card ───────────────────────────────────────────────────────────────
+// ── Treemap ─────────────────────────────────────────────────────────────────
 
-function StatCard({
-  label,
-  value,
-  accent = false,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-}) {
-  return (
-    <div className="glass-card rounded-xl px-5 py-4 flex flex-col gap-1">
-      <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{label}</span>
-      <span
-        className={`text-xl font-bold font-mono tracking-tight ${accent ? "text-accent-400" : "text-zinc-100"}`}
-      >
-        {value}
-      </span>
-    </div>
-  );
+const TREEMAP_COLORS = [
+  "#0d9488",
+  "#0284c7",
+  "#4f46e5",
+  "#7c3aed",
+  "#c026d3",
+  "#e11d48",
+  "#ea580c",
+  "#ca8a04",
+];
+
+// The index signature is Recharts' requirement, not ours — another small sign
+// that this component is being used against its grain. Stage 5 replaces it.
+interface TreemapCell {
+  name: string;
+  size: number;
+  nodeId: number;
+  isDir: boolean;
+  [key: string]: string | number | boolean;
 }
 
-// ── Custom Treemap Content ──────────────────────────────────────────────────
-
+// Recharts hands its content renderer an untyped bag of layout props.
+// Stage 5 replaces Recharts with a squarify function we own.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TreemapContent = (props: any) => {
-  const { x, y, width, height, index, name, value, bgColors } = props;
+  const { x, y, width, height, index, name, value } = props;
   if (width < 30 || height < 30) return null;
-  const bgColor = bgColors ? bgColors[index % bgColors.length] : "#0f172a";
+  const bg = TREEMAP_COLORS[index % TREEMAP_COLORS.length];
 
   return (
     <g>
@@ -552,20 +441,10 @@ const TreemapContent = (props: any) => {
         y={y}
         width={width}
         height={height}
-        style={{
-          fill: bgColor,
-          stroke: "#ffffff20",
-          strokeWidth: 1,
-        }}
+        style={{ fill: bg, stroke: "#ffffff20", strokeWidth: 1 }}
       />
       {width > 50 && height > 30 && name && (
-        <text
-          x={x + 6}
-          y={y + 18}
-          fill="#fff"
-          fontSize={11}
-          className="font-sans font-medium pointer-events-none drop-shadow-md truncate max-w-full"
-        >
+        <text x={x + 6} y={y + 18} fill="#fff" fontSize={11} className="pointer-events-none">
           {name}
         </text>
       )}
@@ -587,73 +466,58 @@ const TreemapContent = (props: any) => {
 // ── Result Screen ───────────────────────────────────────────────────────────
 
 function ResultScreen({
-  data,
+  view,
+  crumbs,
+  stats,
+  elapsedMs,
+  onOpen,
   onRescan,
   onDisconnect,
-  onNuke,
+  onDelete,
 }: {
-  data: ScanResponse;
+  view: View;
+  crumbs: Crumb[];
+  stats: Stats;
+  elapsedMs: number | null;
+  onOpen: (id: number) => void;
   onRescan: () => void;
   onDisconnect: () => void;
-  onNuke: (path: string, name: string) => void;
+  onDelete: (row: Row) => void;
 }) {
-  const [zoomPath, setZoomPath] = useState<string>(data.tree.path);
-
-  // Find node to render based on zoom
-  const renderNode = findNodeByPath(data.tree, zoomPath) || data.tree;
-
-  const bgColors = [
-    "#0d9488",
-    "#0284c7",
-    "#4f46e5",
-    "#7c3aed",
-    "#c026d3",
-    "#e11d48",
-    "#ea580c",
-    "#ca8a04",
-  ];
-
-  // Flatten immediate children for a clean 1-level treemap
-  const treemapData = (renderNode.children || [])
-    .filter((c) => c.size > 0)
-    .map((c) => ({
-      name: c.name,
-      size: c.size,
-      path: c.path,
-    }));
-
-  const breadcrumbs = buildBreadcrumbs(data.tree, zoomPath);
+  const cells: TreemapCell[] = view.rows
+    .filter((r) => r.size > 0)
+    .slice(0, 40)
+    .map((r) => ({ name: r.name, size: r.size, nodeId: r.id, isDir: r.isDir }));
 
   return (
-    <div className="flex flex-col h-full animate-fade-in-up">
-      {/* Top bar */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/80 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <h1 className="text-base font-semibold text-zinc-200 tracking-tight">SocketSweep</h1>
-          <div className="flex items-center text-xs text-zinc-500 font-mono">
-            {breadcrumbs.map((crumb, idx) => (
-              <span key={crumb.path} className="inline-flex items-center">
+    <div className="flex flex-col h-full animate-fade-in-up min-h-0">
+      <header className="flex items-center justify-between px-6 py-3 border-b border-zinc-800/80 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className={`w-2 h-2 rounded-full shrink-0 ${stats.scanning ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`}
+          />
+          <nav
+            aria-label="Breadcrumb"
+            className="flex items-center text-xs text-zinc-500 font-mono min-w-0"
+          >
+            {crumbs.map((crumb, idx) => (
+              <span key={crumb.id} className="inline-flex items-center min-w-0">
                 <button
-                  onClick={() => setZoomPath(crumb.path)}
-                  className={`hover:text-zinc-300 transition-colors ${idx === breadcrumbs.length - 1 ? "text-zinc-300 font-semibold" : ""}`}
+                  onClick={() => onOpen(crumb.id)}
+                  className={`hover:text-zinc-300 transition-colors truncate rounded focus-visible:outline-2 focus-visible:outline-accent-500 ${
+                    idx === crumbs.length - 1 ? "text-zinc-300 font-semibold" : ""
+                  }`}
+                  aria-current={idx === crumbs.length - 1 ? "page" : undefined}
                 >
                   {crumb.name}
                 </button>
-                {idx < breadcrumbs.length - 1 && <span className="mx-2 opacity-50">&gt;</span>}
+                {idx < crumbs.length - 1 && <span className="mx-2 opacity-50 shrink-0">/</span>}
               </span>
             ))}
-          </div>
+          </nav>
         </div>
-        <div className="flex items-center gap-2">
-          {zoomPath !== data.tree.path && (
-            <button
-              onClick={() => setZoomPath(data.tree.path)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-            >
-              ← Back to Root
-            </button>
-          )}
+
+        <div className="flex items-center gap-2 shrink-0">
           <button
             id="btn-rescan"
             onClick={onRescan}
@@ -673,42 +537,34 @@ function ResultScreen({
         </div>
       </header>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-6 py-4 shrink-0">
-        <StatCard label="Total Size" value={formatBytes(data.total_size)} accent />
-        <StatCard label="Files" value={formatNumber(data.total_files)} />
-        <StatCard label="Directories" value={formatNumber(data.total_dirs)} />
-        <StatCard label="Scan Time" value={`${data.scan_time_ms}ms`} />
-      </div>
+      <StatStrip stats={stats} elapsedMs={elapsedMs} />
 
-      {/* Treemap */}
-      <div className="px-6 mb-4 shrink-0 h-48">
-        <div className="glass-card rounded-xl p-2 w-full h-full relative group">
+      <div className="px-6 py-4 shrink-0 h-56">
+        <div className="glass-card rounded-xl p-2 w-full h-full">
           <ResponsiveContainer width="100%" height="100%">
             <Treemap
-              data={treemapData}
+              data={cells}
               dataKey="size"
               aspectRatio={4 / 3}
               stroke="#fff"
-              content={<TreemapContent bgColors={bgColors} />}
+              content={<TreemapContent />}
               isAnimationActive={false}
-              onClick={(e: any) => {
-                if (e && e.path) setZoomPath(e.path);
+              onClick={(e: unknown) => {
+                const cell = e as TreemapCell | undefined;
+                if (cell?.isDir && cell.nodeId !== undefined) onOpen(cell.nodeId);
               }}
             >
               <RechartsTooltip
                 content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    const p = payload[0].payload;
-                    return (
-                      <div className="bg-zinc-900 border border-zinc-800 p-2 rounded shadow-xl text-xs z-50">
-                        <p className="font-semibold text-zinc-200">{p.name}</p>
-                        <p className="text-zinc-400 font-mono mt-1">{formatBytes(p.size)}</p>
-                        <p className="text-zinc-600 mt-1">Click to Zoom</p>
-                      </div>
-                    );
-                  }
-                  return null;
+                  if (!active || !payload?.length) return null;
+                  const p = payload[0].payload as TreemapCell;
+                  return (
+                    <div className="bg-zinc-900 border border-zinc-800 p-2 rounded shadow-xl text-xs">
+                      <p className="font-semibold text-zinc-200">{p.name}</p>
+                      <p className="text-zinc-400 font-mono mt-1">{formatBytes(p.size)}</p>
+                      {p.isDir && <p className="text-zinc-600 mt-1">Click to open</p>}
+                    </div>
+                  );
                 }}
               />
             </Treemap>
@@ -716,23 +572,29 @@ function ResultScreen({
         </div>
       </div>
 
-      {/* File tree */}
       <div className="flex-1 overflow-y-auto px-3 pb-4 min-h-0">
         <div className="flex items-center gap-2 px-3 py-2 mb-1">
           <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex-1">
-            Storage Map
+            {view.path}
           </span>
-          <span className="text-xs text-zinc-600">
-            {data.errors > 0 ? `${data.errors} access errors skipped` : ""}
-          </span>
+          {view.hidden > 0 && (
+            <span className="text-xs text-zinc-600">and {formatNumber(view.hidden)} more</span>
+          )}
         </div>
-        <FileTreeNode
-          node={renderNode}
-          parentSize={renderNode.size}
-          depth={0}
-          onNuke={onNuke}
-          onZoom={setZoomPath}
-        />
+
+        {view.rows.length === 0 ? (
+          <p className="px-3 py-8 text-center text-sm text-zinc-600">This folder is empty.</p>
+        ) : (
+          view.rows.map((row) => (
+            <FileRow
+              key={row.id}
+              row={row}
+              totalSize={view.size}
+              onOpen={(r) => onOpen(r.id)}
+              onDelete={onDelete}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -742,17 +604,22 @@ function ResultScreen({
 
 function App() {
   const [phase, setPhase] = useState<AppPhase>("setup");
-  const [scanData, setScanData] = useState<ScanResponse | null>(null);
-  const [statusText, setStatusText] = useState("Initializing…");
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [view, setView] = useState<View | null>(null);
+  const [crumbs, setCrumbs] = useState<Crumb[]>([]);
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
+  const [scanningPath, setScanningPath] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState<Row | null>(null);
   const timerRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const addLog = useCallback((msg: string) => {
-    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+    setLogs((prev) =>
+      [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-MAX_LOG_LINES),
+    );
   }, []);
 
-  // ── Toast helpers ───────────────────────────────────────────────────────
   const pushToast = useCallback((message: string, type: Toast["type"] = "error") => {
     const id = ++toastId;
     setToasts((prev) => [...prev, { id, message, type }]);
@@ -773,129 +640,110 @@ function App() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 300);
   }, []);
 
-  // ── Connect flow ────────────────────────────────────────────────────────
+  // Live scan updates. The host pushes only the view we are watching, so this
+  // payload stays the same size no matter how large the device is.
+  useEffect(() => {
+    const unlisten = ipc.onScanProgress((p) => {
+      setStats(p.stats);
+      if (p.view) {
+        setView(p.view);
+        setScanningPath(p.view.path);
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const timers = timerRefs.current;
+    return () => timers.forEach((t) => clearTimeout(t));
+  }, []);
+
+  const openNode = useCallback(
+    async (id: number) => {
+      try {
+        const [nextView, nextCrumbs] = await Promise.all([ipc.getView(id), ipc.getBreadcrumbs(id)]);
+        setView(nextView);
+        setCrumbs(nextCrumbs);
+      } catch (err) {
+        pushToast(ipc.errorMessage(err), "error");
+      }
+    },
+    [pushToast],
+  );
+
+  const runScan = useCallback(async () => {
+    setPhase("scanning");
+    setElapsedMs(null);
+    const started = performance.now();
+    addLog("[SCAN] Walking /sdcard…");
+
+    try {
+      const finalStats = await ipc.scan();
+      setStats(finalStats);
+      setElapsedMs(performance.now() - started);
+      await openNode(ROOT_ID);
+      setPhase("result");
+      addLog(
+        `[SCAN] Done — ${formatNumber(finalStats.files)} files, ${formatBytes(finalStats.size)}.`,
+      );
+    } catch (err) {
+      const message = ipc.errorMessage(err);
+      pushToast(message, "error");
+      addLog(`[ERROR] ${message}`);
+      setPhase(view ? "result" : "setup");
+    }
+  }, [addLog, openNode, pushToast, view]);
+
   const handleConnect = useCallback(async () => {
     setPhase("connecting");
     try {
-      setStatusText("Checking ADB…");
-      addLog("[ADB] Checking version...");
-      const adbVersion = await invoke<string>("check_adb");
-      addLog(`[ADB] Found: ${adbVersion}`);
-
-      setStatusText("Pushing daemon to device…");
-      addLog("[ADB] Killing old daemon, pushing new binary...");
-      await invoke<string>("init_daemon");
-      addLog("[SOCKET] Daemon started and connected via TCP tunnel!");
-
-      setPhase("scanning");
-      setStatusText("Scanning /sdcard …");
-      addLog("[SCAN] Requesting /sdcard (Fast POSIX traversal)...");
-      const raw = await invoke<string>("run_scan", { path: "/sdcard" });
-      const parsed: ScanResponse = JSON.parse(raw);
-
-      if (parsed.status !== "ok") throw new Error("Scan returned non-ok status");
-
-      setScanData(parsed);
-      setPhase("result");
-      addLog(`[SCAN] Complete! ${parsed.total_files} files, ${parsed.scan_time_ms}ms.`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      addLog("[ADB] Looking for a device…");
+      const info = await ipc.connect();
+      addLog(`[ADB] Connected to ${info.model} (${info.serial}).`);
+      addLog("[SOCKET] Daemon started on an abstract socket.");
+      await runScan();
+    } catch (err) {
+      const message = ipc.errorMessage(err);
       pushToast(message, "error");
       addLog(`[ERROR] ${message}`);
       setPhase("setup");
     }
-  }, [pushToast, addLog]);
+  }, [addLog, pushToast, runScan]);
 
-  // ── Rescan ──────────────────────────────────────────────────────────────
-  const handleRescan = useCallback(async () => {
-    setPhase("scanning");
-    setStatusText("Re-scanning /sdcard …");
-    addLog("[SCAN] Re-scanning /sdcard...");
-    try {
-      const raw = await invoke<string>("run_scan", { path: "/sdcard" });
-      const parsed: ScanResponse = JSON.parse(raw);
-      setScanData(parsed);
-      setPhase("result");
-      addLog(`[SCAN] Complete! ${parsed.scan_time_ms}ms.`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast(message, "error");
-      addLog(`[ERROR] ${message}`);
-      setPhase("result");
-    }
-  }, [pushToast, addLog]);
-
-  // ── Disconnect ──────────────────────────────────────────────────────────
   const handleDisconnect = useCallback(async () => {
-    addLog("[SOCKET] Disconnecting daemon...");
+    addLog("[SOCKET] Stopping the daemon…");
     try {
-      await invoke<string>("stop_daemon");
-      pushToast("Daemon stopped", "info");
-      addLog("[SOCKET] Daemon successfully shut down.");
+      await ipc.disconnect();
+      pushToast("Disconnected", "info");
     } catch {
       addLog("[SOCKET] Daemon was already stopped.");
     }
-    setScanData(null);
+    setView(null);
+    setStats(null);
+    setCrumbs([]);
     setPhase("setup");
-  }, [pushToast, addLog]);
-
-  const [confirmDelete, setConfirmDelete] = useState<{ path: string; name: string } | null>(null);
-
-  // ── Nuke (Delete) ───────────────────────────────────────────────────────
-  const handleNuke = useCallback((path: string, name: string) => {
-    setConfirmDelete({ path, name });
-  }, []);
+  }, [addLog, pushToast]);
 
   const executeDelete = useCallback(async () => {
     if (!confirmDelete) return;
-    const { path, name } = confirmDelete;
+    const target = confirmDelete;
     setConfirmDelete(null);
 
-    // Guard: never delete the scan root
-    if (scanData && path === scanData.tree.path) {
-      pushToast("Cannot delete the scan root directory.", "error");
-      addLog(`[DELETE] Blocked: ${path} is the scan root.`);
-      return;
-    }
-
-    addLog(`[DELETE] Requesting deletion of ${path}...`);
+    addLog(`[DELETE] Removing ${target.name}…`);
     try {
-      const raw = await invoke<string>("delete_item", { path });
-      const parsed = JSON.parse(raw);
-      if (parsed.status === "ok") {
-        pushToast(`Successfully deleted ${name}`, "success");
-        addLog(`[DELETE] Success: ${parsed.message}`);
-
-        // Update tree client-side instead of doing a full re-scan
-        if (scanData) {
-          const updated = JSON.parse(JSON.stringify(scanData)) as ScanResponse;
-          const result = removeNodeByPath(updated.tree, path);
-          if (result.removed) {
-            updated.total_files -= result.files;
-            updated.total_dirs -= result.dirs;
-            updated.total_size -= result.size;
-            addLog(
-              `[DELETE] Tree updated locally (removed ${result.files} files, ${result.dirs} dirs, ${formatBytes(result.size)})`,
-            );
-          }
-          setScanData(updated);
-        }
-      } else {
-        throw new Error(parsed.message || "Unknown error");
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const result = await ipc.deleteNode(target.id);
+      setStats(result.stats);
+      if (result.view) setView(result.view);
+      pushToast(`Deleted ${target.name}`, "success");
+      addLog(`[DELETE] Removed ${formatNumber(result.items)} items.`);
+    } catch (err) {
+      const message = ipc.errorMessage(err);
       pushToast(`Delete failed: ${message}`, "error");
-      addLog(`[ERROR] Delete failed: ${message}`);
+      addLog(`[ERROR] ${message}`);
     }
-  }, [confirmDelete, pushToast, addLog, scanData]);
-
-  useEffect(() => {
-    const timers = timerRefs.current;
-    return () => {
-      timers.forEach((t) => clearTimeout(t));
-    };
-  }, []);
+  }, [addLog, confirmDelete, pushToast]);
 
   return (
     <div className="h-screen flex flex-col bg-surface-0 overflow-hidden">
@@ -904,35 +752,57 @@ function App() {
       <div className="flex-1 flex flex-col min-h-0">
         {phase === "setup" && <SetupScreen onConnect={handleConnect} loading={false} />}
         {phase === "connecting" && <SetupScreen onConnect={handleConnect} loading={true} />}
-        {phase === "scanning" && <ScanningScreen statusText={statusText} />}
-        {phase === "result" && scanData && (
+        {phase === "scanning" && <ScanningScreen stats={stats} current={scanningPath} />}
+        {phase === "result" && view && stats && (
           <ResultScreen
-            data={scanData}
-            onRescan={handleRescan}
+            view={view}
+            crumbs={crumbs}
+            stats={stats}
+            elapsedMs={elapsedMs}
+            onOpen={openNode}
+            onRescan={runScan}
             onDisconnect={handleDisconnect}
-            onNuke={handleNuke}
+            onDelete={setConfirmDelete}
           />
         )}
       </div>
 
       <TerminalLog logs={logs} />
 
-      {/* Custom Confirm Modal */}
       {confirmDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in-up">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center text-red-500">
-                <IconNuke />
+                <IconTrash />
               </div>
-              <h3 className="text-lg font-bold text-zinc-100">Delete Item?</h3>
+              <h3 className="text-lg font-bold text-zinc-100">Delete permanently?</h3>
             </div>
-            <p className="text-sm text-zinc-400 mb-2">
-              Are you sure you want to permanently delete:
-            </p>
-            <p className="text-sm font-mono text-zinc-300 bg-zinc-950 p-2 rounded-lg break-all border border-zinc-800 mb-6">
+
+            <p className="text-sm font-mono text-zinc-300 bg-zinc-950 p-2 rounded-lg break-all border border-zinc-800 mb-3">
               {confirmDelete.name}
             </p>
+
+            {/*
+              What will actually be lost. The host already knows the subtree
+              totals, and this is the information that prevents mistakes — the
+              previous dialog showed only the name.
+            */}
+            <p className="text-sm text-zinc-400 mb-6">
+              This removes{" "}
+              <span className="font-semibold text-zinc-200">{formatBytes(confirmDelete.size)}</span>
+              {confirmDelete.isDir && (
+                <>
+                  {" "}
+                  across{" "}
+                  <span className="font-semibold text-zinc-200">
+                    {formatNumber(confirmDelete.files)} files
+                  </span>
+                </>
+              )}
+              . It cannot be undone.
+            </p>
+
             <div className="flex items-center gap-3 justify-end">
               <button
                 onClick={() => setConfirmDelete(null)}
@@ -944,7 +814,7 @@ function App() {
                 onClick={executeDelete}
                 className="px-4 py-2 rounded-lg text-sm font-bold bg-red-600 hover:bg-red-500 text-white transition-colors shadow-lg shadow-red-500/20"
               >
-                NUKE IT
+                Delete
               </button>
             </div>
           </div>
