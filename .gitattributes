@@ -1,0 +1,17 @@
+# Normalise all text files to LF in the working tree on every platform.
+#
+# Without this, Windows checkouts get CRLF via core.autocrlf while Prettier
+# writes LF, so `npm run format:check` passes in CI (Linux) and fails locally
+# on Windows for the same commit.
+* text=auto eol=lf
+
+# Keep shell scripts LF regardless of any local override — they run on Android
+# build hosts and CI.
+*.sh text eol=lf
+
+# Binaries git must never touch.
+*.png binary
+*.ico binary
+*.icns binary
+*.svg text eol=lf
+src-tauri/bin/daemon binary
