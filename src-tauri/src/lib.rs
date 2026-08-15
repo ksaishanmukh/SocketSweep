@@ -32,26 +32,36 @@ static SCAN_ROOT: Mutex<Option<String>> = Mutex::new(None);
 
 use tauri::Manager;
 
-fn get_bundled_binary(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf, String> {
-    let resource_dir = app.path().resource_dir().map_err(|e| format!("Failed to get resource dir: {}", e))?;
+fn bundled(app: &tauri::AppHandle, file_name: &str) -> Result<std::path::PathBuf, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Failed to get resource dir: {}", e))?;
 
-    // On Windows, host-native binaries like ADB use a .exe extension.
-    // Try the .exe variant first, then fall back to the extensionless name
-    // (needed for cross-platform binaries like the Android daemon).
-    #[cfg(target_os = "windows")]
-    {
-        let exe_path = resource_dir.join("bin").join(format!("{name}.exe"));
-        if exe_path.exists() {
-            return Ok(exe_path);
-        }
-    }
-
-    let path = resource_dir.join("bin").join(name);
+    let path = resource_dir.join("bin").join(file_name);
     if path.exists() {
         Ok(path)
     } else {
-        Err(format!("Bundled binary '{}' not found at {:?}", name, path))
+        Err(format!(
+            "Bundled binary '{file_name}' not found at {path:?}. Run `npm run setup` if you are running from source."
+        ))
     }
+}
+
+/// A binary we execute on the host. Windows needs the `.exe` suffix.
+fn host_binary(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf, String> {
+    let file_name = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+    bundled(app, &file_name)
+}
+
+/// A payload we push to the device. Always an Android ELF, never suffixed —
+/// which is why this cannot share a code path with `host_binary`.
+fn device_payload(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf, String> {
+    bundled(app, name)
 }
 
 // ── ADB helper ──────────────────────────────────────────────────────────────
@@ -90,7 +100,10 @@ fn adb(adb_path: &std::path::Path, args: &[&str]) -> Result<String, String> {
     let status;
 
     loop {
-        if let Some(s) = child.try_wait().map_err(|e| format!("Failed to wait on adb process: {}", e))? {
+        if let Some(s) = child
+            .try_wait()
+            .map_err(|e| format!("Failed to wait on adb process: {}", e))?
+        {
             status = s;
             break;
         }
@@ -111,10 +124,15 @@ fn adb(adb_path: &std::path::Path, args: &[&str]) -> Result<String, String> {
     if !status.success() {
         let combined = format!("{stdout} {stderr}").to_lowercase();
         if combined.contains("no devices") || combined.contains("device not found") {
-            return Err("No Android device detected. Connect your phone via USB and enable USB Debugging.".into());
+            return Err(
+                "No Android device detected. Connect your phone via USB and enable USB Debugging."
+                    .into(),
+            );
         }
         if combined.contains("unauthorized") {
-            return Err("USB Debugging not authorised. Check the confirmation dialog on your phone.".into());
+            return Err(
+                "USB Debugging not authorised. Check the confirmation dialog on your phone.".into(),
+            );
         }
         return Err(format!(
             "adb {} failed (exit {}):\n{stderr}",
@@ -130,11 +148,8 @@ fn adb(adb_path: &std::path::Path, args: &[&str]) -> Result<String, String> {
 
 /// Send a one-line command to the daemon and read the full response.
 fn daemon_command(cmd: &str) -> Result<String, String> {
-    let mut stream = TcpStream::connect_timeout(
-        &DAEMON_ADDR.parse().unwrap(),
-        TCP_CONNECT_TIMEOUT,
-    )
-    .map_err(|e| format!("Cannot connect to daemon at {DAEMON_ADDR}: {e}"))?;
+    let mut stream = TcpStream::connect_timeout(&DAEMON_ADDR.parse().unwrap(), TCP_CONNECT_TIMEOUT)
+        .map_err(|e| format!("Cannot connect to daemon at {DAEMON_ADDR}: {e}"))?;
 
     stream
         .set_read_timeout(Some(TCP_READ_TIMEOUT))
@@ -162,7 +177,7 @@ fn daemon_command(cmd: &str) -> Result<String, String> {
 
 #[tauri::command]
 fn check_adb(app: tauri::AppHandle) -> Result<String, String> {
-    let adb_path = get_bundled_binary(&app, "adb")?;
+    let adb_path = host_binary(&app, "adb")?;
     let version = adb(&adb_path, &["version"])?;
     let first_line = version.lines().next().unwrap_or("unknown").to_string();
     Ok(first_line)
@@ -170,8 +185,8 @@ fn check_adb(app: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 fn init_daemon(app: tauri::AppHandle) -> Result<String, String> {
-    let adb_path = get_bundled_binary(&app, "adb")?;
-    let daemon_src = get_bundled_binary(&app, "daemon")?;
+    let adb_path = host_binary(&app, "adb")?;
+    let daemon_src = device_payload(&app, "daemon")?;
 
     // 1 — Verify ADB is reachable and a device is connected.
     adb(&adb_path, &["version"])?;
@@ -182,7 +197,8 @@ fn init_daemon(app: tauri::AppHandle) -> Result<String, String> {
         .count();
     if connected == 0 {
         return Err(
-            "No Android device detected. Connect your phone via USB and enable USB Debugging.".into(),
+            "No Android device detected. Connect your phone via USB and enable USB Debugging."
+                .into(),
         );
     }
 
@@ -190,10 +206,19 @@ fn init_daemon(app: tauri::AppHandle) -> Result<String, String> {
     let _ = adb(&adb_path, &["shell", "pkill -f socketsweep_daemon || true"]);
 
     // 2.5 — Automate MANAGE_EXTERNAL_STORAGE permission for the shell user.
-    let _ = adb(&adb_path, &["shell", "appops set com.android.shell MANAGE_EXTERNAL_STORAGE allow"]);
+    let _ = adb(
+        &adb_path,
+        &[
+            "shell",
+            "appops set com.android.shell MANAGE_EXTERNAL_STORAGE allow",
+        ],
+    );
 
     // 4 — Push binary to device.
-    adb(&adb_path, &["push", &daemon_src.to_string_lossy(), DEVICE_BIN_PATH])?;
+    adb(
+        &adb_path,
+        &["push", &daemon_src.to_string_lossy(), DEVICE_BIN_PATH],
+    )?;
 
     // 5 — Make it executable.
     adb(&adb_path, &["shell", "chmod", "+x", DEVICE_BIN_PATH])?;
@@ -208,7 +233,14 @@ fn init_daemon(app: tauri::AppHandle) -> Result<String, String> {
     let pid = pid_output.trim().to_string();
 
     // 7 — Set up the USB TCP tunnel.
-    adb(&adb_path, &["forward", &format!("tcp:{DAEMON_PORT}"), &format!("tcp:{DAEMON_PORT}")])?;
+    adb(
+        &adb_path,
+        &[
+            "forward",
+            &format!("tcp:{DAEMON_PORT}"),
+            &format!("tcp:{DAEMON_PORT}"),
+        ],
+    )?;
 
     // 8 — Ping-Retry loop.
     let mut pong = String::new();
@@ -258,9 +290,12 @@ fn ping_daemon() -> Result<String, String> {
 
 #[tauri::command]
 fn stop_daemon(app: tauri::AppHandle) -> Result<String, String> {
-    let adb_path = get_bundled_binary(&app, "adb")?;
+    let adb_path = host_binary(&app, "adb")?;
     let response = daemon_command("SHUTDOWN").unwrap_or_else(|_| "daemon already stopped".into());
-    let _ = adb(&adb_path, &["forward", "--remove", &format!("tcp:{DAEMON_PORT}")]);
+    let _ = adb(
+        &adb_path,
+        &["forward", "--remove", &format!("tcp:{DAEMON_PORT}")],
+    );
     let _ = adb(&adb_path, &["shell", "rm", DEVICE_BIN_PATH]);
     Ok(response)
 }
