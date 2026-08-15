@@ -6,6 +6,8 @@ import { IconFile, IconFolder, IconTrash } from "./icons";
 import { SizeBar } from "./SizeBar";
 
 const ROW_HEIGHT = 34;
+/** Cross-tree results carry a second line showing the containing folder. */
+const ROW_HEIGHT_WITH_PARENT = 44;
 
 /**
  * Windowed list of directory entries.
@@ -20,11 +22,16 @@ export function FileList({
   totalSize,
   onOpen,
   onDelete,
+  onReveal,
+  emptyMessage = "This folder is empty.",
 }: {
   rows: Row[];
   totalSize: number;
   onOpen: (row: Row) => void;
   onDelete: (row: Row) => void;
+  /** Navigate to a row's containing folder. Only meaningful for cross-tree results. */
+  onReveal?: (row: Row) => void;
+  emptyMessage?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -35,14 +42,14 @@ export function FileList({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: (i) => (rows[i]?.parent ? ROW_HEIGHT_WITH_PARENT : ROW_HEIGHT),
     overscan: 12,
   });
 
   if (rows.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-zinc-600">
-        This folder is empty.
+        {emptyMessage}
       </div>
     );
   }
@@ -68,7 +75,13 @@ export function FileList({
                 transform: `translateY(${v.start}px)`,
               }}
             >
-              <FileRow row={row} totalSize={totalSize} onOpen={onOpen} onDelete={onDelete} />
+              <FileRow
+                row={row}
+                totalSize={totalSize}
+                onOpen={onOpen}
+                onDelete={onDelete}
+                onReveal={onReveal}
+              />
             </div>
           );
         })}
@@ -82,17 +95,19 @@ function FileRow({
   totalSize,
   onOpen,
   onDelete,
+  onReveal,
 }: {
   row: Row;
   totalSize: number;
   onOpen: (row: Row) => void;
   onDelete: (row: Row) => void;
+  onReveal?: (row: Row) => void;
 }) {
   const ratio = totalSize > 0 ? row.size / totalSize : 0;
 
   return (
     <div
-      className="file-row flex items-center gap-3 px-3 h-[34px] rounded-md group select-none"
+      className="file-row flex items-center gap-3 px-3 h-full rounded-md group select-none"
       onKeyDown={(e) => {
         // Delete on the focused row, so removing something never requires a mouse.
         if (e.key === "Delete") {
@@ -105,16 +120,32 @@ function FileRow({
         {row.isDir ? <IconFolder /> : <IconFile />}
       </span>
 
-      {row.isDir ? (
-        <button
-          className="flex-1 truncate text-left text-sm text-zinc-200 font-medium hover:text-accent-300 rounded focus-visible:outline-2 focus-visible:outline-accent-500"
-          onClick={() => onOpen(row)}
-        >
-          {row.name}
-        </button>
-      ) : (
-        <span className="flex-1 truncate text-sm text-zinc-400">{row.name}</span>
-      )}
+      {/*
+        `parent` is present only on results that span the tree, where the name
+        alone does not say where the thing lives. Clicking it navigates there,
+        which is the whole point of surfacing a file you found by size.
+      */}
+      <div className="flex-1 min-w-0">
+        {row.isDir ? (
+          <button
+            className="w-full truncate text-left text-sm text-zinc-200 font-medium hover:text-accent-300 rounded focus-visible:outline-2 focus-visible:outline-accent-500"
+            onClick={() => onOpen(row)}
+          >
+            {row.name}
+          </button>
+        ) : (
+          <span className="block truncate text-sm text-zinc-400">{row.name}</span>
+        )}
+        {row.parent && (
+          <button
+            className="block w-full truncate text-left text-[10px] text-zinc-600 hover:text-accent-400 font-mono rounded focus-visible:outline-2 focus-visible:outline-accent-500"
+            onClick={() => onReveal?.(row)}
+            title={`Go to ${row.parent}`}
+          >
+            {row.parent}
+          </button>
+        )}
+      </div>
 
       {!row.complete && (
         <span

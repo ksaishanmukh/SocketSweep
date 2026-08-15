@@ -36,6 +36,12 @@ export default function App() {
             crumbs={session.crumbs}
             stats={session.stats}
             treemap={session.treemap}
+            mode={session.mode}
+            largest={session.largest}
+            types={session.types}
+            previous={session.previous}
+            onModeChange={session.setMode}
+            onReveal={session.reveal}
             elapsedMs={session.elapsedMs}
             query={session.query}
             searchResults={session.searchResults}

@@ -4,10 +4,15 @@ import {
   ROOT_ID,
   type Crumb,
   type Row,
+  type ScanRecord,
   type Stats,
   type TreemapNode,
+  type TypeGroup,
   type View,
 } from "../lib/types";
+
+/** Which analysis the main canvas is showing. */
+export type Mode = "treemap" | "largest" | "types";
 
 export type Phase = "setup" | "connecting" | "scanning" | "result";
 
@@ -29,6 +34,12 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
   const [elapsedMs, setElapsedMs] = useState<number | null>(null);
   const [scanningPath, setScanningPath] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
+
+  const [mode, setMode] = useState<Mode>("treemap");
+  const [largest, setLargest] = useState<Row[]>([]);
+  const [types, setTypes] = useState<TypeGroup[]>([]);
+  /** Baseline captured at connect, so a rescan still compares to last session. */
+  const [previous, setPrevious] = useState<ScanRecord | null>(null);
 
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<Row[]>([]);
@@ -69,6 +80,17 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
     };
   }, []);
 
+  /** The cross-tree analyses. Cheap Rust queries, so just re-run both. */
+  const refreshAnalyses = useCallback(async () => {
+    try {
+      const [top, groups] = await Promise.all([ipc.largestFiles(100), ipc.typeBreakdown()]);
+      setLargest(top);
+      setTypes(groups);
+    } catch {
+      // These are secondary views; a failure here should not disturb the scan.
+    }
+  }, []);
+
   const refreshTreemap = useCallback(async (id: number) => {
     try {
       setTreemap(await ipc.getTreemap(id, 2));
@@ -92,6 +114,20 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
     [fail, refreshTreemap],
   );
 
+  /**
+   * Jump to the folder containing a cross-tree result, and back to the treemap
+   * so the destination has context. Finding a huge file is only half the job.
+   */
+  const reveal = useCallback(
+    async (row: Row) => {
+      if (row.parentId === undefined) return;
+      setMode("treemap");
+      setQuery("");
+      await open(row.parentId);
+    },
+    [open],
+  );
+
   const scan = useCallback(async () => {
     setPhase("scanning");
     setElapsedMs(null);
@@ -104,27 +140,35 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
       setStats(final);
       setElapsedMs(performance.now() - started);
       await open(ROOT_ID);
+      void refreshAnalyses();
       setPhase("result");
       log(`[SCAN] ${final.files.toLocaleString()} files, ${final.dirs.toLocaleString()} folders.`);
     } catch (err) {
       fail(err);
       setPhase((p) => (p === "scanning" && view ? "result" : "setup"));
     }
-  }, [fail, log, open, view]);
+  }, [fail, log, open, refreshAnalyses, view]);
 
-  const connect = useCallback(async () => {
-    setPhase("connecting");
-    try {
-      log("[ADB] Looking for a device…");
-      const info = await ipc.connect();
-      log(`[ADB] ${info.model} (${info.serial}).`);
-      log("[SOCKET] Daemon listening on an abstract socket.");
-      await scan();
-    } catch (err) {
-      fail(err);
-      setPhase("setup");
-    }
-  }, [fail, log, scan]);
+  /** `serial` picks a specific device; omitted, the host chooses the only usable one. */
+  const connect = useCallback(
+    async (serial?: string) => {
+      setPhase("connecting");
+      try {
+        log("[ADB] Looking for a device…");
+        const info = await ipc.connect(serial);
+        // Captured once per connection, so a rescan still compares against the
+        // previous session rather than against the scan a moment ago.
+        setPrevious(info.previous);
+        log(`[ADB] ${info.model} (${info.serial}).`);
+        log("[SOCKET] Daemon listening on an abstract socket.");
+        await scan();
+      } catch (err) {
+        fail(err);
+        setPhase("setup");
+      }
+    },
+    [fail, log, scan],
+  );
 
   const disconnect = useCallback(async () => {
     log("[SOCKET] Stopping the daemon…");
@@ -139,6 +183,9 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
     setCrumbs([]);
     setTreemap(null);
     setQuery("");
+    setLargest([]);
+    setTypes([]);
+    setPrevious(null);
     setPhase("setup");
   }, [log, notify]);
 
@@ -152,13 +199,14 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
         if (view) void refreshTreemap(view.id);
         // A deleted node may still be sitting in the results list.
         setSearchHits((hits) => hits.filter((h) => h.id !== row.id));
+        void refreshAnalyses();
         notify(`Deleted ${row.name}`, "success");
         log(`[DELETE] Removed ${result.items.toLocaleString()} items.`);
       } catch (err) {
         fail(err);
       }
     },
-    [fail, log, notify, refreshTreemap, view],
+    [fail, log, notify, refreshAnalyses, refreshTreemap, view],
   );
 
   // Debounced so typing does not fire a query per keystroke.
@@ -191,7 +239,13 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
     logs,
     query,
     searchResults,
+    mode,
+    largest,
+    types,
+    previous,
     setQuery,
+    setMode,
+    reveal,
     connect,
     disconnect,
     scan,

@@ -17,6 +17,7 @@ import type {
   ScanProgress,
   Stats,
   TreemapNode,
+  TypeGroup,
   View,
 } from "./types";
 
@@ -48,6 +49,9 @@ export const getTreemap = (id?: number, depth?: number) =>
 export const getStats = () => invoke<Stats>("get_stats");
 
 export const largestFiles = (limit?: number) => invoke<Row[]>("largest_files", { limit });
+
+/** Total bytes per broad file category — what kind of thing is eating space. */
+export const typeBreakdown = () => invoke<TypeGroup[]>("type_breakdown");
 
 export const search = (query: string, limit?: number) => invoke<Row[]>("search", { query, limit });
 

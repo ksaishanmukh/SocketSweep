@@ -20,6 +20,24 @@ export interface Connected {
   serial: string;
   model: string;
   root: string;
+  /** Last scan of this device, if it has been seen before. */
+  previous: ScanRecord | null;
+}
+
+/** A remembered scan, for showing what changed since last time. */
+export interface ScanRecord {
+  size: number;
+  files: number;
+  dirs: number;
+  /** Unix seconds. */
+  at: number;
+}
+
+/** Total bytes per broad file category. */
+export interface TypeGroup {
+  label: string;
+  size: number;
+  files: number;
 }
 
 export interface Row {
@@ -31,6 +49,13 @@ export interface Row {
   files: number;
   /** False while this subtree is still being walked. */
   complete: boolean;
+  /**
+   * Containing folder, present only on results that span the tree (search hits,
+   * largest files) where the name alone does not say where the thing lives.
+   */
+  parent?: string;
+  /** Id of that folder, for navigating to it. */
+  parentId?: number;
 }
 
 export interface View {

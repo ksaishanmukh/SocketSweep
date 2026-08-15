@@ -1,10 +1,14 @@
 import { useMemo } from "react";
 import { formatBytes, formatNumber } from "../../lib/format";
 import type { TreemapItem } from "../../lib/squarify";
-import type { Crumb, Row, Stats, TreemapNode, View } from "../../lib/types";
+import type { Mode } from "../../hooks/useScanSession";
+import type { Crumb, Row, ScanRecord, Stats, TreemapNode, TypeGroup, View } from "../../lib/types";
 import { FileList } from "../FileList";
 import { IconSearch } from "../icons";
+import { ModeTabs } from "../ModeTabs";
+import { SinceLastScan } from "../SinceLastScan";
 import { Treemap } from "../Treemap";
+import { TypeBreakdown } from "../TypeBreakdown";
 
 function toItems(node: TreemapNode | null): TreemapItem[] {
   if (!node) return [];
@@ -23,6 +27,12 @@ export function ResultScreen({
   crumbs,
   stats,
   treemap,
+  mode,
+  largest,
+  types,
+  previous,
+  onModeChange,
+  onReveal,
   elapsedMs,
   query,
   searchResults,
@@ -36,6 +46,12 @@ export function ResultScreen({
   crumbs: Crumb[];
   stats: Stats;
   treemap: TreemapNode | null;
+  mode: Mode;
+  largest: Row[];
+  types: TypeGroup[];
+  previous: ScanRecord | null;
+  onModeChange: (m: Mode) => void;
+  onReveal: (row: Row) => void;
   elapsedMs: number | null;
   query: string;
   searchResults: Row[] | null;
@@ -139,6 +155,10 @@ export function ResultScreen({
             <span className="text-zinc-500 tabular-nums">{(elapsedMs / 1000).toFixed(1)}s</span>
           </>
         )}
+        <SinceLastScan previous={previous} stats={stats} />
+
+        <div className="flex-1" />
+        <ModeTabs mode={mode} onChange={onModeChange} />
       </div>
 
       {/*
@@ -147,30 +167,49 @@ export function ResultScreen({
       */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 p-3">
         <div className="flex-1 min-h-0 glass-card rounded-xl overflow-hidden">
-          {searching ? (
-            <div className="flex items-center justify-center h-full text-sm text-zinc-600 px-6 text-center">
-              Showing search results. Clear the search box to return to the treemap.
-            </div>
-          ) : (
+          {mode === "treemap" && (
             <Treemap items={items} onOpen={(id, isDir) => isDir && onOpen(id)} />
           )}
+
+          {/*
+            The question this app exists to answer. Until now it could only be
+            answered by expanding folders one at a time.
+          */}
+          {mode === "largest" && (
+            <FileList
+              rows={largest}
+              totalSize={largest[0]?.size ?? 0}
+              onOpen={(row) => onOpen(row.id)}
+              onDelete={onDelete}
+              onReveal={onReveal}
+              emptyMessage="No files found."
+            />
+          )}
+
+          {mode === "types" && <TypeBreakdown groups={types} />}
         </div>
 
         <div className="w-full lg:w-[26rem] shrink-0 flex flex-col min-h-0 glass-card rounded-xl">
           <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800/60 shrink-0">
             <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider flex-1 truncate">
-              {searching ? `${rows.length} matches` : view.path}
+              {searching ? `${rows.length} matches for “${query}”` : view.path}
             </span>
             {!searching && view.hidden > 0 && (
               <span className="text-[11px] text-zinc-600">+{formatNumber(view.hidden)} more</span>
             )}
           </div>
 
+          {/*
+            Search takes over this panel only. It used to blank the main canvas,
+            which threw away the context you were searching within.
+          */}
           <FileList
             rows={rows}
             totalSize={searching ? (rows[0]?.size ?? 0) : view.size}
             onOpen={(row) => onOpen(row.id)}
             onDelete={onDelete}
+            onReveal={searching ? onReveal : undefined}
+            emptyMessage={searching ? "No matches." : "This folder is empty."}
           />
         </div>
       </div>
