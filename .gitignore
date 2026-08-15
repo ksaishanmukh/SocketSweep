@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Cargo workspace build output (the workspace root is now the repo root, so the
+# target dir moved up out of src-tauri/)
+/target
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -26,6 +30,17 @@ dist-ssr
 # SocketSweep custom ignores
 engine/daemon
 output.json
+
+# Host binaries fetched by `npm run setup` — never commit these.
+# adb is ~18MB per platform and CI downloads a platform-correct copy anyway.
+src-tauri/bin/adb
+src-tauri/bin/adb.exe
+src-tauri/bin/AdbWinApi.dll
+src-tauri/bin/AdbWinUsbApi.dll
+
+# NOTE: src-tauri/bin/daemon is still tracked. It is a declared bundle resource,
+# and until Stage 2 provisions it via cargo-ndk there is no way to obtain it
+# without an Android NDK, so removing it now would break a fresh clone.
 
 # Exclude local JSON test dumps
 out*.json
