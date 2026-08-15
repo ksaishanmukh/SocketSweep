@@ -8,20 +8,61 @@ on:
     branches: [main]
 
 jobs:
+  # ── Fast gate ─────────────────────────────────────────────────────────────
+  # Runs in ~2 minutes on one runner. Without this, a one-character type error
+  # fails a ten-minute three-platform bundle build instead of a cheap job.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - run: npm ci
+
+      # Cheapest checks first so the common failures surface fastest.
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      # tauri-build reads frontendDist, so the frontend must exist before
+      # anything touches the Rust crate.
+      - run: npm run build
+
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
   build:
+    needs: check
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             platform: linux
-            adb_url: https://dl.google.com/android/repository/platform-tools-latest-linux.zip
           - os: macos-latest
             platform: macos
-            adb_url: https://dl.google.com/android/repository/platform-tools-latest-darwin.zip
           - os: windows-latest
             platform: windows
-            adb_url: https://dl.google.com/android/repository/platform-tools-latest-windows.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -56,7 +97,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: . -> target
 
       - name: Install frontend dependencies
         run: npm ci
@@ -102,45 +143,16 @@ jobs:
 
           Write-Host "✓ C++ daemon cross-compiled for Android aarch64"
 
-      # ── Download platform-specific ADB from Google ────────────────────────
-      - name: Download ADB (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          curl -sL -o platform-tools.zip "${{ matrix.adb_url }}"
-          unzip -qo platform-tools.zip
-          cp platform-tools/adb src-tauri/bin/adb
-          chmod +x src-tauri/bin/adb
-          rm -rf platform-tools platform-tools.zip
-          echo "✓ ADB binary ready for ${{ matrix.platform }}"
+      # ── Fetch platform-specific ADB from Google ───────────────────────────
+      # Same script contributors run locally, so CI and dev can't drift apart.
+      - name: Fetch ADB
+        run: npm run setup
 
-      - name: Download ADB (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "${{ matrix.adb_url }}" -OutFile platform-tools.zip
-          Expand-Archive platform-tools.zip -DestinationPath . -Force
-          Copy-Item platform-tools\adb.exe         src-tauri\bin\adb.exe
-          Copy-Item platform-tools\AdbWinApi.dll    src-tauri\bin\AdbWinApi.dll
-          Copy-Item platform-tools\AdbWinUsbApi.dll src-tauri\bin\AdbWinUsbApi.dll
-          Remove-Item -Recurse -Force platform-tools, platform-tools.zip
-          Write-Host "✓ ADB binaries ready for Windows"
+      # No config patching needed: tauri.{windows,linux,macos}.conf.json declare
+      # the per-platform resource names, and Tauri merges them automatically.
 
-      # Windows ADB is adb.exe and requires companion DLLs.
-      # Patch tauri.conf.json to bundle the correct filenames.
-      - name: Patch Tauri config for Windows ADB
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
-          $conf.bundle.resources = @(
-            "bin/adb.exe",
-            "bin/AdbWinApi.dll",
-            "bin/AdbWinUsbApi.dll",
-            "bin/daemon"
-          )
-          $conf | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json
-          Write-Host "✓ tauri.conf.json patched for Windows"
-
+      # Only two files carry a version: package.json and the Cargo workspace.
+      # tauri.conf.json deliberately omits `version` so it inherits from Cargo.
       - name: Update version from Git tag
         if: startsWith(github.ref, 'refs/tags/v')
         shell: node {0}
@@ -148,18 +160,22 @@ jobs:
           const fs = require('fs');
           const tag = process.env.GITHUB_REF_NAME;
           const version = tag.startsWith('v') ? tag.slice(1) : tag;
-          
-          // Update package.json
+
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           pkg.version = version;
           fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          
-          // Update tauri.conf.json
-          const tauri = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-          tauri.version = version;
-          fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(tauri, null, 2) + '\n');
-          
-          console.log(`Successfully bumped version to ${version} inside CI environment`);
+
+          const cargo = fs.readFileSync('Cargo.toml', 'utf8');
+          const patched = cargo.replace(
+            /(\[workspace\.package\][\s\S]*?\nversion = ")[^"]*(")/,
+            `$1${version}$2`,
+          );
+          if (patched === cargo) {
+            throw new Error('Could not find [workspace.package] version in Cargo.toml');
+          }
+          fs.writeFileSync('Cargo.toml', patched);
+
+          console.log(`Bumped package.json and Cargo.toml to ${version}`);
 
       # ── Build Tauri desktop app ───────────────────────────────────────────
       # This single command builds the React frontend (beforeBuildCommand),
@@ -174,7 +190,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SocketSweep-macOS
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: target/release/bundle/dmg/*.dmg
 
       - name: Upload Linux artifacts
         if: matrix.platform == 'linux'
@@ -182,8 +198,8 @@ jobs:
         with:
           name: SocketSweep-Linux
           path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
 
       - name: Upload Windows artifacts
         if: matrix.platform == 'windows'
@@ -191,8 +207,8 @@ jobs:
         with:
           name: SocketSweep-Windows
           path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
+            target/release/bundle/msi/*.msi
+            target/release/bundle/nsis/*.exe
 
   # ── Create GitHub Release (only on tag push) ─────────────────────────────
   release:
