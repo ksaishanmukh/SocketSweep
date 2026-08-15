@@ -201,13 +201,29 @@ npm run tauri dev
 *Ensure your Android device is plugged in via USB and **USB Debugging** is enabled.*
 
 ### Rebuilding the device daemon (optional)
-A prebuilt `src-tauri/bin/daemon` is checked in. To rebuild it from source you
-need the NDK:
+A prebuilt `src-tauri/bin/daemon` is checked in, so you only need the NDK if you
+are changing the daemon itself:
 ```bash
-export NDK=/path/to/your/android-ndk-r26d
-cd engine && bash ./build.sh
-cp daemon ../src-tauri/bin/daemon
+npm run build:daemon
 ```
+The script finds your NDK (or honours `ANDROID_NDK_HOME`), adds the Rust target
+if missing, cross-compiles for `aarch64-linux-android` and installs the result.
+One script for all three build hosts, replacing the three copies of the same
+compiler invocation that used to live in `engine/build.sh` and two CI steps.
+
+### Repository layout
+```
+crates/protocol/   wire types shared by daemon and host — one definition, no drift
+crates/scanner/    parallel scan engine; portable, so it is tested without a phone
+crates/daemon/     the Android binary: abstract socket, request loop, delete guard
+src-tauri/         desktop host: ADB orchestration and Tauri commands
+src/               React frontend
+engine/            the C++ daemon being replaced (still what ships today)
+```
+
+The scan engine lives in its own crate specifically so `cargo test -p
+socketsweep-scanner` exercises it against a temp directory on your machine. The
+C++ engine it replaces could only be tested by pushing it to a device.
 
 ### Checks
 ```bash

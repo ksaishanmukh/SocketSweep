@@ -51,6 +51,12 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # crates/daemon is excluded from default-members (it only builds for a
+      # Linux-family target), so nothing above would catch a break in it.
+      # Writes to src-tauri/bin/daemon, which this job never bundles.
+      - name: Verify the device daemon cross-compiles for Android
+        run: npm run build:daemon
+
   build:
     needs: check
     strategy:
