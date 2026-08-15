@@ -108,46 +108,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # ── Cross-compile C++ daemon for Android aarch64 ──────────────────────
-      # The daemon always targets Android ARM64, regardless of host OS.
-      # Uses the pre-installed Android NDK on GitHub Actions runners.
-      - name: Cross-compile C++ daemon (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          TOOLCHAIN=$(ls -d "$NDK/toolchains/llvm/prebuilt/"*/ | head -1)
-          CC="${TOOLCHAIN}bin/aarch64-linux-android31-clang++"
-
-          echo "NDK: $NDK"
-          echo "Compiler: $CC"
-
-          "$CC" \
-            -std=c++17 -O2 -Wall -Wextra -Wpedantic \
-            -fno-exceptions -fno-rtti -DNDEBUG \
-            -static-libstdc++ \
-            -o src-tauri/bin/daemon engine/daemon.cpp
-
-          file src-tauri/bin/daemon
-          echo "✓ C++ daemon cross-compiled for Android aarch64"
-
-      - name: Cross-compile C++ daemon (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $NDK = $env:ANDROID_NDK_LATEST_HOME
-          $Prebuilt = Get-ChildItem "$NDK\toolchains\llvm\prebuilt" -Directory | Select-Object -First 1
-          $CC = Join-Path $Prebuilt.FullName "bin\aarch64-linux-android31-clang++.cmd"
-
-          Write-Host "NDK: $NDK"
-          Write-Host "Compiler: $CC"
-
-          & $CC `
-            -std=c++17 -O2 -Wall -Wextra -Wpedantic `
-            -fno-exceptions -fno-rtti -DNDEBUG `
-            -static-libstdc++ `
-            -o src-tauri/bin/daemon engine/daemon.cpp
-
-          Write-Host "✓ C++ daemon cross-compiled for Android aarch64"
+      # ── Cross-compile the device daemon for Android aarch64 ───────────────
+      # One script on all three hosts, replacing the two per-OS clang steps
+      # that used to live here.
+      - name: Build device daemon
+        run: npm run build:daemon
 
       # ── Fetch platform-specific ADB from Google ───────────────────────────
       # Same script contributors run locally, so CI and dev can't drift apart.

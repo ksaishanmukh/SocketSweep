@@ -101,10 +101,10 @@ That's it. No apps to install on your phone, no Wi-Fi setup, no root required.
 
 Instead of going through MTP, SocketSweep does something completely different:
 
-1. **Pushes a tiny C++ program** (~1MB) to your phone via ADB
-2. **That program scans the filesystem directly** on the phone using native POSIX calls — this is why it's so fast (no MTP bottleneck)
-3. **Streams the results back** to your PC over a TCP socket through the USB cable
-4. **Renders an interactive treemap** in a React frontend so you can visually see what's taking space
+1. **Pushes a tiny Rust program** (~400KB) to your phone via ADB
+2. **That program walks the filesystem in parallel** using native POSIX calls — no MTP bottleneck. `/sdcard` sits behind a FUSE layer on Android 11+, so the walk is latency-bound and concurrency is what makes it fast
+3. **Streams results back** directory by directory through the USB cable, so the desktop can start drawing before the walk finishes
+4. **Renders an interactive treemap** in a React frontend so you can see what's taking space
 
 The architecture was inspired by [scrcpy](https://github.com/Genymobile/scrcpy) — the "push a native binary via ADB, communicate over a local socket" pattern.
 
@@ -117,60 +117,83 @@ SocketSweep has three layers:
 ```mermaid
 flowchart TB
     subgraph Host["Host Desktop"]
-        UI["React + Recharts<br>Interactive Dashboard"]
-        Bridge["Rust / Tauri Backend<br>Command Orchestrator"]
-        
-        UI <--> Bridge
+        UI["React<br>asks for the rows it draws"]
+        Arena["Rust: the scanned tree<br>flat arena, aggregates as it fills"]
+        Bridge["Rust: ADB + session"]
+
+        UI <-->|"node ids, a few hundred rows"| Arena
+        Arena <--> Bridge
     end
 
-    subgraph Transport["ADB Protocol"]
-        Tunnel["ADB Port Forwarding<br>TCP:5050 -> TCP:5050"]
+    subgraph Transport["ADB"]
+        Tunnel["adb forward<br>tcp:5050 → localabstract:socketsweep-…"]
     end
 
     subgraph Device["Android Device"]
-        Daemon["C++17 Daemon<br>Headless Socket Server"]
-        Storage[("POSIX Filesystem<br>/sdcard")]
-        
-        Daemon <--> Storage
+        Daemon["Rust daemon<br>abstract unix socket"]
+        Scan["jwalk parallel walk"]
+        Storage[("POSIX filesystem<br>/sdcard")]
+
+        Daemon <--> Scan
+        Scan <--> Storage
     end
 
-    Bridge <--> Tunnel
+    Bridge <-->|"postcard frames"| Tunnel
     Tunnel <--> Daemon
 ```
+
+Three properties worth calling out:
+
+**The device socket is not a TCP port.** An abstract unix socket in the `shell`
+SELinux domain is not reachable by installed apps, which loopback TCP is. The
+daemon accepts a recursive delete, so that distinction matters.
+
+**The tree lives on the desktop, not in React.** The frontend addresses nodes by
+id and asks for the few hundred rows it is about to draw. Nothing proportional
+to device size crosses the IPC boundary.
+
+**Directory totals are aggregated on the host as frames arrive**, which is what
+lets the UI show sizes climbing during a scan rather than waiting for a total.
 
 ### Interaction Lifecycle
 
 ```mermaid
 sequenceDiagram
-    participant U as React UI
-    participant R as Rust (Tauri)
-    participant A as ADB Shell
-    participant D as C++ Daemon (Android)
-    
-    %% Connect Phase
-    U->>R: invoke("init_daemon")
-    R->>A: pkill daemon (Cleanup)
-    R->>A: push daemon /data/local/tmp
-    R->>A: appops set MANAGE_EXTERNAL_STORAGE allow
-    R->>A: nohup ./daemon &
-    R->>A: adb forward tcp:5050 tcp:5050
-    R->>D: Ping-Retry Loop (150ms)
-    D-->>R: ACK Connection
-    R-->>U: Connected!
-    
-    %% Scan Phase
-    U->>R: invoke("run_scan", { path: "/sdcard" })
-    R->>D: TCP Send: `SCAN /sdcard\n`
-    Note over D: Recursive Fast POSIX Traversal
-    D-->>R: Stream Large JSON Tree
-    R-->>U: Parse & Render Treemap
-    
-    %% Delete Phase
-    U->>R: invoke("delete_item", { path })
-    R->>D: TCP Send: `DELETE /sdcard/... \n`
-    Note over D: std::filesystem::remove_all
-    D-->>R: {"status":"ok"}
-    R-->>U: Update UI / Rescan
+    participant U as React
+    participant R as Rust host
+    participant D as Daemon (Android)
+
+    %% Connect
+    U->>R: connect()
+    R->>D: push binary, chmod, start with a random socket name
+    R->>R: adb forward tcp:5050 → localabstract:<name>
+    R->>D: Ping (retry until it binds)
+    D-->>R: Pong
+    R-->>U: { serial, model, root }
+
+    %% Scan — streaming, not one big response
+    U->>R: scan()
+    R->>D: Request::Scan
+    loop one frame per directory
+        D-->>R: Frame::Dir { path, entries }
+        R->>R: fold into the arena, aggregate up the ancestry
+        R-->>U: scan-progress (stats + the watched view only, ~10/s)
+    end
+    D-->>R: Frame::ScanDone(stats)
+    R-->>U: scan-complete
+
+    %% Navigate — pull, small
+    U->>R: get_view(id)
+    R-->>U: a few hundred rows
+
+    %% Delete — by id; the daemon is the authority
+    U->>R: delete(id)
+    R->>R: resolve id to a byte-exact path
+    R->>D: Request::Delete
+    Note over D: canonicalise, require strictly under root, else refuse
+    D-->>R: Frame::Deleted { items }
+    R->>R: discount the subtree from every ancestor
+    R-->>U: updated stats + view
 ```
 
 ---
@@ -216,9 +239,8 @@ compiler invocation that used to live in `engine/build.sh` and two CI steps.
 crates/protocol/   wire types shared by daemon and host — one definition, no drift
 crates/scanner/    parallel scan engine; portable, so it is tested without a phone
 crates/daemon/     the Android binary: abstract socket, request loop, delete guard
-src-tauri/         desktop host: ADB orchestration and Tauri commands
+src-tauri/         desktop host: ADB, the scanned tree, and the Tauri commands
 src/               React frontend
-engine/            the C++ daemon being replaced (still what ships today)
 ```
 
 The scan engine lives in its own crate specifically so `cargo test -p
