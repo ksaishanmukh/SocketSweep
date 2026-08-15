@@ -196,11 +196,16 @@ impl Adb {
             .map_err(|e| AdbError::Device(format!("Cannot push to {remote}: {e}")))
     }
 
-    /// `adb forward tcp:<local> localabstract:<name>`.
+    /// `adb forward tcp:<local_port> localabstract:<name>`.
+    ///
+    /// Note the argument order: this crate takes `(remote, local)` and emits
+    /// `host:forward:{local};{remote}`, which is the reverse of how the adb CLI
+    /// reads. Passing them CLI-order asks the server to listen on the abstract
+    /// name on *this* machine, which fails with "unavailable socket type".
     pub fn forward_abstract(&mut self, serial: &str, local_port: u16, name: &str) -> Result<()> {
         let mut device = self.device(serial)?;
         device
-            .forward(format!("tcp:{local_port}"), format!("localabstract:{name}"))
+            .forward(format!("localabstract:{name}"), format!("tcp:{local_port}"))
             .map_err(|e| {
                 AdbError::Device(format!(
                     "Cannot forward tcp:{local_port} to localabstract:{name}: {e}"
