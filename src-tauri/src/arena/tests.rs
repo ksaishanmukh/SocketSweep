@@ -381,3 +381,49 @@ fn a_deep_chain_aggregates_all_the_way_to_the_root() {
     );
     assert_eq!(a.stats().files, 60);
 }
+
+#[test]
+fn treemap_nests_to_the_requested_depth() {
+    let a = populated();
+    let t = a.treemap(ROOT, 2).unwrap();
+
+    let dcim = t.children.iter().find(|c| c.name == "DCIM").unwrap();
+    assert_eq!(dcim.children.len(), 1, "Camera is one level down");
+    assert_eq!(dcim.children[0].name, "Camera");
+    assert!(
+        dcim.children[0].children.is_empty(),
+        "depth 2 stops before Camera's files"
+    );
+}
+
+#[test]
+fn treemap_children_are_largest_first() {
+    let a = populated();
+    let t = a.treemap(ROOT, 1).unwrap();
+    let names: Vec<&str> = t.children.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Android", "Download", "DCIM", "note.txt"]);
+}
+
+#[test]
+fn treemap_omits_zero_sized_entries_and_caps_fan_out() {
+    let mut a = Arena::new(b"/r");
+    let mut entries: Vec<Entry> = (0..200).map(|i| file(&format!("f{i:03}"), i + 1)).collect();
+    entries.push(file("empty", 0));
+    a.apply_dir(b"/r", &entries).unwrap();
+
+    let t = a.treemap(ROOT, 1).unwrap();
+    assert!(
+        t.children.len() <= 48,
+        "fan-out is capped for the top level"
+    );
+    assert!(
+        !t.children.iter().any(|c| c.name == "empty"),
+        "a zero-byte entry has no tile to draw"
+    );
+}
+
+#[test]
+fn treemap_rejects_an_unknown_node() {
+    let a = populated();
+    assert!(a.treemap(9999, 1).is_err());
+}

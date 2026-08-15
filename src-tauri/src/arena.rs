@@ -94,6 +94,17 @@ pub struct View {
     pub complete: bool,
 }
 
+/// A node plus a bounded slice of its descendants, for the nested treemap.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreemapNode {
+    pub id: NodeId,
+    pub name: String,
+    pub size: u64,
+    pub is_dir: bool,
+    pub children: Vec<TreemapNode>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Crumb {
@@ -480,6 +491,55 @@ impl Arena {
         });
         files.truncate(limit);
         files.iter().map(|f| self.row(*f)).collect()
+    }
+
+    /// A depth-limited slice of the tree for the treemap.
+    ///
+    /// The treemap draws children inside their parent tile, so it needs more
+    /// than one level — but not the whole tree. Per-level caps keep the payload
+    /// bounded: anything past the cap is too small to be a legible tile anyway.
+    pub fn treemap(&self, id: NodeId, depth: usize) -> Result<TreemapNode, ArenaError> {
+        if !self.exists(id) {
+            return Err(ArenaError::UnknownNode(id));
+        }
+        /// Fan-out per level. Deeper tiles are smaller, so fewer are readable.
+        const CAPS: [usize; 3] = [48, 12, 6];
+        Ok(self.treemap_at(id, depth.min(CAPS.len()), &CAPS, 0))
+    }
+
+    fn treemap_at(
+        &self,
+        id: NodeId,
+        remaining: usize,
+        caps: &[usize],
+        level: usize,
+    ) -> TreemapNode {
+        let n = &self.nodes[id as usize];
+        let mut node = TreemapNode {
+            id,
+            name: String::from_utf8_lossy(&n.name).into_owned(),
+            size: n.size,
+            is_dir: n.is_dir,
+            children: Vec::new(),
+        };
+
+        if remaining == 0 || !n.is_dir {
+            return node;
+        }
+
+        let mut kids = self.children_of(id);
+        kids.sort_unstable_by(|a, b| {
+            let (x, y) = (&self.nodes[*a as usize], &self.nodes[*b as usize]);
+            y.size.cmp(&x.size).then_with(|| x.name.cmp(&y.name))
+        });
+        kids.truncate(caps.get(level).copied().unwrap_or(0));
+
+        node.children = kids
+            .into_iter()
+            .filter(|k| self.nodes[*k as usize].size > 0)
+            .map(|k| self.treemap_at(k, remaining - 1, caps, level + 1))
+            .collect();
+        node
     }
 
     /// Case-insensitive substring match on names, largest first.

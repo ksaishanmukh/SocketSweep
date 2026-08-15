@@ -8,7 +8,17 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Connected, Crumb, Deleted, Device, Row, ScanProgress, Stats, View } from "./types";
+import type {
+  Connected,
+  Crumb,
+  Deleted,
+  Device,
+  Row,
+  ScanProgress,
+  Stats,
+  TreemapNode,
+  View,
+} from "./types";
 
 export const listDevices = () => invoke<Device[]>("list_devices");
 
@@ -29,6 +39,11 @@ export const scan = (root?: string) => invoke<Stats>("scan", { root });
 export const getView = (id?: number, limit?: number) => invoke<View>("get_view", { id, limit });
 
 export const getBreadcrumbs = (id: number) => invoke<Crumb[]>("get_breadcrumbs", { id });
+
+/** A depth-limited slice of the tree, so the treemap can nest without the
+ * frontend holding the tree. */
+export const getTreemap = (id?: number, depth?: number) =>
+  invoke<TreemapNode>("get_treemap", { id, depth });
 
 export const getStats = () => invoke<Stats>("get_stats");
 

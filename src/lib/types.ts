@@ -69,3 +69,12 @@ export interface ScanProgress {
 }
 
 export const ROOT_ID = 0;
+
+/** A node plus a bounded slice of its descendants, for the nested treemap. */
+export interface TreemapNode {
+  id: number;
+  name: string;
+  size: number;
+  isDir: boolean;
+  children: TreemapNode[];
+}

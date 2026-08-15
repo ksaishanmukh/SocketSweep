@@ -26,7 +26,7 @@ use socketsweep_protocol::Frame;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use adb::{Adb, Device};
-use arena::{Arena, Crumb, NodeId, Row, Stats, View};
+use arena::{Arena, Crumb, NodeId, Row, Stats, TreemapNode, View};
 use session::Session;
 
 /// Rows per view response. Enough to fill any screen; the frontend virtualises
@@ -282,6 +282,18 @@ fn get_breadcrumbs(state: State<'_, AppState>, id: NodeId) -> CmdResult<Vec<Crum
     with_tree(&state, |t| t.breadcrumbs(id))?.map_err(|e| e.to_string())
 }
 
+/// A depth-limited slice of the tree, so the treemap can draw children nested
+/// inside their parent tile without the frontend holding the tree.
+#[tauri::command]
+fn get_treemap(
+    state: State<'_, AppState>,
+    id: Option<NodeId>,
+    depth: Option<usize>,
+) -> CmdResult<TreemapNode> {
+    let id = id.unwrap_or(arena::ROOT);
+    with_tree(&state, |t| t.treemap(id, depth.unwrap_or(2)))?.map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
     with_tree(&state, |t| t.stats())
@@ -357,6 +369,7 @@ pub fn run() {
             scan,
             get_view,
             get_breadcrumbs,
+            get_treemap,
             get_stats,
             largest_files,
             search,
