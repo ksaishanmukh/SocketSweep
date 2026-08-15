@@ -126,8 +126,18 @@ pub struct TreemapNode {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppUsage {
-    /// Android package name, e.g. `com.example.game`. Not a display label —
-    /// resolving those needs a round trip to the package manager.
+    /// Android package name, e.g. `com.example.game`.
+    ///
+    /// Not the app's display label, and deliberately so. Android does not hand
+    /// labels to the adb shell: `pm list packages -f` gives only the APK path,
+    /// `dumpsys package` carries no label field, and no `aapt` ships on device
+    /// (all checked against a real handset). The label is `android:label` in the
+    /// APK's *binary* AndroidManifest.xml, nearly always a resource reference
+    /// that has to be resolved through `resources.arsc` for the right locale —
+    /// so showing "Call of Duty: Mobile" means decoding two compiled formats.
+    ///
+    /// The package name is unambiguous and identifies the app perfectly well,
+    /// which is why this stays as it is.
     pub package: String,
     pub size: u64,
     pub files: u32,
