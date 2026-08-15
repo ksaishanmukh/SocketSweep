@@ -5,6 +5,7 @@ import {
   type Crumb,
   type Row,
   type ScanRecord,
+  type AppUsage,
   type Stats,
   type TreemapNode,
   type TypeGroup,
@@ -12,7 +13,7 @@ import {
 } from "../lib/types";
 
 /** Which analysis the main canvas is showing. */
-export type Mode = "treemap" | "largest" | "types";
+export type Mode = "treemap" | "largest" | "types" | "apps";
 
 export type Phase = "setup" | "connecting" | "scanning" | "result";
 
@@ -38,6 +39,7 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
   const [mode, setMode] = useState<Mode>("treemap");
   const [largest, setLargest] = useState<Row[]>([]);
   const [types, setTypes] = useState<TypeGroup[]>([]);
+  const [apps, setApps] = useState<AppUsage[]>([]);
   /** Baseline captured at connect, so a rescan still compares to last session. */
   const [previous, setPrevious] = useState<ScanRecord | null>(null);
 
@@ -83,9 +85,14 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
   /** The cross-tree analyses. Cheap Rust queries, so just re-run both. */
   const refreshAnalyses = useCallback(async () => {
     try {
-      const [top, groups] = await Promise.all([ipc.largestFiles(100), ipc.typeBreakdown()]);
+      const [top, groups, owners] = await Promise.all([
+        ipc.largestFiles(100),
+        ipc.typeBreakdown(),
+        ipc.appBreakdown(50),
+      ]);
       setLargest(top);
       setTypes(groups);
+      setApps(owners);
     } catch {
       // These are secondary views; a failure here should not disturb the scan.
     }
@@ -185,6 +192,7 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
     setQuery("");
     setLargest([]);
     setTypes([]);
+    setApps([]);
     setPrevious(null);
     setPhase("setup");
   }, [log, notify]);
@@ -242,6 +250,7 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
     mode,
     largest,
     types,
+    apps,
     previous,
     setQuery,
     setMode,

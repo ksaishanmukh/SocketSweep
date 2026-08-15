@@ -27,7 +27,7 @@ use socketsweep_protocol::Frame;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use adb::{Adb, Device};
-use arena::{Arena, Crumb, NodeId, Row, Stats, TreemapNode, TypeGroup, View};
+use arena::{AppUsage, Arena, Crumb, NodeId, Row, Stats, TreemapNode, TypeGroup, View};
 use history::ScanRecord;
 use session::Session;
 
@@ -337,6 +337,14 @@ fn type_breakdown(state: State<'_, AppState>) -> CmdResult<Vec<TypeGroup>> {
     with_tree(&state, |t| t.type_breakdown())
 }
 
+/// Storage attributed to the app that owns it. Answers "which app is eating my
+/// space", which the file-type view cannot: most of it is game assets whose
+/// extensions no category list recognises.
+#[tauri::command]
+fn app_breakdown(state: State<'_, AppState>, limit: Option<usize>) -> CmdResult<Vec<AppUsage>> {
+    with_tree(&state, |t| t.app_breakdown(limit.unwrap_or(50)))
+}
+
 #[tauri::command]
 fn search(state: State<'_, AppState>, query: String, limit: Option<usize>) -> CmdResult<Vec<Row>> {
     with_tree(&state, |t| t.search(&query, limit.unwrap_or(200)))
@@ -404,6 +412,7 @@ pub fn run() {
             get_stats,
             largest_files,
             type_breakdown,
+            app_breakdown,
             search,
             delete,
         ])

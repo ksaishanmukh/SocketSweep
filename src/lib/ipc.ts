@@ -9,6 +9,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  AppUsage,
   Connected,
   Crumb,
   Deleted,
@@ -52,6 +53,8 @@ export const largestFiles = (limit?: number) => invoke<Row[]>("largest_files", {
 
 /** Total bytes per broad file category — what kind of thing is eating space. */
 export const typeBreakdown = () => invoke<TypeGroup[]>("type_breakdown");
+
+export const appBreakdown = (limit?: number) => invoke<AppUsage[]>("app_breakdown", { limit });
 
 export const search = (query: string, limit?: number) => invoke<Row[]>("search", { query, limit });
 

@@ -122,6 +122,19 @@ pub struct TreemapNode {
     pub children: Vec<TreemapNode>,
 }
 
+/// Storage owned by one app, summed across its data, obb and media folders.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppUsage {
+    /// Android package name, e.g. `com.example.game`. Not a display label —
+    /// resolving those needs a round trip to the package manager.
+    pub package: String,
+    pub size: u64,
+    pub files: u32,
+    /// Whichever of its folders is largest, so the UI can navigate there.
+    pub id: NodeId,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Crumb {
@@ -616,6 +629,77 @@ impl Arena {
 
         groups.sort_unstable_by(|a, b| b.size.cmp(&a.size).then_with(|| a.label.cmp(b.label)));
         groups
+    }
+
+    fn child_named(&self, parent: NodeId, name: &[u8]) -> Option<NodeId> {
+        let mut cur = self.nodes.get(parent as usize)?.first_child;
+        while cur != NONE {
+            let n = &self.nodes[cur as usize];
+            if !n.removed && &*n.name == name {
+                return Some(cur);
+            }
+            cur = n.next_sibling;
+        }
+        None
+    }
+
+    /// Storage attributed to the app that owns it.
+    ///
+    /// Android puts per-app files under `Android/{data,obb,media}/<package>`, so
+    /// ownership is a property of *where* a file lives, not what it is called.
+    /// That matters: on a real device most of the space is game assets with
+    /// extensions no category list would recognise — 57GB of `.pak`, `.mipmaps`,
+    /// `.erp` and `.bnk` on the phone this was built against, all of which the
+    /// file-type view can only call "Other". Location tells you it belongs to a
+    /// specific game; the extension never will.
+    ///
+    /// Cheap: each package directory already carries its subtree totals, so this
+    /// visits one node per package rather than walking the tree.
+    pub fn app_breakdown(&self, limit: usize) -> Vec<AppUsage> {
+        const AREAS: [&[u8]; 3] = [b"data", b"obb", b"media"];
+
+        let Some(android) = self.child_named(ROOT, b"Android") else {
+            return Vec::new();
+        };
+
+        // A package can own directories in more than one area; merge them.
+        let mut totals: HashMap<Box<[u8]>, (u64, u32, NodeId, u64)> = HashMap::new();
+
+        for area in AREAS {
+            let Some(area_id) = self.child_named(android, area) else {
+                continue;
+            };
+            for pkg in self.children_of(area_id) {
+                let n = &self.nodes[pkg as usize];
+                if !n.is_dir {
+                    continue;
+                }
+                let slot = totals.entry(n.name.clone()).or_insert((0, 0, pkg, 0));
+                slot.0 += n.size;
+                slot.1 += n.files;
+                // Point at whichever location holds the most, so "go to it"
+                // lands somewhere useful.
+                if n.size > slot.3 {
+                    slot.2 = pkg;
+                    slot.3 = n.size;
+                }
+            }
+        }
+
+        let mut rows: Vec<AppUsage> = totals
+            .into_iter()
+            .filter(|(_, (size, _, _, _))| *size > 0)
+            .map(|(name, (size, files, id, _))| AppUsage {
+                package: String::from_utf8_lossy(&name).into_owned(),
+                size,
+                files,
+                id,
+            })
+            .collect();
+
+        rows.sort_unstable_by(|a, b| b.size.cmp(&a.size).then_with(|| a.package.cmp(&b.package)));
+        rows.truncate(limit);
+        rows
     }
 
     /// Case-insensitive substring match on names, largest first.

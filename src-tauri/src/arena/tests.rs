@@ -562,3 +562,101 @@ fn a_directory_listing_omits_the_parent_it_would_repeat_on_every_row() {
     let rows = a.view(ROOT, 10).unwrap().rows;
     assert!(rows.iter().all(|r| r.parent.is_none()));
 }
+
+// ── Per-app attribution ─────────────────────────────────────────────────────
+
+/// Mirrors the real Android layout: a package can hold space in more than one
+/// area, and obb is usually where the bulk of a game lives.
+fn with_apps() -> Arena {
+    let mut a = Arena::new(b"/sdcard");
+    a.apply_dir(b"/sdcard", &[dir("Android"), dir("DCIM")])
+        .unwrap();
+    a.apply_dir(b"/sdcard/Android", &[dir("data"), dir("obb"), dir("media")])
+        .unwrap();
+
+    a.apply_dir(b"/sdcard/Android/data", &[dir("com.game"), dir("com.chat")])
+        .unwrap();
+    a.apply_dir(b"/sdcard/Android/data/com.game", &[file("cache.bin", 500)])
+        .unwrap();
+    a.apply_dir(b"/sdcard/Android/data/com.chat", &[file("db.sqlite", 300)])
+        .unwrap();
+
+    a.apply_dir(b"/sdcard/Android/obb", &[dir("com.game")])
+        .unwrap();
+    a.apply_dir(b"/sdcard/Android/obb/com.game", &[file("assets.pak", 9000)])
+        .unwrap();
+
+    a.apply_dir(b"/sdcard/Android/media", &[dir("com.chat")])
+        .unwrap();
+    a.apply_dir(b"/sdcard/Android/media/com.chat", &[file("photo.jpg", 100)])
+        .unwrap();
+
+    a.apply_dir(b"/sdcard/DCIM", &[file("own.jpg", 42)])
+        .unwrap();
+    a.finish();
+    a
+}
+
+#[test]
+fn app_breakdown_sums_a_package_across_data_obb_and_media() {
+    let apps = with_apps().app_breakdown(10);
+    let game = apps.iter().find(|a| a.package == "com.game").unwrap();
+    let chat = apps.iter().find(|a| a.package == "com.chat").unwrap();
+
+    assert_eq!(game.size, 9500, "obb assets plus data cache");
+    assert_eq!(game.files, 2);
+    assert_eq!(chat.size, 400, "data plus media");
+    assert_eq!(chat.files, 2);
+}
+
+#[test]
+fn app_breakdown_is_ordered_largest_first() {
+    let apps = with_apps().app_breakdown(10);
+    assert_eq!(
+        apps.iter().map(|a| a.package.as_str()).collect::<Vec<_>>(),
+        ["com.game", "com.chat"]
+    );
+}
+
+/// The id should land on the folder holding the bulk of the package, which for
+/// a game is obb rather than the data directory it also owns.
+#[test]
+fn app_breakdown_points_at_the_largest_folder_a_package_owns() {
+    let a = with_apps();
+    let game = a
+        .app_breakdown(10)
+        .into_iter()
+        .find(|x| x.package == "com.game")
+        .unwrap();
+    assert_eq!(
+        a.path_of(game.id).unwrap(),
+        b"/sdcard/Android/obb/com.game".to_vec()
+    );
+}
+
+#[test]
+fn app_breakdown_ignores_storage_outside_the_android_tree() {
+    let apps = with_apps().app_breakdown(10);
+    let attributed: u64 = apps.iter().map(|a| a.size).sum();
+    assert_eq!(attributed, 9900, "DCIM belongs to no app and is excluded");
+}
+
+#[test]
+fn app_breakdown_is_empty_when_there_is_no_android_folder() {
+    let mut a = Arena::new(b"/sdcard");
+    a.apply_dir(b"/sdcard", &[file("loose.txt", 5)]).unwrap();
+    assert!(a.app_breakdown(10).is_empty());
+}
+
+#[test]
+fn app_breakdown_skips_a_package_whose_files_were_deleted() {
+    let mut a = with_apps();
+    let obb = id_of(&a, b"/sdcard/Android/obb/com.game");
+    let data = id_of(&a, b"/sdcard/Android/data/com.game");
+    a.remove(obb).unwrap();
+    a.remove(data).unwrap();
+
+    let apps = a.app_breakdown(10);
+    assert!(!apps.iter().any(|x| x.package == "com.game"));
+    assert!(apps.iter().any(|x| x.package == "com.chat"));
+}

@@ -4,6 +4,7 @@ const TABS: { id: Mode; label: string; hint: string }[] = [
   { id: "treemap", label: "Treemap", hint: "Sizes as areas, drill down by folder" },
   { id: "largest", label: "Largest files", hint: "The biggest files anywhere on the device" },
   { id: "types", label: "File types", hint: "Storage grouped by kind of file" },
+  { id: "apps", label: "By app", hint: "Storage grouped by the app that owns it" },
 ];
 
 export function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {

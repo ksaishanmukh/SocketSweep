@@ -2,7 +2,17 @@ import { useMemo } from "react";
 import { formatBytes, formatNumber } from "../../lib/format";
 import type { TreemapItem } from "../../lib/squarify";
 import type { Mode } from "../../hooks/useScanSession";
-import type { Crumb, Row, ScanRecord, Stats, TreemapNode, TypeGroup, View } from "../../lib/types";
+import type {
+  AppUsage,
+  Crumb,
+  Row,
+  ScanRecord,
+  Stats,
+  TreemapNode,
+  TypeGroup,
+  View,
+} from "../../lib/types";
+import { AppBreakdown } from "../AppBreakdown";
 import { FileList } from "../FileList";
 import { IconSearch } from "../icons";
 import { ModeTabs } from "../ModeTabs";
@@ -30,6 +40,7 @@ export function ResultScreen({
   mode,
   largest,
   types,
+  apps,
   previous,
   onModeChange,
   onReveal,
@@ -49,6 +60,7 @@ export function ResultScreen({
   mode: Mode;
   largest: Row[];
   types: TypeGroup[];
+  apps: AppUsage[];
   previous: ScanRecord | null;
   onModeChange: (m: Mode) => void;
   onReveal: (row: Row) => void;
@@ -187,6 +199,8 @@ export function ResultScreen({
           )}
 
           {mode === "types" && <TypeBreakdown groups={types} />}
+
+          {mode === "apps" && <AppBreakdown apps={apps} onOpen={onOpen} />}
         </div>
 
         <div className="w-full lg:w-[26rem] shrink-0 flex flex-col min-h-0 glass-card rounded-xl">

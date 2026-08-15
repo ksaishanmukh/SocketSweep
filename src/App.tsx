@@ -39,6 +39,7 @@ export default function App() {
             mode={session.mode}
             largest={session.largest}
             types={session.types}
+            apps={session.apps}
             previous={session.previous}
             onModeChange={session.setMode}
             onReveal={session.reveal}

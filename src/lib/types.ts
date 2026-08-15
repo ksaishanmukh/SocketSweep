@@ -33,6 +33,16 @@ export interface ScanRecord {
   at: number;
 }
 
+/** Storage owned by one app, summed across its data, obb and media folders. */
+export interface AppUsage {
+  /** Android package name. Not a display label. */
+  package: string;
+  size: number;
+  files: number;
+  /** Largest folder the package owns, for navigating to it. */
+  id: number;
+}
+
 /** Total bytes per broad file category. */
 export interface TypeGroup {
   label: string;

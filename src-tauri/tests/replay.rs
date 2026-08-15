@@ -108,8 +108,33 @@ fn a_recorded_device_scan_builds_a_consistent_tree() {
         "every byte must land in exactly one category"
     );
 
+    // Per-app attribution is the view that works where file types cannot:
+    // most of a real device is app-owned data with unrecognisable extensions.
+    let apps = arena.app_breakdown(15);
+    let attributed: u64 = apps.iter().map(|a| a.size).sum();
+    assert!(
+        apps.iter().all(|a| a.size > 0),
+        "a listed app must own something"
+    );
     println!(
-        "largest file: {} ({} bytes)",
+        "
+per-app: {} packages, {:.2} GB attributed ({:.0}% of the device)",
+        apps.len(),
+        attributed as f64 / 1024f64.powi(3),
+        (attributed as f64 / stats.size as f64) * 100.0
+    );
+    for a in apps.iter().take(8) {
+        println!(
+            "  {:<44} {:>8.2} GB {:>8} files",
+            a.package,
+            a.size as f64 / 1024f64.powi(3),
+            a.files
+        );
+    }
+
+    println!(
+        "
+largest file: {} ({} bytes)",
         largest[0].name, largest[0].size
     );
     for g in &types {
