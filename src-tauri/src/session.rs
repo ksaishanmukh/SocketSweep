@@ -26,6 +26,16 @@ use crate::adb::{Adb, Result as AdbResult};
 pub const HOST_PORT: u16 = 5050;
 
 const DEVICE_BIN: &str = "/data/local/tmp/socketsweep-daemon";
+
+/// Kill any running daemon.
+///
+/// The bracket around the first letter stops the pattern from matching the very
+/// shell that is running it. Without it `pkill -f socketsweep-daemon` finds its
+/// own `sh -c` command line, and since pkill signals matches as it walks
+/// `/proc`, it can kill its own shell before ever reaching the daemon — leaving
+/// the stale process alive, which is the one thing this command exists to
+/// prevent. Verified on a device: the plain form exits 143 and never completes.
+const KILL_DAEMON: &str = "pkill -f '[s]ocketsweep-daemon'";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// A scan streams frames continuously, so this bounds the gap between frames
 /// rather than the whole scan. The old code allowed 120s for one giant response.
@@ -60,7 +70,7 @@ impl Session {
     ) -> AdbResult<Session> {
         // Any daemon left over from a crashed run holds the old socket and the
         // old binary path.
-        adb.shell_ignoring_errors(serial, "pkill -f socketsweep-daemon");
+        adb.shell_ignoring_errors(serial, KILL_DAEMON);
 
         // Scoped Storage otherwise hides most of /sdcard from the shell user.
         adb.shell_ignoring_errors(
@@ -199,7 +209,7 @@ impl Session {
             let _ = stream.shutdown(Shutdown::Both);
         }
         adb.forward_remove(&self.serial, HOST_PORT);
-        adb.shell_ignoring_errors(&self.serial, "pkill -f socketsweep-daemon");
+        adb.shell_ignoring_errors(&self.serial, KILL_DAEMON);
         adb.shell_ignoring_errors(&self.serial, &format!("rm -f {DEVICE_BIN}"));
     }
 }
