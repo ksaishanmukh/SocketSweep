@@ -17,6 +17,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
 serde.workspace = true
 serde_json.workspace = true
+socketsweep-protocol.workspace = true
+
+# default-features off drops the `framebuffer` feature, which pulls in the
+# `image` crate for screenshotting — nothing this app does.
+adb_client = { version = "3", default-features = false }
+rand = "0.9"
