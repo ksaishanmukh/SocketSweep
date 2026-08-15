@@ -194,7 +194,10 @@ fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> Cmd
         .map(|r| r.into_bytes())
         .unwrap_or_else(|| session.root.clone());
 
-    *state.tree.lock().unwrap() = Some(Arena::new(&root_bytes));
+    // The arena is created from Frame::ScanStarted, not from root_bytes: the
+    // daemon canonicalises, so the root it walks is /storage/emulated/0 where we
+    // asked for /sdcard, and every frame is keyed on the resolved path.
+    *state.tree.lock().unwrap() = None;
     *state.watching.lock().unwrap() = arena::ROOT;
 
     let mut last_push = std::time::Instant::now();
@@ -202,6 +205,9 @@ fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> Cmd
 
     let result = session.scan(&root_bytes, |frame| {
         match frame {
+            Frame::ScanStarted { root } => {
+                *state.tree.lock().unwrap() = Some(Arena::new(&root));
+            }
             Frame::Dir { path, entries } => {
                 {
                     let mut guard = state.tree.lock().unwrap();
@@ -217,6 +223,12 @@ fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> Cmd
                 if last_push.elapsed() >= VIEW_PUSH_INTERVAL {
                     last_push = std::time::Instant::now();
                     emit_progress(&app, &state);
+                }
+            }
+            Frame::ScanDone(_) => {
+                // Authoritative end of walk; the arena cannot infer it.
+                if let Some(tree) = state.tree.lock().unwrap().as_mut() {
+                    tree.finish();
                 }
             }
             Frame::Error { message } => {

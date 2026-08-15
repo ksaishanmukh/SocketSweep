@@ -204,6 +204,17 @@ fn run_scan<W: Write>(root: &Path, threads: usize, stream: &UnixStream, out: &mu
         max_depth: 64,
     };
 
+    // `root` here is already canonicalised, so on a device it is
+    // /storage/emulated/0 rather than the /sdcard that was asked for. Every Dir
+    // frame is keyed on it, so the host has to be told before any of them
+    // arrive or it cannot place them.
+    let _ = write_msg(
+        out,
+        &Frame::ScanStarted {
+            root: path_bytes(root),
+        },
+    );
+
     // The scanner writes Dir frames straight into the socket as it walks, so the
     // host can start drawing before the walk finishes. It needs an owned `'static`
     // sink (jwalk's callback bound), hence a cloned descriptor rather than a
@@ -279,6 +290,12 @@ fn count_entries(path: &Path) -> u64 {
         }
     }
     n
+}
+
+#[cfg(unix)]
+fn path_bytes(p: &Path) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+    p.as_os_str().as_bytes().to_vec()
 }
 
 #[cfg(unix)]

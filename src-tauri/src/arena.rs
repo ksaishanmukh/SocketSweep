@@ -62,7 +62,14 @@ pub struct Arena {
     dir_index: HashMap<Box<[u8]>, NodeId>,
     root_path: Box<[u8]>,
     /// Directories announced by a parent whose own frame has not yet arrived.
+    ///
+    /// A progress hint, not an invariant: a directory at the walker's depth
+    /// limit is announced by its parent and then never read, so this does not
+    /// reliably reach zero. Whether the scan is over is [`Arena::finish`]'s
+    /// business.
     pending_dirs: u32,
+    /// Set once the daemon reports the walk is done.
+    finished: bool,
 }
 
 // ── Values handed to the frontend ───────────────────────────────────────────
@@ -178,6 +185,7 @@ impl Arena {
             dir_index,
             root_path,
             pending_dirs: 1,
+            finished: false,
         }
     }
 
@@ -352,8 +360,19 @@ impl Arena {
 
     // ── Queries ─────────────────────────────────────────────────────────────
 
+    /// The daemon has reported the walk complete.
+    ///
+    /// Deliberately explicit rather than inferred from []:
+    /// a directory at the walker's depth limit is announced but never read, so
+    /// the pending count does not reliably reach zero. Inferring it left the UI
+    /// showing "scanning" forever on a real device.
+    pub fn finish(&mut self) {
+        self.finished = true;
+        self.pending_dirs = 0;
+    }
+
     pub fn scanning(&self) -> bool {
-        self.pending_dirs > 0
+        !self.finished
     }
 
     pub fn stats(&self) -> Stats {
@@ -361,7 +380,9 @@ impl Arena {
         Stats {
             size: root.size,
             files: root.files,
-            dirs: root.dirs,
+            // +1 for the root, which has no parent to have counted it. Without
+            // this the host reports one fewer folder than the daemon does.
+            dirs: root.dirs + 1,
             scanning: self.scanning(),
         }
     }

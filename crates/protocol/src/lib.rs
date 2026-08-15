@@ -46,6 +46,17 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Frame {
     Pong,
+    /// Sent once, before any [`Frame::Dir`], carrying the root the daemon
+    /// actually resolved to.
+    ///
+    /// This is not the same as the root that was requested. On a real device
+    /// `/sdcard` is a symlink chain to `/storage/emulated/0`, and the daemon
+    /// canonicalises before walking — so every subsequent frame is keyed on the
+    /// resolved path. A host that built its index from the requested path would
+    /// fail to place a single frame.
+    ScanStarted {
+        root: Vec<u8>,
+    },
     /// The contents of one directory.
     ///
     /// A directory is always discovered while reading its parent, so the host is
@@ -219,6 +230,19 @@ mod tests {
             let back: Request = read_msg(&mut buf.as_slice()).unwrap().unwrap();
             assert_eq!(back, req);
         }
+    }
+
+    /// The daemon reports the root it resolved to, which is not the root that
+    /// was asked for: /sdcard is a symlink chain on a real device.
+    #[test]
+    fn scan_started_carries_the_resolved_root() {
+        let frame = Frame::ScanStarted {
+            root: b"/storage/emulated/0".to_vec(),
+        };
+        let mut buf = Vec::new();
+        write_msg(&mut buf, &frame).unwrap();
+        let back: Frame = read_msg(&mut buf.as_slice()).unwrap().unwrap();
+        assert_eq!(back, frame);
     }
 
     #[test]

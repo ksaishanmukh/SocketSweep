@@ -63,7 +63,10 @@ fn sizes_aggregate_up_the_whole_ancestry() {
     let s = a.stats();
     assert_eq!(s.size, 29_000_000_000 + 3_000_000_000 + 4_000_000_000 + 10);
     assert_eq!(s.files, 5);
-    assert_eq!(s.dirs, 4, "Android, DCIM, DCIM/Camera, Download");
+    assert_eq!(
+        s.dirs, 5,
+        "the root plus Android, DCIM, DCIM/Camera, Download"
+    );
 }
 
 #[test]
@@ -88,7 +91,13 @@ fn totals_climb_as_frames_arrive_rather_than_appearing_at_the_end() {
 
     a.apply_dir(b"/sdcard/A/B", &[file("two", 500)]).unwrap();
     assert_eq!(a.stats().size, 600);
-    assert!(!a.scanning(), "everything announced has now been listed");
+
+    // Still "scanning" until the daemon says otherwise. The arena cannot infer
+    // completion: a directory at the walker depth limit is announced and then
+    // never read, so pending counts do not reliably reach zero.
+    assert!(a.scanning(), "completion is reported, not inferred");
+    a.finish();
+    assert!(!a.scanning());
 }
 
 #[test]
