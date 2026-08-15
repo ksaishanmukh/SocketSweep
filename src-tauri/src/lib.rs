@@ -17,6 +17,7 @@
 
 pub mod adb;
 pub mod arena;
+pub mod history;
 pub mod session;
 
 use std::sync::Mutex;
@@ -26,7 +27,8 @@ use socketsweep_protocol::Frame;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use adb::{Adb, Device};
-use arena::{Arena, Crumb, NodeId, Row, Stats, TreemapNode, View};
+use arena::{Arena, Crumb, NodeId, Row, Stats, TreemapNode, TypeGroup, View};
+use history::ScanRecord;
 use session::Session;
 
 /// Rows per view response. Enough to fill any screen; the frontend virtualises
@@ -101,6 +103,10 @@ pub struct Connected {
     pub serial: String,
     pub model: String,
     pub root: String,
+    /// The last scan of this device, if we have seen it before. Captured at
+    /// connect so a rescan still compares against the previous session rather
+    /// than against the scan a moment ago.
+    pub previous: Option<ScanRecord>,
 }
 
 #[tauri::command]
@@ -139,10 +145,13 @@ fn connect(
     *state.session.lock().unwrap() = Some(session);
     *state.tree.lock().unwrap() = None;
 
+    let previous = history::previous(&app, &serial);
+
     Ok(Connected {
         serial,
         model,
         root,
+        previous,
     })
 }
 
@@ -223,6 +232,9 @@ fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> Cmd
     }
 
     let stats = current_stats(&state)?;
+    // Read the serial off the guard already held above. Locking state.session
+    // again here would deadlock: std::sync::Mutex is not reentrant.
+    history::record(&app, &session.serial, &stats);
     emit_progress(&app, &state);
     let _ = app.emit("scan-complete", stats);
     Ok(stats)
@@ -306,6 +318,13 @@ fn largest_files(state: State<'_, AppState>, limit: Option<usize>) -> CmdResult<
     with_tree(&state, |t| t.largest_files(limit.unwrap_or(100)))
 }
 
+/// Total bytes per broad file category. Answers "what kind of thing is eating
+/// the space", which no amount of folder-by-folder browsing makes obvious.
+#[tauri::command]
+fn type_breakdown(state: State<'_, AppState>) -> CmdResult<Vec<TypeGroup>> {
+    with_tree(&state, |t| t.type_breakdown())
+}
+
 #[tauri::command]
 fn search(state: State<'_, AppState>, query: String, limit: Option<usize>) -> CmdResult<Vec<Row>> {
     with_tree(&state, |t| t.search(&query, limit.unwrap_or(200)))
@@ -372,6 +391,7 @@ pub fn run() {
             get_treemap,
             get_stats,
             largest_files,
+            type_breakdown,
             search,
             delete,
         ])
