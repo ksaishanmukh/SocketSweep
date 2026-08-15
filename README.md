@@ -180,32 +180,40 @@ sequenceDiagram
 ### Prerequisites
 1. **Node.js** (v18+)
 2. **Rust** (v1.70+ with Cargo)
-3. **Android NDK** (v26d or newer)
-4. **Android SDK / ADB** installed and added to your system `$PATH`.
+3. **Android NDK** (v26d or newer) — only if you want to rebuild the device daemon
 
-### 1. Compile the C++ Daemon
-Cross-compile the daemon for `aarch64-linux-android`:
+You do *not* need ADB on your `$PATH`. SocketSweep bundles its own copy, fetched
+by `npm run setup` below.
+
+### 1. Install dependencies and fetch ADB
 ```bash
-# Set your NDK path
-export NDK=/path/to/your/android-ndk-r26d
-
-# Build the daemon
-cd engine
-bash ./build.sh
-```
-*This generates the stripped `daemon` binary in the `engine/` directory.*
-
-### 2. Install Frontend Dependencies
-```bash
-cd ..
 npm install
+npm run setup
 ```
+`npm run setup` downloads Google's platform-tools for your OS and places `adb`
+into `src-tauri/bin/`. That directory is deliberately not in git — it holds
+~18MB of per-platform binaries. Re-run with `npm run setup -- --force` to update.
 
-### 3. Run the App
+### 2. Run the App
 ```bash
 npm run tauri dev
 ```
 *Ensure your Android device is plugged in via USB and **USB Debugging** is enabled.*
+
+### Rebuilding the device daemon (optional)
+A prebuilt `src-tauri/bin/daemon` is checked in. To rebuild it from source you
+need the NDK:
+```bash
+export NDK=/path/to/your/android-ndk-r26d
+cd engine && bash ./build.sh
+cp daemon ../src-tauri/bin/daemon
+```
+
+### Checks
+```bash
+npm run lint && npm run typecheck && npm test
+cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
+```
 
 ---
 
