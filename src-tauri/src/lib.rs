@@ -1,55 +1,75 @@
-// ============================================================================
-// lib.rs — SocketSweep Tauri Bridge (Phase 2)
-// ============================================================================
-// Orchestrates the C++ Android daemon via ADB and communicates with it
-// over a TCP tunnel.  All commands return Result<String, String> so the
-// React frontend can display meaningful error messages.
-//
-// Wire protocol (matches Phase 1 daemon):
-//   → "PING\n"              ← {"status":"ok","message":"pong"}
-//   → "SCAN [path]\n"       ← {"status":"ok","scan_time_ms":…,"tree":{…}}
-//   → "SHUTDOWN\n"          ← {"status":"ok","message":"shutting down"}
-// ============================================================================
+//! SocketSweep desktop host.
+//!
+//! Orchestrates the on-device daemon over ADB, owns the scanned tree, and
+//! exposes it to the frontend as small typed queries.
+//!
+//! # Why the frontend does not get the tree
+//!
+//! It used to. The daemon serialised the whole thing to JSON, Rust passed it
+//! through as a `String`, and React held ~56,000 nodes in component state —
+//! then deep-cloned all of them with `JSON.parse(JSON.stringify(...))` on every
+//! delete. Here the tree stays in [`arena`] and React asks for the few hundred
+//! rows it is about to draw, referring to nodes by id.
+//!
+//! Nodes are addressed by id rather than path for a second reason: Android
+//! filenames are arbitrary bytes, and a path that round-tripped through a
+//! JavaScript string could come back subtly different — as a delete target.
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::process::Command;
+pub mod adb;
+pub mod arena;
+pub mod session;
+
 use std::sync::Mutex;
-use std::time::Duration;
 
-// ── Constants ───────────────────────────────────────────────────────────────
+use serde::Serialize;
+use socketsweep_protocol::Frame;
+use tauri::{AppHandle, Emitter, Manager, State};
 
-const DAEMON_PORT: u16 = 5050;
-const DAEMON_ADDR: &str = "127.0.0.1:5050";
-const DEVICE_BIN_PATH: &str = "/data/local/tmp/socketsweep_daemon";
-const TCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-const TCP_READ_TIMEOUT: Duration = Duration::from_secs(120); // scans can be slow
+use adb::{Adb, Device};
+use arena::{Arena, Crumb, NodeId, Row, Stats, View};
+use session::Session;
 
-/// Tracks the root path of the last successful scan so we can prevent its deletion.
-static SCAN_ROOT: Mutex<Option<String>> = Mutex::new(None);
+/// Rows per view response. Enough to fill any screen; the frontend virtualises
+/// and asks for more if it needs them.
+const DEFAULT_VIEW_LIMIT: usize = 500;
 
-// ── Resource Resolution ─────────────────────────────────────────────────────
+/// How often the host pushes an updated view during a scan. 10Hz is fast enough
+/// that numbers look live and slow enough that React is not re-rendering on
+/// every one of several thousand frames.
+const VIEW_PUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
-use tauri::Manager;
+#[derive(Default)]
+pub struct AppState {
+    adb: Mutex<Option<Adb>>,
+    session: Mutex<Option<Session>>,
+    tree: Mutex<Option<Arena>>,
+    /// The directory the frontend is currently showing. Only this view is
+    /// pushed during a scan, so the payload does not grow with the tree.
+    watching: Mutex<NodeId>,
+}
 
-fn bundled(app: &tauri::AppHandle, file_name: &str) -> Result<std::path::PathBuf, String> {
-    let resource_dir = app
+type CmdResult<T> = Result<T, String>;
+
+// ── Resource resolution ─────────────────────────────────────────────────────
+
+fn bundled(app: &AppHandle, file_name: &str) -> CmdResult<std::path::PathBuf> {
+    let dir = app
         .path()
         .resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {}", e))?;
+        .map_err(|e| format!("cannot locate the resource directory: {e}"))?;
 
-    let path = resource_dir.join("bin").join(file_name);
+    let path = dir.join("bin").join(file_name);
     if path.exists() {
         Ok(path)
     } else {
         Err(format!(
-            "Bundled binary '{file_name}' not found at {path:?}. Run `npm run setup` if you are running from source."
+            "bundled binary '{file_name}' is missing. Run `npm run setup` if you are running from source."
         ))
     }
 }
 
-/// A binary we execute on the host. Windows needs the `.exe` suffix.
-fn host_binary(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf, String> {
+/// A binary we execute on this machine. Windows needs the `.exe` suffix.
+fn host_binary(app: &AppHandle, name: &str) -> CmdResult<std::path::PathBuf> {
     let file_name = if cfg!(windows) {
         format!("{name}.exe")
     } else {
@@ -58,275 +78,302 @@ fn host_binary(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf,
     bundled(app, &file_name)
 }
 
-/// A payload we push to the device. Always an Android ELF, never suffixed —
-/// which is why this cannot share a code path with `host_binary`.
-fn device_payload(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf, String> {
+/// A payload we push to the phone. Always an Android ELF, never suffixed —
+/// which is why it cannot share a code path with [`host_binary`].
+fn device_payload(app: &AppHandle, name: &str) -> CmdResult<std::path::PathBuf> {
     bundled(app, name)
 }
 
-// ── ADB helper ──────────────────────────────────────────────────────────────
+// ── Commands: connection ────────────────────────────────────────────────────
 
-/// Run an ADB command and return its stdout. Maps any failure to a
-/// human-readable `Err(String)`.
-fn adb(adb_path: &std::path::Path, args: &[&str]) -> Result<String, String> {
-    use std::io::Read;
-    use std::time::{Duration, Instant};
+#[tauri::command]
+fn list_devices(app: AppHandle, state: State<'_, AppState>) -> CmdResult<Vec<Device>> {
+    let mut guard = state.adb.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(Adb::connect(&host_binary(&app, "adb")?).map_err(|e| e.to_string())?);
+    }
+    guard.as_mut().unwrap().devices().map_err(|e| e.to_string())
+}
 
-    let mut child = Command::new(adb_path)
-        .args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to execute adb binary at {:?}: {}", adb_path, e))?;
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Connected {
+    pub serial: String,
+    pub model: String,
+    pub root: String,
+}
 
-    let mut stdout_pipe = child.stdout.take().unwrap();
-    let mut stderr_pipe = child.stderr.take().unwrap();
+#[tauri::command]
+fn connect(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    serial: Option<String>,
+    root: Option<String>,
+) -> CmdResult<Connected> {
+    let root = root.unwrap_or_else(|| "/sdcard".into());
 
-    let stdout_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stdout_pipe.read_to_end(&mut buf);
-        buf
+    let mut adb_guard = state.adb.lock().unwrap();
+    if adb_guard.is_none() {
+        *adb_guard = Some(Adb::connect(&host_binary(&app, "adb")?).map_err(|e| e.to_string())?);
+    }
+    let adb = adb_guard.as_mut().unwrap();
+
+    let serial = adb.resolve(serial.as_deref()).map_err(|e| e.to_string())?;
+    let model = adb
+        .devices()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|d| d.serial == serial)
+        .map(|d| d.model)
+        .unwrap_or_else(|| serial.clone());
+
+    // Replace any previous session before starting a new one.
+    if let Some(old) = state.session.lock().unwrap().take() {
+        old.stop(adb);
+    }
+
+    let daemon = device_payload(&app, "daemon")?;
+    let session =
+        Session::start(adb, &serial, &daemon, root.as_bytes()).map_err(|e| e.to_string())?;
+
+    *state.session.lock().unwrap() = Some(session);
+    *state.tree.lock().unwrap() = None;
+
+    Ok(Connected {
+        serial,
+        model,
+        root,
+    })
+}
+
+#[tauri::command]
+fn disconnect(state: State<'_, AppState>) -> CmdResult<()> {
+    let session = state.session.lock().unwrap().take();
+    let mut adb_guard = state.adb.lock().unwrap();
+
+    if let (Some(session), Some(adb)) = (session, adb_guard.as_mut()) {
+        session.stop(adb);
+    }
+    *state.tree.lock().unwrap() = None;
+    *state.watching.lock().unwrap() = arena::ROOT;
+    Ok(())
+}
+
+// ── Commands: scanning ──────────────────────────────────────────────────────
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScanProgress {
+    stats: Stats,
+    /// The view the frontend said it was looking at, refreshed. Sending only
+    /// this keeps the payload constant no matter how large the tree grows.
+    view: Option<View>,
+}
+
+/// Walk the device and stream the tree into the arena.
+///
+/// Emits `scan-progress` about ten times a second while running and
+/// `scan-complete` at the end. Returns once the walk finishes.
+#[tauri::command]
+fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> CmdResult<Stats> {
+    let session_guard = state.session.lock().unwrap();
+    let session = session_guard
+        .as_ref()
+        .ok_or("not connected to a device yet")?;
+
+    let root_bytes = root
+        .map(|r| r.into_bytes())
+        .unwrap_or_else(|| session.root.clone());
+
+    *state.tree.lock().unwrap() = Some(Arena::new(&root_bytes));
+    *state.watching.lock().unwrap() = arena::ROOT;
+
+    let mut last_push = std::time::Instant::now();
+    let mut scan_error: Option<String> = None;
+
+    let result = session.scan(&root_bytes, |frame| {
+        match frame {
+            Frame::Dir { path, entries } => {
+                {
+                    let mut guard = state.tree.lock().unwrap();
+                    if let Some(tree) = guard.as_mut() {
+                        if let Err(e) = tree.apply_dir(&path, &entries) {
+                            // A frame we cannot place means the tree is already
+                            // inconsistent; surface it rather than drawing a lie.
+                            scan_error.get_or_insert_with(|| e.to_string());
+                        }
+                    }
+                }
+
+                if last_push.elapsed() >= VIEW_PUSH_INTERVAL {
+                    last_push = std::time::Instant::now();
+                    emit_progress(&app, &state);
+                }
+            }
+            Frame::Error { message } => {
+                scan_error.get_or_insert(message);
+            }
+            _ => {}
+        }
     });
 
-    let stderr_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stderr_pipe.read_to_end(&mut buf);
-        buf
-    });
-
-    let timeout_secs = 15;
-    let timeout = Duration::from_secs(timeout_secs);
-    let start = Instant::now();
-    let status;
-
-    loop {
-        if let Some(s) = child
-            .try_wait()
-            .map_err(|e| format!("Failed to wait on adb process: {}", e))?
-        {
-            status = s;
-            break;
-        }
-        if start.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!("ADB command timed out after {} seconds. Please reconnect your device and try again.", timeout_secs));
-        }
-        std::thread::sleep(Duration::from_millis(50));
+    result?;
+    if let Some(e) = scan_error {
+        return Err(e);
     }
 
-    let stdout_bytes = stdout_thread.join().unwrap_or_default();
-    let stderr_bytes = stderr_thread.join().unwrap_or_default();
-
-    let stdout = String::from_utf8_lossy(&stdout_bytes).to_string();
-    let stderr = String::from_utf8_lossy(&stderr_bytes).to_string();
-
-    if !status.success() {
-        let combined = format!("{stdout} {stderr}").to_lowercase();
-        if combined.contains("no devices") || combined.contains("device not found") {
-            return Err(
-                "No Android device detected. Connect your phone via USB and enable USB Debugging."
-                    .into(),
-            );
-        }
-        if combined.contains("unauthorized") {
-            return Err(
-                "USB Debugging not authorised. Check the confirmation dialog on your phone.".into(),
-            );
-        }
-        return Err(format!(
-            "adb {} failed (exit {}):\n{stderr}",
-            args.join(" "),
-            status.code().unwrap_or(-1)
-        ));
-    }
-
-    Ok(stdout)
+    let stats = current_stats(&state)?;
+    emit_progress(&app, &state);
+    let _ = app.emit("scan-complete", stats);
+    Ok(stats)
 }
 
-// ── TCP helper ──────────────────────────────────────────────────────────────
+fn emit_progress(app: &AppHandle, state: &State<'_, AppState>) {
+    let watching = *state.watching.lock().unwrap();
 
-/// Send a one-line command to the daemon and read the full response.
-fn daemon_command(cmd: &str) -> Result<String, String> {
-    let mut stream = TcpStream::connect_timeout(&DAEMON_ADDR.parse().unwrap(), TCP_CONNECT_TIMEOUT)
-        .map_err(|e| format!("Cannot connect to daemon at {DAEMON_ADDR}: {e}"))?;
-
-    stream
-        .set_read_timeout(Some(TCP_READ_TIMEOUT))
-        .map_err(|e| format!("Failed to set read timeout: {e}"))?;
-
-    let payload = if cmd.ends_with('\n') {
-        cmd.to_string()
-    } else {
-        format!("{cmd}\n")
+    let payload = {
+        let guard = state.tree.lock().unwrap();
+        let Some(tree) = guard.as_ref() else { return };
+        ScanProgress {
+            stats: tree.stats(),
+            view: tree.view(watching, DEFAULT_VIEW_LIMIT).ok(),
+        }
     };
-    stream
-        .write_all(payload.as_bytes())
-        .map_err(|e| format!("Failed to send command to daemon: {e}"))?;
 
-    let mut response_bytes = Vec::with_capacity(1024 * 1024);
-    stream
-        .read_to_end(&mut response_bytes)
-        .map_err(|e| format!("Failed to read daemon response: {e}"))?;
-
-    let response = String::from_utf8_lossy(&response_bytes).trim().to_string();
-    Ok(response)
+    let _ = app.emit("scan-progress", payload);
 }
 
-// ── Tauri Commands ──────────────────────────────────────────────────────────
-
-#[tauri::command]
-fn check_adb(app: tauri::AppHandle) -> Result<String, String> {
-    let adb_path = host_binary(&app, "adb")?;
-    let version = adb(&adb_path, &["version"])?;
-    let first_line = version.lines().next().unwrap_or("unknown").to_string();
-    Ok(first_line)
+fn current_stats(state: &State<'_, AppState>) -> CmdResult<Stats> {
+    state
+        .tree
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|t| t.stats())
+        .ok_or_else(|| "no scan has been run yet".to_string())
 }
 
+// ── Commands: queries ───────────────────────────────────────────────────────
+
+fn with_tree<T>(state: &State<'_, AppState>, f: impl FnOnce(&Arena) -> T) -> CmdResult<T> {
+    let guard = state.tree.lock().unwrap();
+    let tree = guard.as_ref().ok_or("no scan has been run yet")?;
+    Ok(f(tree))
+}
+
+/// The rows for one directory, largest first.
+///
+/// Also records which directory the frontend is showing, so scan progress
+/// pushes stay scoped to it.
 #[tauri::command]
-fn init_daemon(app: tauri::AppHandle) -> Result<String, String> {
-    let adb_path = host_binary(&app, "adb")?;
-    let daemon_src = device_payload(&app, "daemon")?;
-
-    // 1 — Verify ADB is reachable and a device is connected.
-    adb(&adb_path, &["version"])?;
-    let devices = adb(&adb_path, &["devices"])?;
-    let connected = devices
-        .lines()
-        .filter(|l| l.contains("device") && !l.starts_with("List"))
-        .count();
-    if connected == 0 {
-        return Err(
-            "No Android device detected. Connect your phone via USB and enable USB Debugging."
-                .into(),
-        );
-    }
-
-    // 2 — Kill any zombie daemon before we push/start.
-    let _ = adb(&adb_path, &["shell", "pkill -f socketsweep_daemon || true"]);
-
-    // 2.5 — Automate MANAGE_EXTERNAL_STORAGE permission for the shell user.
-    let _ = adb(
-        &adb_path,
-        &[
-            "shell",
-            "appops set com.android.shell MANAGE_EXTERNAL_STORAGE allow",
-        ],
-    );
-
-    // 4 — Push binary to device.
-    adb(
-        &adb_path,
-        &["push", &daemon_src.to_string_lossy(), DEVICE_BIN_PATH],
-    )?;
-
-    // 5 — Make it executable.
-    adb(&adb_path, &["shell", "chmod", "+x", DEVICE_BIN_PATH])?;
-
-    // 5 — Kill any previously running instance (ignore errors).
-    let _ = adb(&adb_path, &["shell", "pkill", "-f", "socketsweep_daemon"]);
-    std::thread::sleep(Duration::from_millis(300));
-
-    // 6 — Start the daemon in the background on the device.
-    let start_cmd = format!("nohup {DEVICE_BIN_PATH} > /dev/null 2>&1 & echo $!; exit");
-    let pid_output = adb(&adb_path, &["shell", &start_cmd])?;
-    let pid = pid_output.trim().to_string();
-
-    // 7 — Set up the USB TCP tunnel.
-    adb(
-        &adb_path,
-        &[
-            "forward",
-            &format!("tcp:{DAEMON_PORT}"),
-            &format!("tcp:{DAEMON_PORT}"),
-        ],
-    )?;
-
-    // 8 — Ping-Retry loop.
-    let mut pong = String::new();
-    let mut connected_daemon = false;
-    for _ in 0..15 {
-        std::thread::sleep(Duration::from_millis(150));
-        match daemon_command("PING") {
-            Ok(res) => {
-                pong = res;
-                connected_daemon = true;
-                break;
-            }
-            Err(_) => continue,
-        }
-    }
-
-    if !connected_daemon {
-        return Err("Daemon started but failed to respond to PING over TCP tunnel.".into());
-    }
-
-    Ok(format!(
-        "{{\"daemon_pid\":\"{pid}\",\"ping_response\":{pong}}}"
-    ))
+fn get_view(
+    state: State<'_, AppState>,
+    id: Option<NodeId>,
+    limit: Option<usize>,
+) -> CmdResult<View> {
+    let id = id.unwrap_or(arena::ROOT);
+    *state.watching.lock().unwrap() = id;
+    with_tree(&state, |t| t.view(id, limit.unwrap_or(DEFAULT_VIEW_LIMIT)))?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn run_scan(path: Option<String>) -> Result<String, String> {
-    let effective_root = match path {
-        Some(ref p) if !p.is_empty() => p.clone(),
-        _ => "/sdcard".to_string(), // daemon default
+fn get_breadcrumbs(state: State<'_, AppState>, id: NodeId) -> CmdResult<Vec<Crumb>> {
+    with_tree(&state, |t| t.breadcrumbs(id))?.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
+    with_tree(&state, |t| t.stats())
+}
+
+/// The largest files anywhere in the tree — the question the app exists to
+/// answer, which previously required expanding folders one at a time.
+#[tauri::command]
+fn largest_files(state: State<'_, AppState>, limit: Option<usize>) -> CmdResult<Vec<Row>> {
+    with_tree(&state, |t| t.largest_files(limit.unwrap_or(100)))
+}
+
+#[tauri::command]
+fn search(state: State<'_, AppState>, query: String, limit: Option<usize>) -> CmdResult<Vec<Row>> {
+    with_tree(&state, |t| t.search(&query, limit.unwrap_or(200)))
+}
+
+// ── Commands: delete ────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Deleted {
+    pub items: u64,
+    pub stats: Stats,
+    pub view: Option<View>,
+}
+
+/// Delete a node by id.
+///
+/// The id is resolved to a byte-exact path here; the daemon then re-validates
+/// that path against the session root and is free to refuse. The host does not
+/// police it, because a guard on this side is one an attacker talking to the
+/// socket directly would never encounter — which is exactly how the previous
+/// version was wrong.
+#[tauri::command]
+fn delete(app: AppHandle, state: State<'_, AppState>, id: NodeId) -> CmdResult<Deleted> {
+    if id == arena::ROOT {
+        return Err("the scan root cannot be deleted".into());
+    }
+
+    let path = with_tree(&state, |t| t.path_of(id))?.map_err(|e| e.to_string())?;
+
+    let items = {
+        let guard = state.session.lock().unwrap();
+        let session = guard.as_ref().ok_or("not connected to a device yet")?;
+        session.delete(&path)?
     };
-    let cmd = format!("SCAN {effective_root}");
-    let response = daemon_command(&cmd)?;
 
-    // Store the scan root so delete_item can guard against it.
-    if let Ok(mut root) = SCAN_ROOT.lock() {
-        *root = Some(effective_root);
-    }
+    // Only discount it locally once the device confirms it is gone.
+    let (stats, view) = {
+        let mut guard = state.tree.lock().unwrap();
+        let tree = guard.as_mut().ok_or("no scan has been run yet")?;
+        tree.remove(id).map_err(|e| e.to_string())?;
 
-    Ok(response)
+        let watching = *state.watching.lock().unwrap();
+        (tree.stats(), tree.view(watching, DEFAULT_VIEW_LIMIT).ok())
+    };
+
+    let _ = app.emit("tree-changed", stats);
+    Ok(Deleted { items, stats, view })
 }
 
-#[tauri::command]
-fn ping_daemon() -> Result<String, String> {
-    daemon_command("PING")
-}
-
-#[tauri::command]
-fn stop_daemon(app: tauri::AppHandle) -> Result<String, String> {
-    let adb_path = host_binary(&app, "adb")?;
-    let response = daemon_command("SHUTDOWN").unwrap_or_else(|_| "daemon already stopped".into());
-    let _ = adb(
-        &adb_path,
-        &["forward", "--remove", &format!("tcp:{DAEMON_PORT}")],
-    );
-    let _ = adb(&adb_path, &["shell", "rm", DEVICE_BIN_PATH]);
-    Ok(response)
-}
-
-#[tauri::command]
-fn delete_item(path: String) -> Result<String, String> {
-    // Prevent deletion of the scan root directory.
-    if let Ok(root) = SCAN_ROOT.lock() {
-        if let Some(ref scan_root) = *root {
-            if path == *scan_root {
-                return Err("Cannot delete the scan root directory.".into());
-            }
-        }
-    }
-    daemon_command(&format!("DELETE {path}"))
-}
-
-// ── Tauri entry point ───────────────────────────────────────────────────────
+// ── Entry point ─────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
-            check_adb,
-            init_daemon,
-            run_scan,
-            ping_daemon,
-            stop_daemon,
-            delete_item,
+            list_devices,
+            connect,
+            disconnect,
+            scan,
+            get_view,
+            get_breadcrumbs,
+            get_stats,
+            largest_files,
+            search,
+            delete,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building the application")
+        .run(|app, event| {
+            // Without this, closing the window leaves the forward open and the
+            // daemon running on the phone until it is unplugged.
+            if let tauri::RunEvent::Exit = event {
+                let state = app.state::<AppState>();
+                let session = state.session.lock().unwrap().take();
+                let mut adb = state.adb.lock().unwrap();
+                if let (Some(session), Some(adb)) = (session, adb.as_mut()) {
+                    session.stop(adb);
+                }
+            }
+        });
 }
