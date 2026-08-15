@@ -427,3 +427,129 @@ fn treemap_rejects_an_unknown_node() {
     let a = populated();
     assert!(a.treemap(9999, 1).is_err());
 }
+
+// ── File-type breakdown ─────────────────────────────────────────────────────
+
+fn typed() -> Arena {
+    let mut a = Arena::new(b"/sdcard");
+    a.apply_dir(
+        b"/sdcard",
+        &[
+            file("holiday.JPG", 3_000_000),
+            file("clip.mp4", 900_000_000),
+            file("song.flac", 40_000_000),
+            file("game.obb", 2_000_000_000),
+            file("notes.pdf", 500_000),
+            file("backup.zip", 10_000_000),
+            file("mystery", 7),
+            file(".gitignore", 3),
+            file("archive.tar.gz", 1_000_000),
+            dir("sub"),
+        ],
+    )
+    .unwrap();
+    a.apply_dir(b"/sdcard/sub", &[file("second.mp4", 100_000_000)])
+        .unwrap();
+    a
+}
+
+fn group<'g>(groups: &'g [TypeGroup], label: &str) -> &'g TypeGroup {
+    groups.iter().find(|g| g.label == label).expect(label)
+}
+
+#[test]
+fn type_breakdown_classifies_by_extension_case_insensitively() {
+    let groups = typed().type_breakdown();
+
+    assert_eq!(group(&groups, "Photos").size, 3_000_000, ".JPG matches jpg");
+    assert_eq!(group(&groups, "Audio").files, 1);
+    assert_eq!(group(&groups, "Apps").size, 2_000_000_000);
+    assert_eq!(group(&groups, "Documents").files, 1);
+}
+
+#[test]
+fn type_breakdown_sums_a_category_across_directories() {
+    let groups = typed().type_breakdown();
+    let video = group(&groups, "Video");
+    assert_eq!(video.files, 2, "both mp4s, in different folders");
+    assert_eq!(video.size, 1_000_000_000);
+}
+
+#[test]
+fn type_breakdown_is_ordered_largest_first() {
+    let groups = typed().type_breakdown();
+    let labels: Vec<&str> = groups.iter().map(|g| g.label).collect();
+    assert_eq!(labels[0], "Apps");
+    assert_eq!(labels[1], "Video");
+}
+
+#[test]
+fn a_hidden_file_is_not_treated_as_having_an_extension() {
+    // ".gitignore" is a dotfile, not a file of type "gitignore".
+    let groups = typed().type_breakdown();
+    let other = group(&groups, "Other");
+    assert_eq!(other.files, 2, ".gitignore and the extensionless 'mystery'");
+}
+
+#[test]
+fn a_double_extension_is_classified_by_the_last_one() {
+    let groups = typed().type_breakdown();
+    assert_eq!(
+        group(&groups, "Archives").files,
+        2,
+        "backup.zip and archive.tar.gz"
+    );
+}
+
+#[test]
+fn type_breakdown_omits_empty_categories_and_skips_removed_files() {
+    let mut a = typed();
+    assert!(a.type_breakdown().iter().all(|g| g.files > 0));
+
+    let obb = a
+        .view(ROOT, 50)
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|r| r.name == "game.obb")
+        .unwrap();
+    a.remove(obb.id).unwrap();
+
+    let groups = a.type_breakdown();
+    assert!(
+        !groups.iter().any(|g| g.label == "Apps"),
+        "the only app was deleted, so the category should disappear"
+    );
+}
+
+#[test]
+fn type_breakdown_totals_match_the_scan_total() {
+    let a = typed();
+    let summed: u64 = a.type_breakdown().iter().map(|g| g.size).sum();
+    assert_eq!(
+        summed,
+        a.stats().size,
+        "every byte lands in exactly one category"
+    );
+}
+
+// ── Parent paths on cross-tree rows ─────────────────────────────────────────
+
+#[test]
+fn largest_files_and_search_carry_the_containing_folder() {
+    let a = populated();
+
+    let top = a.largest_files(3);
+    let b_jpg = top.iter().find(|r| r.name == "b.jpg").unwrap();
+    assert_eq!(b_jpg.parent.as_deref(), Some("/sdcard/DCIM/Camera"));
+
+    let hit = a.search("iso", 5).into_iter().next().unwrap();
+    assert_eq!(hit.parent.as_deref(), Some("/sdcard/Download"));
+}
+
+#[test]
+fn a_directory_listing_omits_the_parent_it_would_repeat_on_every_row() {
+    let a = populated();
+    let rows = a.view(ROOT, 10).unwrap().rows;
+    assert!(rows.iter().all(|r| r.parent.is_none()));
+}

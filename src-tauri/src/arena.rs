@@ -80,6 +80,16 @@ pub struct Row {
     /// False while this subtree is still being walked, so the UI can mark a
     /// number as still settling rather than presenting it as final.
     pub complete: bool,
+    /// Containing directory, for views that cross the tree — a search hit or a
+    /// largest-file entry is meaningless without knowing where it lives.
+    /// Omitted inside a single directory listing, where it would be the same
+    /// string on every row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Id of that folder, so "go to it" stays an id lookup rather than needing a
+    /// path-to-node search command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<NodeId>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -398,7 +408,23 @@ impl Arena {
             is_dir: n.is_dir,
             files: n.files,
             complete: self.subtree_complete(id),
+            parent: None,
+            parent_id: None,
         }
+    }
+
+    /// A row carrying its containing directory, for results that span the tree.
+    fn row_with_parent(&self, id: NodeId) -> Row {
+        let mut row = self.row(id);
+        let parent = self.nodes[id as usize].parent;
+        if parent != NONE {
+            row.parent = self
+                .path_of(parent)
+                .ok()
+                .map(|p| String::from_utf8_lossy(&p).into_owned());
+            row.parent_id = Some(parent);
+        }
+        row
     }
 
     /// A file is always complete; a directory is complete once it and everything
@@ -490,7 +516,7 @@ impl Arena {
             y.size.cmp(&x.size).then_with(|| x.name.cmp(&y.name))
         });
         files.truncate(limit);
-        files.iter().map(|f| self.row(*f)).collect()
+        files.iter().map(|f| self.row_with_parent(*f)).collect()
     }
 
     /// A depth-limited slice of the tree for the treemap.
@@ -542,6 +568,35 @@ impl Arena {
         node
     }
 
+    /// Total bytes per broad file category, largest first.
+    ///
+    /// A single pass over the flat node array — the shape that makes this cheap
+    /// is the same one that makes `largest_files` cheap.
+    pub fn type_breakdown(&self) -> Vec<TypeGroup> {
+        let mut sizes = [0u64; CATEGORIES.len()];
+        let mut counts = [0u32; CATEGORIES.len()];
+
+        for n in self.nodes.iter().filter(|n| !n.is_dir && !n.removed) {
+            let c = category_of(&n.name);
+            sizes[c] += n.size;
+            counts[c] += 1;
+        }
+
+        let mut groups: Vec<TypeGroup> = CATEGORIES
+            .iter()
+            .enumerate()
+            .map(|(i, label)| TypeGroup {
+                label,
+                size: sizes[i],
+                files: counts[i],
+            })
+            .filter(|g| g.files > 0)
+            .collect();
+
+        groups.sort_unstable_by(|a, b| b.size.cmp(&a.size).then_with(|| a.label.cmp(b.label)));
+        groups
+    }
+
     /// Case-insensitive substring match on names, largest first.
     pub fn search(&self, needle: &str, limit: usize) -> Vec<Row> {
         if needle.is_empty() {
@@ -567,8 +622,72 @@ impl Arena {
             y.size.cmp(&x.size).then_with(|| x.name.cmp(&y.name))
         });
         hits.truncate(limit);
-        hits.iter().map(|h| self.row(*h)).collect()
+        hits.iter().map(|h| self.row_with_parent(*h)).collect()
     }
+}
+
+// ── File-type classification ────────────────────────────────────────────────
+
+/// Broad categories, in the order they are presented.
+///
+/// Deliberately coarse. "You have 24GB of video" is an answer someone can act
+/// on; a list of forty extensions is the same data with the conclusion removed.
+pub const CATEGORIES: [&str; 7] = [
+    "Photos",
+    "Video",
+    "Audio",
+    "Apps",
+    "Documents",
+    "Archives",
+    "Other",
+];
+
+const PHOTOS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif", "dng", "raw",
+    "avif", "svg",
+];
+const VIDEO: &[&str] = &[
+    "mp4", "mkv", "avi", "mov", "3gp", "webm", "flv", "m4v", "wmv", "ts", "mpg", "mpeg",
+];
+const AUDIO: &[&str] = &[
+    "mp3", "aac", "flac", "wav", "ogg", "m4a", "opus", "wma", "amr", "mid",
+];
+const APPS: &[&str] = &["apk", "obb", "xapk", "apks", "aab"];
+const DOCS: &[&str] = &[
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "epub", "mobi", "csv", "rtf",
+    "odt",
+];
+const ARCHIVES: &[&str] = &["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "img"];
+
+fn category_of(name: &[u8]) -> usize {
+    let Some(dot) = name.iter().rposition(|b| *b == b'.') else {
+        return 6; // no extension
+    };
+    // A leading dot is a hidden file, not an extension: ".gitignore".
+    if dot == 0 || dot + 1 >= name.len() {
+        return 6;
+    }
+
+    let ext = String::from_utf8_lossy(&name[dot + 1..]).to_lowercase();
+    let ext = ext.as_str();
+
+    for (idx, list) in [PHOTOS, VIDEO, AUDIO, APPS, DOCS, ARCHIVES]
+        .iter()
+        .enumerate()
+    {
+        if list.contains(&ext) {
+            return idx;
+        }
+    }
+    6
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeGroup {
+    pub label: &'static str,
+    pub size: u64,
+    pub files: u32,
 }
 
 fn basename(path: &[u8]) -> &[u8] {
