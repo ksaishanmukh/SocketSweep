@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/License-GPL_3.0-blue.svg" alt="License: GPL 3.0" />
   <img src="https://img.shields.io/badge/Tauri-v2-FFC131.svg?logo=tauri&logoColor=white" alt="Tauri v2" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black" alt="React 19" />
-  <img src="https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=c%2B%2B&logoColor=white" alt="C++17" />
+  <img src="https://img.shields.io/badge/Android-aarch64-3DDC84.svg?logo=android&logoColor=white" alt="Android aarch64" />
   <img src="https://img.shields.io/badge/Rust-1.70+-000000.svg?logo=rust&logoColor=white" alt="Rust" />
   <br />
   <a href="https://github.com/sponsors/VishnuSrivatsava"><img src="https://img.shields.io/badge/♥_Sponsor-EA4AAA?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="Sponsor" /></a>
@@ -46,9 +46,18 @@ This is because **MTP (Media Transfer Protocol)** — the protocol your OS uses 
 
 Full `/sdcard` scan on a **Samsung Galaxy S24 Ultra (256GB)** with ~47,000 files:
 
-> **SocketSweep: ~6-15 seconds** — full interactive treemap ready to explore.
+> **~6-15 seconds** — full interactive treemap ready to explore. Best case was
+> 6.9 seconds with a warm cache and minimal background activity; the spread
+> comes from device load (background apps, media indexing, thermal state).
 
-Scan time varies depending on device load (background apps, media indexing, thermal state). Best case was 6.9 seconds with a warm cache and minimal background activity.
+> [!NOTE]
+> Those numbers were measured against the original single-threaded C++ engine.
+> The daemon has since been rewritten in Rust with a parallel walk, and **has
+> not been re-measured on hardware**. It should be faster — `/sdcard` sits
+> behind a FUSE layer on Android 11+, so the walk is latency-bound and
+> concurrency is exactly what helps — but until someone runs it on a real
+> device that is a prediction, not a result. Treat the figures above as the
+> floor, not the current performance.
 
 For comparison, doing the same thing over MTP (plugging in the phone and browsing via Windows Explorer or Finder) typically involves minutes of "Calculating size..." freezes, and macOS Finder doesn't even show folder sizes at all.
 
@@ -65,12 +74,24 @@ For comparison, doing the same thing over MTP (plugging in the phone and browsin
   <p><em>Left: Connection Dashboard | Right: Interactive Treemap — click any block to drill down</em></p>
 </div>
 
+> [!NOTE]
+> These screenshots predate the interface rewrite. The treemap is now the main
+> canvas rather than a strip under the stat cards, it nests and drills down, the
+> activity log is a collapsed drawer, and there are Largest Files and File Types
+> views alongside search. Replacing them needs a device to scan.
+
 ---
 
 ## 🚀 How to Use
 
 ### 1. Download
 **[Download SocketSweep v1.0.0](https://github.com/VishnuSrivatsava/SocketSweep/releases/tag/v1.0.0)**
+
+> [!IMPORTANT]
+> These are upstream's released binaries and they predate the rewrite described
+> below — including the socket change in [Security](#-security). They are the
+> right download if you just want the app today; they are not what this branch
+> builds. There is no release of this branch yet.
 
 | Platform | Download |
 |----------|----------|
@@ -195,6 +216,38 @@ sequenceDiagram
     R->>R: discount the subtree from every ancestor
     R-->>U: updated stats + view
 ```
+
+---
+
+## 🔒 Security
+
+The daemon runs on your phone and can delete files, so how it is reached and
+what it will act on both matter.
+
+**It does not open a network port on the device.** The daemon binds an abstract
+unix socket and the desktop reaches it through `adb forward
+tcp:5050 localabstract:<random-name>`. Binaries under `/data/local/tmp` run in
+the `shell` SELinux domain, which `untrusted_app` is denied `connectto` on — so
+an installed app cannot reach it. Loopback TCP would be reachable by anything
+holding `INTERNET`. The socket name is regenerated per session. This is the
+arrangement scrcpy uses.
+
+**The daemon validates deletes itself.** It canonicalises the target and
+requires it to sit strictly beneath the session root, comparing whole path
+components — so a `/sdcard/Down` root cannot authorise deleting
+`/sdcard/Downloads`. Symlinks are judged by where they resolve, not where they
+sit. The desktop deliberately does not police this: a check that lives only on
+the host is one that anything talking to the socket directly never encounters.
+
+**Known limitation.** There is a window between the check and the unlink in
+which a path component could be swapped for a symlink. Closing it properly needs
+an `openat`/`O_NOFOLLOW` descent; on a single-user device, where an attacker
+would already need shell-domain access, it is not the weak link.
+
+**Not yet verified on hardware.** The design above is implemented and unit
+tested, but no part of it has run against a real phone. `adb shell ss -ltn |
+grep 5050` returning nothing is the check that proves no TCP listener is
+exposed.
 
 ---
 
