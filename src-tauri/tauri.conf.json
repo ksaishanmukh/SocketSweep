@@ -12,12 +12,14 @@
     "windows": [
       {
         "title": "SocketSweep",
-        "width": 1024,
-        "height": 768
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 600
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {

@@ -1,10 +1,18 @@
 /* ── Tailwind v4 ─────────────────────────────────────────────────────── */
 @import "tailwindcss";
 
+/* Fonts are bundled, not fetched.
+ *
+ * index.html used to <link> these from fonts.googleapis.com, which meant a
+ * network round trip on every launch of a desktop app, fallback typefaces when
+ * offline, and a content security policy that could not be enabled. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
 /* ── Design Tokens ───────────────────────────────────────────────────── */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
 
   /* Accent palette — electric cyan/teal */
   --color-accent-50: oklch(0.97 0.02 180);
