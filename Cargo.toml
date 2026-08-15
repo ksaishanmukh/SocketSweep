@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri"]
+members = ["src-tauri", "crates/protocol", "crates/scanner", "crates/daemon"]
 
-# Stage 2 adds crates/protocol, crates/scanner and crates/daemon here. The
-# daemon targets aarch64-linux-android and must be kept out of `default-members`
-# so a plain `cargo build` on the host does not try to build it.
+# crates/daemon targets aarch64-linux-android and only builds on a Linux-family
+# target (it binds an abstract unix socket). Keep it out of default-members so a
+# plain `cargo build` or `cargo clippy --workspace` on a Windows or macOS host
+# does not try to build it. Build it explicitly with `npm run build:daemon`.
+default-members = ["src-tauri", "crates/protocol", "crates/scanner"]
 
 [workspace.package]
 version = "1.0.0"
@@ -15,3 +17,17 @@ repository = "https://github.com/ksaishanmukh/SocketSweep"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+postcard = { version = "1", features = ["use-std"] }
+jwalk = "0.8"
+socketsweep-protocol = { path = "crates/protocol" }
+socketsweep-scanner = { path = "crates/scanner" }
+
+# The daemon is pushed to a phone over USB on every connect, so size is a
+# user-visible cost, not just a build detail.
+[profile.release-daemon]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
