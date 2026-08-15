@@ -1,17 +1,15 @@
 //! Parallel filesystem scan engine.
 //!
-//! Deliberately platform-generic and free of any socket or Android code, so it
-//! can be unit-tested against a fixture directory on a development machine. The
-//! previous C++ engine could only be exercised by pushing it to a phone, which
-//! made every change to the traversal logic expensive to verify.
+//! Platform-generic and free of socket or Android specifics, so the traversal
+//! logic can be exercised against a fixture directory on any development
+//! machine rather than only on a handset.
 //!
 //! # Why parallel
 //!
 //! On Android 11+ `/sdcard` is served through a FUSE emulation layer, so the
 //! walk is bound by per-syscall latency rather than CPU. Issuing many `readdir`
-//! and `stat` calls concurrently hides that latency. The right thread count is
-//! a property of the device and has to be measured, not assumed — hence
-//! [`ScanConfig::threads`].
+//! and `stat` calls concurrently hides that latency. The best thread count is a
+//! property of the handset, which is why [`ScanConfig::threads`] is tunable.
 
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -24,8 +22,8 @@ use socketsweep_protocol::{write_msg, Entry, EntryKind, Frame, ProtocolError, Sc
 
 pub struct ScanConfig {
     pub root: PathBuf,
-    /// 0 uses one thread per core. Tune against a real device before fixing a
-    /// value; the FUSE layer does not necessarily scale with core count.
+    /// 0 uses one thread per core. The FUSE layer does not necessarily scale
+    /// with core count, so measure on the target device before pinning a value.
     pub threads: usize,
     /// Guards against pathological nesting and symlink loops that survive the
     /// symlink skip (bind mounts, for instance).
@@ -81,8 +79,8 @@ struct Counters {
 
 /// Walk `cfg.root`, streaming one [`Frame::Dir`] per directory into `sink`.
 ///
-/// Does not write the terminating [`Frame::ScanDone`]; the caller owns that, so
-/// it can decide what to do if the walk fails part-way through.
+/// The terminating [`Frame::ScanDone`] is the caller's to write, so it can
+/// decide what to report if the walk fails part-way through.
 ///
 /// `sink` is taken by value and must be `'static` because jwalk requires its
 /// `process_read_dir` callback to be `'static`. Callers with a borrowed stream
@@ -122,7 +120,7 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
     let walk = WalkDirGeneric::<((), ())>::new(&cfg.root)
         .parallelism(parallelism)
         .max_depth(cfg.max_depth)
-        .skip_hidden(false) // dotfiles occupy real space; the C++ engine kept them too
+        .skip_hidden(false) // dotfiles occupy real space and must be counted
         .follow_links(false)
         .process_read_dir(move |depth, dir_path, _state, children| {
             // jwalk opens with a synthetic read (depth None) whose only child is
@@ -146,8 +144,8 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
 
                 let file_type = child.file_type();
 
-                // Skip symlinks rather than following them: they double-count
-                // storage and can form cycles. Matches the previous engine.
+                // Skip rather than follow: symlinks double-count storage and
+                // can form cycles.
                 if file_type.is_symlink() {
                     child.read_children_path = None;
                     continue;

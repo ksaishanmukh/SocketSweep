@@ -14,12 +14,11 @@ const EXIT_MS = 300;
 let nextId = 0;
 
 /**
- * Replaces a module-level counter, a `useRef<Map<number, Timeout>>` and nested
- * `setTimeout`s that were open-coded in the middle of the app component.
+ * Transient notifications.
  *
- * Errors stay until dismissed. The previous version expired them on the same
- * five-second timer as everything else, which is the wrong default for the one
- * kind of message a user may need to read twice.
+ * Errors stay until dismissed; everything else expires on a timer. An error is
+ * the one kind of message a reader may need twice, so it does not get to
+ * disappear on its own.
  */
 export function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);

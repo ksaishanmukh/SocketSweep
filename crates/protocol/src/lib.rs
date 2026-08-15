@@ -1,29 +1,33 @@
 //! Wire format shared by the on-device daemon and the desktop host.
 //!
-//! Both ends depend on this crate, so the encoding cannot drift between them.
-//! That is the main reason the daemon was moved from C++ to Rust: the previous
-//! design hand-wrote JSON in the daemon and hand-parsed it in two other places.
+//! Both ends depend on this crate, so there is exactly one definition of the
+//! encoding and no opportunity for the two to disagree.
 //!
 //! # Framing
 //!
 //! Every message is a little-endian `u32` byte length followed by that many
-//! bytes of [postcard](https://docs.rs/postcard). Postcard is used rather than
-//! JSON because a full scan is tens of thousands of records and postcard encodes
-//! integers as varints with no field names.
+//! bytes of [postcard](https://docs.rs/postcard). A full scan is tens of
+//! thousands of records, and postcard encodes integers as varints and omits
+//! field names entirely.
+//!
+//! Variants are encoded by their index, so the order of [`Request`] and
+//! [`Frame`] is part of the wire contract. Adding a variant anywhere but the end
+//! changes the meaning of every variant after it; daemon and host ship together
+//! in one bundle, so this is safe to change, but never mix versions.
 //!
 //! # Paths are bytes, not strings
 //!
-//! Android filenames are arbitrary byte sequences and are not guaranteed to be
-//! UTF-8. Carrying them as `String` would corrupt them on the way through, and a
-//! corrupted path handed back to `DELETE` is not something to be relaxed about.
-//! They stay `Vec<u8>` end to end; conversion to text happens only for display.
+//! Android filenames are arbitrary byte sequences with no guarantee of being
+//! UTF-8. Carrying them as `String` would corrupt them in transit, and a
+//! corrupted path can arrive as a delete target. They stay `Vec<u8>` end to end;
+//! conversion to text happens only for display.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io::{self, Read, Write};
 
-/// Refuse to allocate for an absurd length prefix. A single directory frame for
-/// a 100k-entry directory is on the order of a few MB, so this is generous.
+/// Upper bound on a single frame, so a corrupt length prefix cannot make the
+/// reader allocate wildly. A 100k-entry directory encodes to a few MB.
 pub const MAX_FRAME_BYTES: u32 = 64 * 1024 * 1024;
 
 /// Host → daemon.
@@ -46,23 +50,20 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Frame {
     Pong,
-    /// Sent once, before any [`Frame::Dir`], carrying the root the daemon
-    /// actually resolved to.
+    /// Opens a scan stream, carrying the root the daemon resolved to.
     ///
-    /// This is not the same as the root that was requested. On a real device
-    /// `/sdcard` is a symlink chain to `/storage/emulated/0`, and the daemon
-    /// canonicalises before walking — so every subsequent frame is keyed on the
-    /// resolved path. A host that built its index from the requested path would
-    /// fail to place a single frame.
+    /// Not necessarily the root that was requested: `/sdcard` is a symlink chain
+    /// to `/storage/emulated/0` on a typical device, and the daemon canonicalises
+    /// before walking. Every following [`Frame::Dir`] is keyed on the resolved
+    /// path, so the host must index against this rather than what it asked for.
     ScanStarted {
         root: Vec<u8>,
     },
     /// The contents of one directory.
     ///
-    /// A directory is always discovered while reading its parent, so the host is
-    /// guaranteed to have seen the frame containing `path` as an entry before it
-    /// receives the frame whose `path` this is. That ordering is what lets the
-    /// host build the tree without buffering.
+    /// A directory is discovered while reading its parent, so the frame naming it
+    /// as an entry always precedes the frame describing its contents. That
+    /// ordering is what lets the host build the tree without buffering.
     Dir {
         path: Vec<u8>,
         entries: Vec<Entry>,
@@ -310,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn postcard_is_much_smaller_than_the_json_it_replaces() {
+    fn postcard_encodes_far_smaller_than_equivalent_json() {
         // Representative directory: 200 files with realistic names and sizes.
         let entries: Vec<Entry> = (0..200)
             .map(|i| Entry {
@@ -327,8 +328,8 @@ mod tests {
         let mut encoded = Vec::new();
         write_msg(&mut encoded, &frame).unwrap();
 
-        // What the old wire format spent on the same data: every node carried a
-        // full absolute path plus JSON field names and quoting.
+        // The same data as JSON, with an absolute path per node plus field
+        // names and quoting.
         let json_equivalent: usize = (0..200)
             .map(|i| {
                 format!(

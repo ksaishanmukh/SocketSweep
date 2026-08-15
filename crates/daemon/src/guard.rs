@@ -1,13 +1,13 @@
 //! Path validation for destructive operations.
 //!
-//! This is the only place a delete is authorised. The previous design enforced
-//! nothing here: the C++ daemon called `std::filesystem::remove_all` on whatever
-//! path arrived on the socket, and the "cannot delete the scan root" rule lived
-//! on the desktop side, where an attacker talking to the socket directly simply
-//! did not encounter it.
+//! The only place a delete is authorised.
 //!
-//! Deliberately free of socket and Android specifics so it can be tested on a
-//! development machine.
+//! It lives here, next to the filesystem, rather than on the desktop: a check on
+//! the desktop is one that anything speaking to the socket directly never
+//! reaches.
+//!
+//! Free of socket and Android specifics so it can be tested on any development
+//! machine.
 
 use std::path::{Path, PathBuf};
 
@@ -44,13 +44,12 @@ impl std::fmt::Display for GuardError {
 /// which matches whole path components — a plain string prefix test would let
 /// `/sdcard/Downloads` pass a `/sdcard/Down` root.
 ///
-/// # Not addressed
+/// # Known limitation
 ///
-/// There is a window between this check and the delete in which a component
-/// could be swapped for a symlink. Closing it properly needs an `openat`/
-/// `O_NOFOLLOW` descent. On a single-user device where the attacker would
-/// already need shell-domain access it is not the weak link, and the fix is
-/// disproportionate to the risk.
+/// A component could be swapped for a symlink between this check and the delete.
+/// Closing that window needs an `openat`/`O_NOFOLLOW` descent; on a single-user
+/// device, where an attacker would already need shell-domain access, it is not
+/// the weak link.
 pub fn resolve_under_root(root: &Path, target: &Path) -> Result<PathBuf, GuardError> {
     let root = root
         .canonicalize()
@@ -164,7 +163,7 @@ mod tests {
         assert!(resolve_under_root(&f.root, &target).is_ok());
     }
 
-    /// The bug a string prefix test would have: "Downloads" starts with "Down".
+    /// Component-wise comparison matters here: "Downloads" starts with "Down".
     #[test]
     fn a_root_that_is_a_string_prefix_of_the_target_does_not_authorise_it() {
         let f = fixture();

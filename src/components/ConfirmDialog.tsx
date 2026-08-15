@@ -8,10 +8,11 @@ const TYPE_TO_CONFIRM_BYTES = 1024 ** 3;
 const TYPE_TO_CONFIRM_FILES = 100;
 
 /**
- * Deleting is the one irreversible thing this app does, and the dialog it
- * replaces showed only a name — no indication of what was about to be lost.
- * The host already knows the subtree totals, and that is the information that
- * actually prevents mistakes.
+ * Deleting is the one irreversible thing this app does.
+ *
+ * The dialog leads with what will be lost — size, and file count for a folder —
+ * because that is the information that prevents mistakes, and the host already
+ * knows it.
  */
 export function ConfirmDialog({
   target,
@@ -29,7 +30,7 @@ export function ConfirmDialog({
   const armed = !heavy || typed === target.name;
 
   useEffect(() => {
-    // Focus starts on Cancel: Enter should not delete anything by reflex.
+    // Focus starts on Cancel, so Enter cannot delete anything by reflex.
     cancelRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();

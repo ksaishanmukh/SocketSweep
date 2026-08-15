@@ -6,17 +6,15 @@
 //!
 //! # Why an abstract socket rather than TCP
 //!
-//! The previous daemon bound `127.0.0.1:5050` on the phone. Loopback TCP is
-//! reachable by any installed app holding `INTERNET`, and the command set
-//! includes recursive delete, so any app could wipe `/sdcard` while SocketSweep
-//! was connected. Binaries under `/data/local/tmp` run in the `shell` SELinux
-//! domain, and `untrusted_app` is denied `unix_stream_socket connectto` into
-//! that domain — so an abstract socket is not reachable the same way. This is
-//! the arrangement scrcpy uses, and it is what `adb forward localabstract:`
-//! exists for.
+//! The command set includes recursive delete, so reachability matters. Loopback
+//! TCP on the device is open to any installed app holding `INTERNET`. Binaries
+//! under `/data/local/tmp` run in the `shell` SELinux domain, and
+//! `untrusted_app` is denied `unix_stream_socket connectto` into that domain, so
+//! an abstract socket is not reachable the same way. `adb forward
+//! localabstract:` exists for exactly this.
 
-// Compiled everywhere so its tests run on a development machine, but only
-// `serve` calls it, and `serve` is Linux-family only.
+// Compiled on every host so its tests run during ordinary development, though
+// its only caller, `serve`, is Linux-family only.
 #[cfg_attr(not(any(target_os = "linux", target_os = "android")), allow(dead_code))]
 mod guard;
 
@@ -28,8 +26,8 @@ fn main() -> std::process::ExitCode {
     serve::main()
 }
 
-// Kept compilable on other hosts so `cargo check` and the guard tests run on a
-// development machine. Abstract sockets are a Linux-family feature.
+// Abstract sockets are a Linux-family feature. Other hosts still compile this
+// binary so `cargo check` and the guard tests run during development.
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 fn main() -> std::process::ExitCode {
     eprintln!("socketsweep-daemon runs on Android/Linux only");

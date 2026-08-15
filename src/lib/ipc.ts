@@ -1,10 +1,4 @@
-/**
- * Typed wrappers over the Tauri command surface.
- *
- * Every command returns a real value rather than a JSON string. The previous
- * bridge returned `String` from every command and the frontend called
- * `JSON.parse` on the result in three places.
- */
+/** Typed wrappers over the Tauri command surface. */
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -35,23 +29,20 @@ export const scan = (root?: string) => invoke<Stats>("scan", { root });
 /**
  * Rows for one directory, largest first.
  *
- * Also tells the host which directory is on screen, so scan-progress pushes
- * stay scoped to it.
+ * Also records which directory is on screen, so scan-progress pushes stay
+ * scoped to it.
  */
 export const getView = (id?: number, limit?: number) => invoke<View>("get_view", { id, limit });
 
 export const getBreadcrumbs = (id: number) => invoke<Crumb[]>("get_breadcrumbs", { id });
 
-/** A depth-limited slice of the tree, so the treemap can nest without the
- * frontend holding the tree. */
+/** A depth-limited slice of the tree, enough for the treemap to nest. */
 export const getTreemap = (id?: number, depth?: number) =>
   invoke<TreemapNode>("get_treemap", { id, depth });
 
-export const getStats = () => invoke<Stats>("get_stats");
-
 export const largestFiles = (limit?: number) => invoke<Row[]>("largest_files", { limit });
 
-/** Total bytes per broad file category — what kind of thing is eating space. */
+/** Total bytes per broad file category. */
 export const typeBreakdown = () => invoke<TypeGroup[]>("type_breakdown");
 
 export const appBreakdown = (limit?: number) => invoke<AppUsage[]>("app_breakdown", { limit });
@@ -64,9 +55,6 @@ export const deleteNode = (id: number) => invoke<Deleted>("delete", { id });
 
 export const onScanProgress = (fn: (p: ScanProgress) => void): Promise<UnlistenFn> =>
   listen<ScanProgress>("scan-progress", (e) => fn(e.payload));
-
-export const onScanComplete = (fn: (s: Stats) => void): Promise<UnlistenFn> =>
-  listen<Stats>("scan-complete", (e) => fn(e.payload));
 
 /** Tauri surfaces command failures as thrown strings. */
 export function errorMessage(err: unknown): string {

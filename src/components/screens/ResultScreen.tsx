@@ -112,11 +112,7 @@ export function ResultScreen({
           ))}
         </nav>
 
-        {/*
-          Search over the loaded tree. It is a Rust query over a flat array, so
-          it is instant — and it answers the question the old UI could only
-          answer by expanding folders one at a time.
-        */}
+        {/* Search runs on the host over the loaded tree, so it is instant. */}
         <div className="relative shrink-0">
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-600">
             <IconSearch />
@@ -149,10 +145,7 @@ export function ResultScreen({
         </button>
       </header>
 
-      {/*
-        One compact strip. Four cards of oversized type used to occupy ~110px
-        above a 192px treemap; the proportions were backwards.
-      */}
+      {/* Totals in one line, so the vertical space goes to the treemap. */}
       <div className="flex items-center gap-3 px-5 py-2 text-xs shrink-0 border-b border-zinc-800/60">
         <span className="font-mono font-bold text-accent-400 tabular-nums text-sm">
           {formatBytes(stats.size)}
@@ -173,20 +166,14 @@ export function ResultScreen({
         <ModeTabs mode={mode} onChange={onModeChange} />
       </div>
 
-      {/*
-        The treemap is the product. It gets the space now — it was a 192px strip
-        under a stack of stat cards, with a console log pinned below it.
-      */}
+      {/* The treemap is the point of the screen, so it gets the room. */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 p-3">
         <div className="flex-1 min-h-0 glass-card rounded-xl overflow-hidden">
           {mode === "treemap" && (
             <Treemap items={items} onOpen={(id, isDir) => isDir && onOpen(id)} />
           )}
 
-          {/*
-            The question this app exists to answer. Until now it could only be
-            answered by expanding folders one at a time.
-          */}
+          {/* Biggest files anywhere on the device, regardless of depth. */}
           {mode === "largest" && (
             <FileList
               rows={largest}
@@ -214,8 +201,8 @@ export function ResultScreen({
           </div>
 
           {/*
-            Search takes over this panel only. It used to blank the main canvas,
-            which threw away the context you were searching within.
+            Search takes over this panel only, leaving the main canvas as the
+            context you are searching within.
           */}
           <FileList
             rows={rows}

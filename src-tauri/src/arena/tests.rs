@@ -351,7 +351,7 @@ fn search_and_largest_files_skip_removed_nodes() {
 
 #[test]
 fn a_wide_directory_builds_in_linear_time() {
-    // The append path used to be O(n^2) if it walked the sibling list each time.
+    // Appending must not walk the sibling list, or this becomes quadratic.
     let mut a = Arena::new(b"/r");
     let entries: Vec<Entry> = (0..50_000).map(|i| file(&format!("f{i:06}"), 1)).collect();
 

@@ -2,14 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatBytes } from "../lib/format";
 import { squarifyNested, type Tile, type TreemapItem } from "../lib/squarify";
 
-/**
- * Nested squarified treemap in plain SVG.
- *
- * Replaces Recharts, which was most of the JS bundle for one flat treemap it
- * could not nest, driven through an untyped content renderer. Owning the layout
- * also means we control how it behaves while sizes are still changing during a
- * scan, which was going to be a problem either way.
- */
+/** Nested squarified treemap in plain SVG. */
 
 /** Distinct hues, assigned by top-level tile so a subtree reads as one block. */
 const PALETTE = [
@@ -37,7 +30,7 @@ export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hovered, setHovered] = useState<Tile | null>(null);
 
-  // ResponsiveContainer's job, in six lines and without the dependency.
+  // Track the container so the layout recomputes on resize.
   useEffect(() => {
     const el = hostRef.current;
     if (!el) return;

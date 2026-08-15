@@ -2,13 +2,11 @@
 // ============================================================================
 // build-daemon.mjs — cross-compile the device daemon for Android aarch64
 // ============================================================================
-// Replaces three copies of the same compiler invocation that used to live in
-// engine/build.sh, the CI Unix step and the CI Windows step.
+// One invocation for every build host, local and CI alike.
 //
-// Deliberately not cargo-ndk: the only thing that tool would do for us here is
-// set the linker, because the daemon has no C dependencies that need CC/AR.
-// A `cargo install cargo-ndk` costs a couple of minutes on every cold CI run to
-// avoid the twenty lines below.
+// Deliberately not cargo-ndk: the only thing it would do here is set the linker,
+// since the daemon has no C dependencies needing CC/AR, and installing it costs
+// a couple of minutes on every cold CI run.
 //
 //   npm run build:daemon
 // ============================================================================
@@ -23,7 +21,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TARGET = "aarch64-linux-android";
 const PROFILE = "release-daemon";
-/** Matches the previous C++ build, which targeted android31. */
+/** Minimum supported Android API level. */
 const API_LEVEL = 31;
 
 const HOST_TAG = {

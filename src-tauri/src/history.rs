@@ -23,7 +23,7 @@ pub struct ScanRecord {
 }
 
 impl ScanRecord {
-    pub fn from_stats(stats: &Stats) -> Self {
+    fn from_stats(stats: &Stats) -> Self {
         ScanRecord {
             size: stats.size,
             files: stats.files,

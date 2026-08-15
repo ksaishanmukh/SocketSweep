@@ -6,10 +6,8 @@
  * worst aspect ratio. The result is tiles close to square, which are far easier
  * to compare by eye than the long slivers a naive slice-and-dice produces.
  *
- * Replaces Recharts, which was ~500KB of the bundle for one single-level
- * treemap, could not nest, and whose content renderer had to be fed untyped
- * props. This is a pure function, so it is testable and we own its behaviour
- * under the continuously changing sizes a running scan produces.
+ * A pure function, so its behaviour under the continuously changing sizes a
+ * running scan produces is testable rather than incidental.
  */
 
 export interface TreemapItem {
@@ -20,7 +18,7 @@ export interface TreemapItem {
   children?: TreemapItem[];
 }
 
-export interface Rect {
+interface Rect {
   x: number;
   y: number;
   w: number;
@@ -51,9 +49,9 @@ function worstRatio(rowMax: number, rowMin: number, sum: number, side: number): 
 /**
  * Lay `items` out inside a `width` x `height` rectangle.
  *
- * Items with a non-positive size are dropped: they have no area, so they would
- * produce degenerate tiles. Ties are broken by name so the layout does not
- * reshuffle between the ~10 refreshes per second a running scan produces.
+ * Items with a non-positive size are dropped, having no area to occupy. Ties
+ * break by name so the layout stays stable across the ~10 refreshes per second
+ * a running scan produces.
  */
 export function squarify(items: TreemapItem[], width: number, height: number, depth = 0): Tile[] {
   if (width <= 0 || height <= 0) return [];

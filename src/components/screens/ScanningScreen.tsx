@@ -1,13 +1,7 @@
 import { formatBytes, formatNumber } from "../../lib/format";
 import type { Stats } from "../../lib/types";
 
-/**
- * Live counts from `scan-progress`.
- *
- * A scan runs for several seconds and speed is the entire pitch of the app,
- * which made a spinner over a static string the wrong thing to show at exactly
- * the moment there was something worth watching.
- */
+/** Live totals from `scan-progress`, updated as the walk streams in. */
 export function ScanningScreen({ stats, current }: { stats: Stats | null; current: string }) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in-up">

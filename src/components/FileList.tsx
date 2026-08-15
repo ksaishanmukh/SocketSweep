@@ -12,10 +12,8 @@ const ROW_HEIGHT_WITH_PARENT = 44;
 /**
  * Windowed list of directory entries.
  *
- * The version this replaces rendered every descendant of an expanded directory
- * into the DOM. Opening DCIM on the author's own device — 56,642 files — froze
- * the app. Only the visible rows exist here, so a folder's size stops mattering
- * to render cost.
+ * Only visible rows are mounted. A single folder can hold tens of thousands of
+ * entries, so render cost has to stay independent of how large it is.
  */
 export function FileList({
   rows,
@@ -119,7 +117,7 @@ function FileRow({
     <div
       className="file-row flex items-center gap-3 px-3 h-full rounded-md group select-none"
       onKeyDown={(e) => {
-        // Delete on the focused row, so removing something never requires a mouse.
+        // Delete on the focused row, so removing something never needs a mouse.
         if (e.key === "Delete") {
           e.preventDefault();
           onDelete(row);
@@ -131,9 +129,8 @@ function FileRow({
       </span>
 
       {/*
-        `parent` is present only on results that span the tree, where the name
-        alone does not say where the thing lives. Clicking it navigates there,
-        which is the whole point of surfacing a file you found by size.
+        `parent` is present only on results that span the tree, where a name
+        alone does not say where the thing lives. Clicking it navigates there.
       */}
       <div className="flex-1 min-w-0">
         {row.isDir ? (
@@ -173,11 +170,7 @@ function FileRow({
         {formatBytes(row.size)}
       </span>
 
-      {/*
-        Reachable on focus, not hover alone. The previous button was
-        opacity-0/group-hover only, so it did not exist for keyboard users and
-        appeared under the cursor while scanning down a list.
-      */}
+      {/* Reachable on focus as well as hover, so it exists for keyboard users. */}
       <button
         className="btn-nuke opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ml-1 px-2 py-1 rounded-md
           bg-danger-600/20 border border-danger-500/30 text-danger-400

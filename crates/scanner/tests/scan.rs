@@ -1,8 +1,7 @@
 //! Scan engine tests.
 //!
-//! These run on any development machine against a temp directory — the reason
-//! `scanner` is a separate crate from `daemon`. The C++ engine they replace
-//! could only be exercised by pushing a binary to a phone.
+//! These run against a temp directory on any development machine, which is why
+//! the traversal logic lives in its own crate rather than inside the daemon.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -11,8 +10,8 @@ use std::path::{Path, PathBuf};
 use socketsweep_protocol::{read_msg, Entry, EntryKind, Frame, ScanStats};
 use socketsweep_scanner::{scan, ScanConfig, ScanError};
 
-/// `scan` needs an owned `'static` sink, so tests hand it a handle to a shared
-/// buffer they can read back afterwards.
+/// `scan` takes an owned `'static` sink, so tests pass a handle to a shared
+/// buffer they can read back once the walk finishes.
 #[derive(Clone)]
 struct SharedSink(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
 
@@ -165,9 +164,8 @@ fn directory_entries_carry_zero_size_and_files_carry_real_size() {
 }
 
 /// The host builds its tree incrementally and never buffers, which is only
-/// sound if a directory is always announced by its parent before its own frame
-/// arrives. Verified rather than assumed, and at high parallelism where it
-/// would break if it were going to.
+/// sound if a directory is announced by its parent before its own frame arrives.
+/// Asserted at high parallelism, where the ordering would break if it could.
 #[test]
 fn a_directory_is_always_announced_by_its_parent_first() {
     let tmp = tempfile::tempdir().unwrap();

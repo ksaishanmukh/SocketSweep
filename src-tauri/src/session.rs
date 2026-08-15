@@ -1,15 +1,13 @@
 //! Daemon lifecycle and the connection to it.
 //!
-//! Owns the sequence that used to live inline in `init_daemon`: push the binary,
-//! start it, open the tunnel, confirm it answers. Differences from the version
-//! it replaces:
+//! Push the binary, start it, open the tunnel, confirm it answers, and tear all
+//! of that down again.
 //!
-//!   - the tunnel forwards to `localabstract:<random-name>` rather than
-//!     `tcp:5050` on the device, so the daemon is not exposed to other apps
-//!   - the socket name is fresh per session, so a stale daemon from a previous
-//!     run cannot be mistaken for this one
-//!   - the shutdown path also runs from `RunEvent::Exit`, so closing the window
-//!     no longer leaks a forward and a running daemon on the phone
+//! The tunnel forwards to `localabstract:<name>` rather than a port on the
+//! device, so the daemon is not exposed to other apps, and the name is fresh per
+//! session so a stale daemon cannot be mistaken for the current one. Teardown
+//! also runs from `RunEvent::Exit`, so closing the window does not leave a
+//! forward open and a daemon running on the phone.
 
 use std::io::{BufReader, BufWriter};
 use std::net::{Shutdown, SocketAddr, TcpStream};
@@ -23,18 +21,20 @@ use crate::adb::{Adb, Result as AdbResult};
 
 /// Host-side port for the tunnel. The device side is an abstract socket, so this
 /// number only has to be free on the desktop.
-pub const HOST_PORT: u16 = 5050;
+const HOST_PORT: u16 = 5050;
 
 const DEVICE_BIN: &str = "/data/local/tmp/socketsweep-daemon";
 
 /// Kill any running daemon.
 ///
-/// The bracket around the first letter stops the pattern from matching the very
-/// shell that is running it. Without it `pkill -f socketsweep-daemon` finds its
-/// own `sh -c` command line, and since pkill signals matches as it walks
-/// `/proc`, it can kill its own shell before ever reaching the daemon — leaving
-/// the stale process alive, which is the one thing this command exists to
-/// prevent. Verified on a device: the plain form exits 143 and never completes.
+/// The bracket stops the pattern matching the shell that runs it. Unbracketed,
+/// `pkill -f socketsweep-daemon` finds its own `sh -c` command line, and since
+/// pkill signals matches as it walks `/proc` it can kill its own shell before
+/// reaching the daemon — leaving alive the very process this exists to stop.
+///
+/// The protection is per-invocation: a compound command whose other arguments
+/// contain the literal name is vulnerable again, which is why the call sites
+/// keep this as a command of its own.
 const KILL_DAEMON: &str = "pkill -f '[s]ocketsweep-daemon'";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// A scan streams frames continuously, so this bounds the gap between frames
@@ -128,7 +128,7 @@ impl Session {
         Ok(stream)
     }
 
-    pub fn ping(&self) -> Result<(), String> {
+    fn ping(&self) -> Result<(), String> {
         let stream = self.connect()?;
         let mut writer = BufWriter::new(stream.try_clone().map_err(|e| e.to_string())?);
         write_msg(&mut writer, &Request::Ping).map_err(|e| e.to_string())?;

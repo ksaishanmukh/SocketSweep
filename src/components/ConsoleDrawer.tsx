@@ -3,9 +3,8 @@ import { useEffect, useRef } from "react";
 /**
  * The activity log, collapsed by default.
  *
- * It used to be pinned open at 128px for the whole session, permanently taking
- * space from the treemap — which is the thing the app exists to show. It opens
- * on its own when something fails, which is the only time most people want it.
+ * Space belongs to the treemap; the log is there when something needs
+ * explaining and out of the way otherwise.
  */
 export function ConsoleDrawer({
   logs,

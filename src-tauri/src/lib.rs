@@ -5,15 +5,14 @@
 //!
 //! # Why the frontend does not get the tree
 //!
-//! It used to. The daemon serialised the whole thing to JSON, Rust passed it
-//! through as a `String`, and React held ~56,000 nodes in component state —
-//! then deep-cloned all of them with `JSON.parse(JSON.stringify(...))` on every
-//! delete. Here the tree stays in [`arena`] and React asks for the few hundred
-//! rows it is about to draw, referring to nodes by id.
+//! A device holds well over a hundred thousand files. Keeping the tree in
+//! [`arena`] and serving the few hundred rows the frontend is about to draw
+//! bounds every IPC payload by what fits on screen rather than by the size of
+//! the device.
 //!
 //! Nodes are addressed by id rather than path for a second reason: Android
-//! filenames are arbitrary bytes, and a path that round-tripped through a
-//! JavaScript string could come back subtly different — as a delete target.
+//! filenames are arbitrary bytes, and a path round-tripped through a JavaScript
+//! string can come back subtly different — as a delete target.
 
 pub mod adb;
 pub mod arena;
@@ -181,8 +180,8 @@ struct ScanProgress {
 
 /// Walk the device and stream the tree into the arena.
 ///
-/// Emits `scan-progress` about ten times a second while running and
-/// `scan-complete` at the end. Returns once the walk finishes.
+/// Emits `scan-progress` roughly ten times a second while running, and returns
+/// the final totals once the walk completes.
 #[tauri::command]
 fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> CmdResult<Stats> {
     let session_guard = state.session.lock().unwrap();
@@ -252,7 +251,6 @@ fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> Cmd
     // again here would deadlock: std::sync::Mutex is not reentrant.
     history::record(&app, &session.serial, &stats);
     emit_progress(&app, &state);
-    let _ = app.emit("scan-complete", stats);
     Ok(stats)
 }
 
@@ -322,13 +320,7 @@ fn get_treemap(
     with_tree(&state, |t| t.treemap(id, depth.unwrap_or(2)))?.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn get_stats(state: State<'_, AppState>) -> CmdResult<Stats> {
-    with_tree(&state, |t| t.stats())
-}
-
-/// The largest files anywhere in the tree — the question the app exists to
-/// answer, which previously required expanding folders one at a time.
+/// The largest files anywhere in the tree, regardless of depth.
 #[tauri::command]
 fn largest_files(state: State<'_, AppState>, limit: Option<usize>) -> CmdResult<Vec<Row>> {
     with_tree(&state, |t| t.largest_files(limit.unwrap_or(100)))
@@ -341,9 +333,10 @@ fn type_breakdown(state: State<'_, AppState>) -> CmdResult<Vec<TypeGroup>> {
     with_tree(&state, |t| t.type_breakdown())
 }
 
-/// Storage attributed to the app that owns it. Answers "which app is eating my
-/// space", which the file-type view cannot: most of it is game assets whose
-/// extensions no category list recognises.
+/// Storage attributed to the app that owns it.
+///
+/// Answers "which app is eating my space" where the file-type view cannot: much
+/// of a device is game assets whose extensions no category list recognises.
 #[tauri::command]
 fn app_breakdown(state: State<'_, AppState>, limit: Option<usize>) -> CmdResult<Vec<AppUsage>> {
     with_tree(&state, |t| t.app_breakdown(limit.unwrap_or(50)))
@@ -366,11 +359,10 @@ pub struct Deleted {
 
 /// Delete a node by id.
 ///
-/// The id is resolved to a byte-exact path here; the daemon then re-validates
-/// that path against the session root and is free to refuse. The host does not
-/// police it, because a guard on this side is one an attacker talking to the
-/// socket directly would never encounter — which is exactly how the previous
-/// version was wrong.
+/// The id resolves to a byte-exact path here, and the daemon re-validates that
+/// path against the session root before acting. The authoritative guard is the
+/// daemon's: a check on this side is one that anything speaking to the socket
+/// directly never reaches.
 #[tauri::command]
 fn delete(app: AppHandle, state: State<'_, AppState>, id: NodeId) -> CmdResult<Deleted> {
     if id == arena::ROOT {
@@ -413,7 +405,6 @@ pub fn run() {
             get_view,
             get_breadcrumbs,
             get_treemap,
-            get_stats,
             largest_files,
             type_breakdown,
             app_breakdown,
@@ -423,8 +414,8 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building the application")
         .run(|app, event| {
-            // Without this, closing the window leaves the forward open and the
-            // daemon running on the phone until it is unplugged.
+            // Tear the session down, or the forward stays open and the daemon
+            // keeps running on the phone until it is unplugged.
             if let tauri::RunEvent::Exit = event {
                 let state = app.state::<AppState>();
                 let session = state.session.lock().unwrap().take();

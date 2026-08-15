@@ -57,8 +57,8 @@ fn parse_args() -> Args {
 pub fn main() -> ExitCode {
     let args = parse_args();
 
-    // The host generates a fresh socket name per session, so a stale daemon from
-    // a previous run cannot be mistaken for this one.
+    // The host supplies a fresh socket name per session, so a stale daemon
+    // cannot be mistaken for the current one.
     let addr = match SocketAddr::from_abstract_name(args.socket.as_bytes()) {
         Ok(a) => a,
         Err(e) => {
@@ -204,10 +204,9 @@ fn run_scan<W: Write>(root: &Path, threads: usize, stream: &UnixStream, out: &mu
         max_depth: 64,
     };
 
-    // `root` here is already canonicalised, so on a device it is
-    // /storage/emulated/0 rather than the /sdcard that was asked for. Every Dir
-    // frame is keyed on it, so the host has to be told before any of them
-    // arrive or it cannot place them.
+    // `root` is canonicalised, so it is typically /storage/emulated/0 rather
+    // than the /sdcard that was requested. Every Dir frame is keyed on it, so
+    // the host is told before any of them arrive.
     let _ = write_msg(
         out,
         &Frame::ScanStarted {
@@ -263,9 +262,9 @@ fn run_scan<W: Write>(root: &Path, threads: usize, stream: &UnixStream, out: &mu
 
 /// Remove a validated path, returning how many entries went with it.
 fn remove(path: &Path) -> std::io::Result<u64> {
-    // Judge the path itself, not what it points at: `resolve_under_root` has
-    // already confirmed the destination is inside the root, so a symlink here
-    // should be unlinked rather than followed into a recursive delete.
+    // Judge the path itself, not its target. The destination is already known
+    // to be inside the root, so a symlink here is unlinked rather than followed
+    // into a recursive delete.
     let meta = std::fs::symlink_metadata(path)?;
 
     if meta.is_symlink() || !meta.is_dir() {

@@ -78,10 +78,7 @@ export function SetupScreen({
         </div>
       </div>
 
-      {/*
-        Two attached devices used to break every adb call, because nothing
-        passed -s and the device count came from a substring test.
-      */}
+      {/* With more than one device attached, the choice has to be explicit. */}
       {showPicker && !loading ? (
         <div
           className="w-full max-w-sm flex flex-col gap-2"

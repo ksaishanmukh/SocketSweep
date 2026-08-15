@@ -1,10 +1,9 @@
 /**
- * Mirrors the serde types in src-tauri. The Rust side is the source of truth;
- * these exist so TypeScript can see the shape.
+ * Mirrors the serde types in src-tauri, which are the source of truth.
  *
  * Nodes are addressed by `id`, never by path. The host holds the tree and the
- * byte-exact paths; a path that round-tripped through a JavaScript string could
- * come back subtly different, and it would come back as a delete target.
+ * byte-exact paths: a path round-tripped through a JavaScript string can come
+ * back subtly different, and it comes back as a delete target.
  */
 
 export interface Device {

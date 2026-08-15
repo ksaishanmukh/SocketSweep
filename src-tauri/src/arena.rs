@@ -1,14 +1,10 @@
 //! The scanned tree, owned by the host process.
 //!
-//! The frontend never receives this. It asks for the handful of rows it is
-//! about to draw and refers to nodes by [`NodeId`]. That arrangement is what
-//! removes the previous design's three worst properties at once:
-//!
-//!   - a multi-megabyte JSON tree crossing the IPC boundary on every scan
-//!   - `JSON.parse(JSON.stringify(tree))` deep-cloning ~56,000 nodes on every
-//!     single delete
-//!   - byte-exact Android paths having to survive a round trip through
-//!     JavaScript strings in order to come back as a delete target
+//! The frontend never receives it. It asks for the handful of rows it is about
+//! to draw and refers to nodes by [`NodeId`], which keeps three things true at
+//! once: no payload scales with the size of the device, a delete costs O(depth)
+//! rather than a copy of the tree, and byte-exact Android paths never have to
+//! survive a round trip through JavaScript strings to come back as a target.
 //!
 //! # Shape
 //!
@@ -29,7 +25,7 @@ use socketsweep_protocol::{Entry, EntryKind};
 pub type NodeId = u32;
 
 /// Sentinel for "no node". The root is always id 0, so 0 cannot mean absent.
-pub const NONE: NodeId = u32::MAX;
+const NONE: NodeId = u32::MAX;
 pub const ROOT: NodeId = 0;
 
 #[derive(Debug)]
@@ -187,13 +183,13 @@ impl Arena {
         Self::new_labelled(root_path, root_path)
     }
 
-    ///  keys the directory index and must match what the daemon
-    /// sends;  only supplies the root's display name.
+    /// `resolved` keys the directory index and must match what the daemon
+    /// sends; `requested` only supplies the root's display name.
     ///
-    /// They differ on a real device: the daemon canonicalises, so the resolved
-    /// root is /storage/emulated/0 and its basename is the bare "0" — a
-    /// breadcrumb reading "0" tells nobody anything. The label comes from the
-    /// path the user actually asked for.
+    /// The two differ in practice: the daemon canonicalises, so the resolved
+    /// root is typically `/storage/emulated/0`, whose basename is the bare "0".
+    /// The label comes from the path the user asked for, so the breadcrumb reads
+    /// "sdcard".
     pub fn new_labelled(resolved: &[u8], requested: &[u8]) -> Self {
         let root_path = resolved;
         let name = basename(requested).to_vec().into_boxed_slice();
@@ -556,8 +552,7 @@ impl Arena {
 
     /// The largest files anywhere in the tree.
     ///
-    /// This is the question the app exists to answer, and the previous UI could
-    /// only answer it by expanding folders one at a time.
+    /// Flat across the whole tree, so depth does not hide anything.
     pub fn largest_files(&self, limit: usize) -> Vec<Row> {
         let mut files: Vec<NodeId> = self
             .nodes
@@ -668,12 +663,11 @@ impl Arena {
     /// Storage attributed to the app that owns it.
     ///
     /// Android puts per-app files under `Android/{data,obb,media}/<package>`, so
-    /// ownership is a property of *where* a file lives, not what it is called.
-    /// That matters: on a real device most of the space is game assets with
-    /// extensions no category list would recognise — 57GB of `.pak`, `.mipmaps`,
-    /// `.erp` and `.bnk` on the phone this was built against, all of which the
-    /// file-type view can only call "Other". Location tells you it belongs to a
-    /// specific game; the extension never will.
+    /// ownership is a property of *where* a file lives rather than what it is
+    /// called. That is what makes this work where file types cannot: much of a
+    /// device is game assets in formats like `.pak`, `.mipmaps`, `.erp` and
+    /// `.bnk`, which no realistic category list recognises. Location identifies
+    /// the owner; the extension never will.
     ///
     /// Cheap: each package directory already carries its subtree totals, so this
     /// visits one node per package rather than walking the tree.
@@ -759,7 +753,7 @@ impl Arena {
 ///
 /// Deliberately coarse. "You have 24GB of video" is an answer someone can act
 /// on; a list of forty extensions is the same data with the conclusion removed.
-pub const CATEGORIES: [&str; 7] = [
+const CATEGORIES: [&str; 7] = [
     "Photos",
     "Video",
     "Audio",

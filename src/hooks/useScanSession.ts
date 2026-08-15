@@ -15,7 +15,7 @@ import {
 /** Which analysis the main canvas is showing. */
 export type Mode = "treemap" | "largest" | "types" | "apps";
 
-export type Phase = "setup" | "connecting" | "scanning" | "result";
+type Phase = "setup" | "connecting" | "scanning" | "result";
 
 const MAX_LOG_LINES = 200;
 const SEARCH_DEBOUNCE_MS = 150;
