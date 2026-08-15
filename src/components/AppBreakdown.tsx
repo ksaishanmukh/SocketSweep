@@ -36,7 +36,6 @@ export function AppBreakdown({ apps, onOpen }: { apps: AppUsage[]; onOpen: (id: 
           // comparing apps to each other, and a leading 45GB game would
           // otherwise flatten everything below it into invisible slivers.
           const share = largest > 0 ? (app.size / largest) * 100 : 0;
-          const [head, ...rest] = splitPackage(app.package);
 
           return (
             <li key={app.package}>
@@ -47,9 +46,15 @@ export function AppBreakdown({ apps, onOpen }: { apps: AppUsage[]; onOpen: (id: 
                 title={`Go to ${app.package}`}
               >
                 <div className="flex items-baseline gap-3">
-                  <span className="flex-1 min-w-0 truncate text-sm">
-                    <span className="text-zinc-500">{head}</span>
-                    <span className="text-zinc-200 font-medium">{rest}</span>
+                  {/*
+                    Rendered whole and unemphasised, in mono, to read as the
+                    identifier it is. Highlighting the last segment made
+                    com.activision.callofduty.shooter look like an app called
+                    "shooter" — an assertion about the app's name that we have
+                    no basis for, since Android does not give us the label.
+                  */}
+                  <span className="flex-1 min-w-0 truncate text-sm font-mono text-zinc-300">
+                    {app.package}
                   </span>
                   <span className="text-xs font-mono text-zinc-300 tabular-nums shrink-0">
                     {formatBytes(app.size)}
@@ -71,13 +76,4 @@ export function AppBreakdown({ apps, onOpen }: { apps: AppUsage[]; onOpen: (id: 
       </ul>
     </div>
   );
-}
-
-/**
- * Split `com.example.game` into a dimmed `com.example.` and a highlighted
- * `game` — the last segment is the part that identifies the app to a human.
- */
-function splitPackage(pkg: string): [string, string] {
-  const cut = pkg.lastIndexOf(".");
-  return cut === -1 ? ["", pkg] : [pkg.slice(0, cut + 1), pkg.slice(cut + 1)];
 }
