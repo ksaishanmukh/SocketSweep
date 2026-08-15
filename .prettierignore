@@ -1,0 +1,14 @@
+dist
+target
+src-tauri/target
+src-tauri/gen
+node_modules
+package-lock.json
+Cargo.lock
+
+# Left alone deliberately: reformatting these would create large diffs that
+# obscure real changes in an upstream pull request.
+README.md
+LICENSE
+.github
+assets
