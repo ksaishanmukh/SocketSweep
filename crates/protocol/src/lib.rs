@@ -209,8 +209,8 @@ pub fn token_from_hex(s: &str) -> Option<Token> {
         return None;
     }
     let mut token = [0u8; TOKEN_LEN];
-    for (out, pair) in token.iter_mut().zip(bytes.chunks_exact(2)) {
-        *out = (nibble(pair[0])? << 4) | nibble(pair[1])?;
+    for (i, out) in token.iter_mut().enumerate() {
+        *out = (nibble(bytes[2 * i])? << 4) | nibble(bytes[2 * i + 1])?;
     }
     Some(token)
 }
