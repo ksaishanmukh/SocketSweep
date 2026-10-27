@@ -16,8 +16,18 @@
 //! Only the node's own `name` is stored. Full paths are rebuilt by walking
 //! parents on the rare occasions one is needed, which is why the daemon does not
 //! need to send an absolute path per node.
+//!
+//! # Generations
+//!
+//! An id is a position in one scan's vector, so the same number names a
+//! different file once a rescan rebuilds the tree. Every arena therefore carries
+//! a generation, unique within the process, and every value handed to the
+//! frontend carries it as `gen`. A delete must present the generation its id
+//! came from and is refused if the tree has been rebuilt since; see
+//! [`Arena::delete_target`].
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use serde::Serialize;
 use socketsweep_protocol::{Entry, EntryKind};
@@ -27,6 +37,10 @@ pub type NodeId = u32;
 /// Sentinel for "no node". The root is always id 0, so 0 cannot mean absent.
 const NONE: NodeId = u32::MAX;
 pub const ROOT: NodeId = 0;
+
+/// Source of [`Arena::gen`]. Starts at 1 so a frontend that has not yet seen a
+/// tree can use 0 to mean "none".
+static NEXT_GEN: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Debug)]
 struct Node {
@@ -45,12 +59,18 @@ struct Node {
 
     is_dir: bool,
     /// This directory's own frame has arrived, so its direct children are known.
-    /// Descendants may still be filling in.
+    /// Descendants may still be filling in. Always true for a file.
+    ///
+    /// A directory below the walker's depth limit, or one it could not open, is
+    /// announced by its parent and never gets a frame of its own, so it stays
+    /// unlisted — and reads as empty — even after the walk has finished.
     listed: bool,
     removed: bool,
 }
 
 pub struct Arena {
+    /// Which tree this is; see [Generations](self#generations).
+    gen: u32,
     nodes: Vec<Node>,
     /// Directory path -> id. Only directories are indexed: a `Frame::Dir` is the
     /// only thing that arrives keyed by path, and there are ~1,600 directories
@@ -74,6 +94,8 @@ pub struct Arena {
 #[serde(rename_all = "camelCase")]
 pub struct Row {
     pub id: NodeId,
+    /// The tree `id` belongs to.
+    pub gen: u32,
     /// Lossy UTF-8 for display only. Deletes travel by `id`, so a name that is
     /// not valid UTF-8 is still displayable without becoming unsafe to act on.
     pub name: String,
@@ -83,6 +105,10 @@ pub struct Row {
     /// False while this subtree is still being walked, so the UI can mark a
     /// number as still settling rather than presenting it as final.
     pub complete: bool,
+    /// False for a directory whose contents were never read — below the
+    /// walker's depth limit, or unreadable — so its size of 0 is unknown rather
+    /// than empty. Always true for a file.
+    pub listed: bool,
     /// Containing directory, for views that cross the tree — a search hit or a
     /// largest-file entry is meaningless without knowing where it lives.
     /// Omitted inside a single directory listing, where it would be the same
@@ -99,6 +125,8 @@ pub struct Row {
 #[serde(rename_all = "camelCase")]
 pub struct View {
     pub id: NodeId,
+    /// The tree `id` and every row id belong to.
+    pub gen: u32,
     pub path: String,
     pub size: u64,
     pub rows: Vec<Row>,
@@ -112,9 +140,13 @@ pub struct View {
 #[serde(rename_all = "camelCase")]
 pub struct TreemapNode {
     pub id: NodeId,
+    /// The tree `id` belongs to.
+    pub gen: u32,
     pub name: String,
     pub size: u64,
     pub is_dir: bool,
+    /// As [`Row::listed`].
+    pub listed: bool,
     pub children: Vec<TreemapNode>,
 }
 
@@ -139,12 +171,16 @@ pub struct AppUsage {
     pub files: u32,
     /// Whichever of its folders is largest, so the UI can navigate there.
     pub id: NodeId,
+    /// The tree `id` belongs to.
+    pub gen: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Crumb {
     pub id: NodeId,
+    /// The tree `id` belongs to.
+    pub gen: u32,
     pub name: String,
 }
 
@@ -157,9 +193,18 @@ pub struct Stats {
     pub scanning: bool,
 }
 
+/// What a delete with an id from a replaced tree is told.
+pub const STALE_MESSAGE: &str = "Results are out of date — rescan.";
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ArenaError {
     UnknownNode(NodeId),
+    /// The node existed but has since been deleted.
+    Removed(NodeId),
+    /// An id from a tree that has since been replaced by a rescan.
+    Stale,
+    /// The scan root is the session itself, not something to delete.
+    RootNotDeletable,
     /// A `Frame::Dir` arrived for a path no parent had announced.
     OrphanFrame(String),
 }
@@ -168,6 +213,9 @@ impl std::fmt::Display for ArenaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ArenaError::UnknownNode(id) => write!(f, "no node with id {id}"),
+            ArenaError::Removed(_) => write!(f, "that item has already been deleted"),
+            ArenaError::Stale => write!(f, "{STALE_MESSAGE}"),
+            ArenaError::RootNotDeletable => write!(f, "the scan root cannot be deleted"),
             ArenaError::OrphanFrame(p) => {
                 write!(
                     f,
@@ -184,7 +232,8 @@ impl Arena {
     }
 
     /// `resolved` keys the directory index and must match what the daemon
-    /// sends; `requested` only supplies the root's display name.
+    /// sends; `requested` only supplies the root's display name. Every arena
+    /// gets a fresh [generation](self#generations).
     ///
     /// The two differ in practice: the daemon canonicalises, so the resolved
     /// root is typically `/storage/emulated/0`, whose basename is the bare "0".
@@ -212,6 +261,7 @@ impl Arena {
         dir_index.insert(root_path.clone(), ROOT);
 
         Arena {
+            gen: NEXT_GEN.fetch_add(1, Ordering::Relaxed),
             nodes: vec![root],
             dir_index,
             root_path,
@@ -282,7 +332,8 @@ impl Arena {
             files: u32::from(!is_dir),
             dirs: 0,
             is_dir,
-            listed: false,
+            // A file has nothing further to read.
+            listed: !is_dir,
             removed: false,
         });
 
@@ -406,6 +457,20 @@ impl Arena {
         !self.finished
     }
 
+    /// This tree's [generation](self#generations).
+    pub fn gen(&self) -> u32 {
+        self.gen
+    }
+
+    /// Refuse an id handed out by an earlier tree.
+    pub fn check_gen(&self, gen: u32) -> Result<(), ArenaError> {
+        if gen == self.gen {
+            Ok(())
+        } else {
+            Err(ArenaError::Stale)
+        }
+    }
+
     pub fn stats(&self) -> Stats {
         let root = &self.nodes[ROOT as usize];
         Stats {
@@ -426,12 +491,48 @@ impl Arena {
         self.nodes.get(id as usize).is_some_and(|n| n.is_dir)
     }
 
-    /// Rebuild an absolute path by walking to the root. Byte-exact, so the
-    /// result is safe to hand to the daemon as a delete target.
-    pub fn path_of(&self, id: NodeId) -> Result<Vec<u8>, ArenaError> {
-        if self.nodes.get(id as usize).is_none() {
-            return Err(ArenaError::UnknownNode(id));
+    /// Ok for a node still in the tree; otherwise why it is not.
+    fn live(&self, id: NodeId) -> Result<(), ArenaError> {
+        match self.nodes.get(id as usize) {
+            None => Err(ArenaError::UnknownNode(id)),
+            Some(n) if n.removed => Err(ArenaError::Removed(id)),
+            Some(_) => Ok(()),
         }
+    }
+
+    /// `id` itself if it is still in the tree, otherwise its closest ancestor
+    /// that is. Where the UI lands after the folder it was showing is deleted.
+    pub fn nearest_live(&self, id: NodeId) -> NodeId {
+        if (id as usize) >= self.nodes.len() {
+            return ROOT;
+        }
+        let mut cur = id;
+        // The root is never removed, so the walk stops by the time it gets there.
+        while cur != NONE && !self.exists(cur) {
+            cur = self.nodes[cur as usize].parent;
+        }
+        if cur == NONE {
+            ROOT
+        } else {
+            cur
+        }
+    }
+
+    /// The byte-exact path to delete for `id`, provided the id comes from this
+    /// tree, is still in it, and is not the root.
+    pub fn delete_target(&self, id: NodeId, gen: u32) -> Result<Vec<u8>, ArenaError> {
+        self.check_gen(gen)?;
+        if id == ROOT {
+            return Err(ArenaError::RootNotDeletable);
+        }
+        self.path_of(id)
+    }
+
+    /// Rebuild an absolute path by walking to the root. Byte-exact, so the
+    /// result is safe to hand to the daemon as a delete target. A deleted node
+    /// has no path.
+    pub fn path_of(&self, id: NodeId) -> Result<Vec<u8>, ArenaError> {
+        self.live(id)?;
 
         let mut parts = Vec::new();
         let mut cur = id;
@@ -455,11 +556,13 @@ impl Arena {
         let n = &self.nodes[id as usize];
         Row {
             id,
+            gen: self.gen,
             name: String::from_utf8_lossy(&n.name).into_owned(),
             size: n.size,
             is_dir: n.is_dir,
             files: n.files,
             complete: self.subtree_complete(id),
+            listed: n.listed,
             parent: None,
             parent_id: None,
         }
@@ -504,9 +607,7 @@ impl Arena {
 
     /// The rows for one directory, largest first, capped at `limit`.
     pub fn view(&self, id: NodeId, limit: usize) -> Result<View, ArenaError> {
-        if !self.exists(id) {
-            return Err(ArenaError::UnknownNode(id));
-        }
+        self.live(id)?;
 
         let mut kids = self.children_of(id);
         kids.sort_unstable_by(|a, b| {
@@ -521,6 +622,7 @@ impl Arena {
 
         Ok(View {
             id,
+            gen: self.gen,
             path: String::from_utf8_lossy(&self.path_of(id)?).into_owned(),
             size: self.nodes[id as usize].size,
             rows,
@@ -530,15 +632,14 @@ impl Arena {
     }
 
     pub fn breadcrumbs(&self, id: NodeId) -> Result<Vec<Crumb>, ArenaError> {
-        if self.nodes.get(id as usize).is_none() {
-            return Err(ArenaError::UnknownNode(id));
-        }
+        self.live(id)?;
         let mut out = Vec::new();
         let mut cur = id;
         loop {
             let n = &self.nodes[cur as usize];
             out.push(Crumb {
                 id: cur,
+                gen: self.gen,
                 name: String::from_utf8_lossy(&n.name).into_owned(),
             });
             if cur == ROOT {
@@ -576,9 +677,7 @@ impl Arena {
     /// than one level — but not the whole tree. Per-level caps keep the payload
     /// bounded: anything past the cap is too small to be a legible tile anyway.
     pub fn treemap(&self, id: NodeId, depth: usize) -> Result<TreemapNode, ArenaError> {
-        if !self.exists(id) {
-            return Err(ArenaError::UnknownNode(id));
-        }
+        self.live(id)?;
         /// Fan-out per level. Deeper tiles are smaller, so fewer are readable.
         const CAPS: [usize; 3] = [48, 12, 6];
         Ok(self.treemap_at(id, depth.min(CAPS.len()), &CAPS, 0))
@@ -594,9 +693,11 @@ impl Arena {
         let n = &self.nodes[id as usize];
         let mut node = TreemapNode {
             id,
+            gen: self.gen,
             name: String::from_utf8_lossy(&n.name).into_owned(),
             size: n.size,
             is_dir: n.is_dir,
+            listed: n.listed,
             children: Vec::new(),
         };
 
@@ -710,6 +811,7 @@ impl Arena {
                 size,
                 files,
                 id,
+                gen: self.gen,
             })
             .collect();
 

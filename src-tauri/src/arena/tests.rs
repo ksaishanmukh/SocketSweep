@@ -660,3 +660,125 @@ fn app_breakdown_skips_a_package_whose_files_were_deleted() {
     assert!(!apps.iter().any(|x| x.package == "com.game"));
     assert!(apps.iter().any(|x| x.package == "com.chat"));
 }
+
+// ── Generations and stale ids ───────────────────────────────────────────────
+
+#[test]
+fn every_tree_gets_a_new_generation_and_hands_it_out_with_its_ids() {
+    let a = populated();
+    let b = populated();
+    assert_ne!(a.gen(), b.gen(), "a rescan must not reuse the generation");
+
+    let v = a.view(ROOT, 10).unwrap();
+    assert_eq!(v.gen, a.gen());
+    assert!(v.rows.iter().all(|r| r.gen == a.gen()));
+    assert!(a
+        .breadcrumbs(ROOT)
+        .unwrap()
+        .iter()
+        .all(|c| c.gen == a.gen()));
+    assert_eq!(a.treemap(ROOT, 1).unwrap().gen, a.gen());
+    assert!(a.largest_files(5).iter().all(|r| r.gen == a.gen()));
+    assert!(with_apps().app_breakdown(5).iter().all(|x| x.gen != 0));
+}
+
+#[test]
+fn a_delete_with_an_id_from_an_earlier_tree_is_refused() {
+    let old = populated();
+    let new = populated();
+    let camera = id_of(&old, b"/sdcard/DCIM/Camera");
+
+    let err = new.delete_target(camera, old.gen()).unwrap_err();
+    assert_eq!(err, ArenaError::Stale);
+    assert_eq!(err.to_string(), "Results are out of date \u{2014} rescan.");
+
+    assert_eq!(
+        new.delete_target(camera, new.gen()).unwrap(),
+        b"/sdcard/DCIM/Camera".to_vec()
+    );
+}
+
+#[test]
+fn the_root_is_never_a_delete_target() {
+    let a = populated();
+    assert_eq!(
+        a.delete_target(ROOT, a.gen()),
+        Err(ArenaError::RootNotDeletable)
+    );
+}
+
+#[test]
+fn a_removed_node_is_refused_as_a_delete_target_and_has_no_path() {
+    let mut a = populated();
+    let dcim = id_of(&a, b"/sdcard/DCIM");
+    let camera = id_of(&a, b"/sdcard/DCIM/Camera");
+    a.remove(dcim).unwrap();
+
+    assert_eq!(
+        a.delete_target(dcim, a.gen()),
+        Err(ArenaError::Removed(dcim))
+    );
+    assert_eq!(
+        a.delete_target(camera, a.gen()),
+        Err(ArenaError::Removed(camera)),
+        "a descendant goes with its parent"
+    );
+    assert!(a.path_of(camera).is_err());
+    assert!(a.view(camera, 10).is_err());
+    assert!(a.breadcrumbs(camera).is_err());
+}
+
+#[test]
+fn deleting_the_watched_folder_re_homes_to_its_nearest_surviving_ancestor() {
+    let mut a = populated();
+    let dcim = id_of(&a, b"/sdcard/DCIM");
+    let camera = id_of(&a, b"/sdcard/DCIM/Camera");
+    let download = id_of(&a, b"/sdcard/Download");
+
+    assert_eq!(a.nearest_live(camera), camera, "a live node stays put");
+
+    a.remove(camera).unwrap();
+    assert_eq!(a.nearest_live(camera), dcim);
+
+    a.remove(dcim).unwrap();
+    assert_eq!(a.nearest_live(camera), ROOT, "past every removed ancestor");
+    assert_eq!(a.nearest_live(download), download, "unrelated folders stay");
+    assert_eq!(
+        a.nearest_live(9999),
+        ROOT,
+        "an unknown id lands on the root"
+    );
+}
+
+// ── Unread directories ──────────────────────────────────────────────────────
+
+#[test]
+fn a_directory_is_unlisted_until_its_own_frame_arrives() {
+    let mut a = Arena::new(b"/sdcard");
+    a.apply_dir(b"/sdcard", &[dir("deep"), file("f", 5)])
+        .unwrap();
+
+    let rows = a.view(ROOT, 10).unwrap().rows;
+    assert!(!row_named(&rows, "deep").listed);
+    assert!(row_named(&rows, "f").listed, "a file is always listed");
+    let deep = id_of(&a, b"/sdcard/deep");
+    assert!(!a.treemap(deep, 1).unwrap().listed);
+
+    a.apply_dir(b"/sdcard/deep", &[file("g", 1)]).unwrap();
+    let rows = a.view(ROOT, 10).unwrap().rows;
+    assert!(row_named(&rows, "deep").listed);
+    assert!(a.treemap(deep, 1).unwrap().listed);
+}
+
+#[test]
+fn a_directory_the_walker_never_read_stays_unlisted_after_the_scan() {
+    // Below the depth limit: announced by its parent, never given a frame.
+    let mut a = Arena::new(b"/sdcard");
+    a.apply_dir(b"/sdcard", &[dir("deep")]).unwrap();
+    a.finish();
+
+    let row = a.view(ROOT, 10).unwrap().rows.remove(0);
+    assert_eq!(row.name, "deep");
+    assert!(!row.listed, "its 0 bytes are unknown, not empty");
+    assert!(row.complete, "the walk itself is over");
+}
