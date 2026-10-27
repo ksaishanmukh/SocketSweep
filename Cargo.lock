@@ -3066,6 +3066,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "socketsweep-engine"
+version = "1.0.0"
+
+[[package]]
 name = "socketsweep-gui-contract"
 version = "1.0.0"
 dependencies = [
@@ -3075,6 +3079,10 @@ dependencies = [
  "specta-serde",
  "specta-typescript",
 ]
+
+[[package]]
+name = "socketsweep-host-core"
+version = "1.0.0"
 
 [[package]]
 name = "socketsweep-protocol"
@@ -3094,7 +3102,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "socketsweep-sim"
+version = "1.0.0"
+
+[[package]]
 name = "socketsweep-transport"
+version = "1.0.0"
+
+[[package]]
+name = "socketsweep-transport-adb"
 version = "1.0.0"
 
 [[package]]

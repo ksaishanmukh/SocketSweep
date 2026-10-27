@@ -9,6 +9,10 @@ members = [
     "crates/wire",
     "crates/gui-contract",
     "crates/transport",
+    "crates/engine",
+    "crates/sim",
+    "crates/transport-adb",
+    "crates/host-core",
 ]
 
 # crates/daemon targets aarch64-linux-android and only builds on a Linux-family
@@ -24,6 +28,10 @@ default-members = [
     "crates/wire",
     "crates/gui-contract",
     "crates/transport",
+    "crates/engine",
+    "crates/sim",
+    "crates/transport-adb",
+    "crates/host-core",
 ]
 
 [workspace.package]
@@ -42,6 +50,10 @@ socketsweep-scanner = { path = "crates/scanner" }
 socketsweep-wire = { path = "crates/wire" }
 socketsweep-gui-contract = { path = "crates/gui-contract" }
 socketsweep-transport = { path = "crates/transport" }
+socketsweep-engine = { path = "crates/engine" }
+socketsweep-sim = { path = "crates/sim" }
+socketsweep-transport-adb = { path = "crates/transport-adb" }
+socketsweep-host-core = { path = "crates/host-core" }
 bitflags = { version = "2.13", features = ["serde"] }
 # Pinned exactly: specta 2 is still a release candidate and its RCs break each
 # other. These are the versions tauri-specta 2.0.0-rc.26 is built against, so
