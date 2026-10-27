@@ -27,6 +27,27 @@ export default tseslint.config(
     },
   },
   {
+    // The generated bindings are the host's whole API, and `src/api` is the
+    // one module that wraps them. Anything else importing them directly would
+    // be untestable without invoking the real host.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/api/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "(^|/)bindings([.][cm]?[jt]sx?)?$",
+              message:
+                "Import the host API from src/api, the only module that may use bindings.ts.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["scripts/**/*.mjs"],
     extends: [js.configs.recommended],
     languageOptions: {

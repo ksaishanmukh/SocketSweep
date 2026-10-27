@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
-import * as ipc from "../../lib/ipc";
-import type { Device } from "../../lib/types";
+import { commands, type Device, type DeviceState } from "../../api";
 import { IconUsb, Spinner } from "../icons";
 
-/** How each non-usable state is explained, since the fix differs. */
-const TROUBLE: Record<string, string> = {
-  unauthorized: "Tap “Allow USB debugging” on the phone",
-  offline: "Unplug and reconnect the cable",
-  authorizing: "Waiting for the phone to authorise this computer",
-  noperm: "The system is blocking access to this device",
+/** How each non-usable state is named, and what to do about it, since the fix differs. */
+const TROUBLE: Record<Exclude<DeviceState, "ready">, { name: string; fix?: string }> = {
+  unauthorized: { name: "waiting for permission", fix: "Tap “Allow USB debugging” on the phone" },
+  offline: { name: "offline", fix: "Unplug and reconnect the cable" },
+  noPermission: { name: "blocked", fix: "The system is blocking access to this device" },
+  other: { name: "not ready" },
 };
+
+function troubleOf(state: DeviceState): { name: string; fix?: string } {
+  return state === "ready" ? { name: "not usable" } : TROUBLE[state];
+}
 
 /** Fast enough that plugging in feels instant, slow enough to be free. */
 const DEVICE_POLL_MS = 2000;
@@ -17,9 +20,12 @@ const DEVICE_POLL_MS = 2000;
 export function SetupScreen({
   onConnect,
   loading,
+  status = "Connecting…",
 }: {
   onConnect: (serial?: string) => void;
   loading: boolean;
+  /** What the host is doing while `loading`: connecting, then starting the scan. */
+  status?: string;
 }) {
   const [devices, setDevices] = useState<Device[] | null>(null);
 
@@ -32,7 +38,7 @@ export function SetupScreen({
 
     const poll = async () => {
       try {
-        const list = await ipc.listDevices();
+        const list = await commands.listDevices();
         if (!cancelled) setDevices(list);
       } catch {
         // No adb server means nothing to list. Connect reports the real error.
@@ -124,7 +130,7 @@ export function SetupScreen({
           {loading ? (
             <span className="flex items-center gap-2">
               <Spinner size={16} />
-              Connecting…
+              {status}
             </span>
           ) : (
             <span className="flex items-center gap-2">
@@ -138,13 +144,16 @@ export function SetupScreen({
       {/* Attached but unusable: say which problem it is, not just "not found". */}
       {!loading && problems.length > 0 && (
         <ul className="flex flex-col gap-1.5 text-xs">
-          {problems.map((d) => (
-            <li key={d.serial} className="text-amber-400/80">
-              <span className="font-mono">{d.model}</span> is {d.state}
-              {TROUBLE[d.state] && <span className="text-zinc-500"> — {TROUBLE[d.state]}</span>}
-              {d.hint && <p className="mt-0.5 text-[11px] text-zinc-500">{d.hint}</p>}
-            </li>
-          ))}
+          {problems.map((d) => {
+            const trouble = troubleOf(d.state);
+            return (
+              <li key={d.serial} className="text-amber-400/80">
+                <span className="font-mono">{d.model}</span> is {trouble.name}
+                {trouble.fix && <span className="text-zinc-500"> — {trouble.fix}</span>}
+                {d.hint && <p className="mt-0.5 text-[11px] text-zinc-500">{d.hint}</p>}
+              </li>
+            );
+          })}
         </ul>
       )}
 
