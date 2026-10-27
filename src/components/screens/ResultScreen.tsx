@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { formatBytes, formatNumber } from "../../lib/format";
 import type { TreemapItem } from "../../lib/squarify";
-import type { Mode } from "../../hooks/useScanSession";
+import { VIEW_PAGE_SIZE, type Mode } from "../../hooks/useScanSession";
 import type {
   AppUsage,
   Crumb,
@@ -49,6 +49,8 @@ export function ResultScreen({
   searchResults,
   onQueryChange,
   onOpen,
+  onLoadMore,
+  loadingMore,
   onRescan,
   onDisconnect,
   onDelete,
@@ -69,13 +71,18 @@ export function ResultScreen({
   searchResults: Row[] | null;
   onQueryChange: (q: string) => void;
   onOpen: (id: number) => void;
+  onLoadMore: () => void;
+  loadingMore: boolean;
   onRescan: () => void;
   onDisconnect: () => void;
   onDelete: (row: Row) => void;
 }) {
   const items = useMemo(() => toItems(treemap), [treemap]);
-  const searching = searchResults !== null;
-  const rows = searchResults ?? view.rows;
+  // A non-empty query owns the side panel even before its answer arrives, so
+  // the folder listing is never shown under a search header.
+  const searching = query.trim() !== "";
+  const rows = searching ? (searchResults ?? []) : view.rows;
+  const waiting = searching && searchResults === null;
 
   return (
     <div className="flex flex-col h-full animate-fade-in-up min-h-0">
@@ -187,17 +194,27 @@ export function ResultScreen({
 
           {mode === "types" && <TypeBreakdown groups={types} />}
 
-          {mode === "apps" && <AppBreakdown apps={apps} onOpen={onOpen} />}
+          {mode === "apps" && (
+            <AppBreakdown
+              apps={apps}
+              onOpen={(id) => {
+                // The app's folder is shown in the treemap, not in this list.
+                onModeChange("treemap");
+                onOpen(id);
+              }}
+            />
+          )}
         </div>
 
         <div className="w-full lg:w-[26rem] shrink-0 flex flex-col min-h-0 glass-card rounded-xl">
           <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800/60 shrink-0">
             <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider flex-1 truncate">
-              {searching ? `${rows.length} matches for “${query}”` : view.path}
+              {waiting
+                ? `Searching for “${query.trim()}”…`
+                : searching
+                  ? `${rows.length} matches for “${query.trim()}”`
+                  : view.path}
             </span>
-            {!searching && view.hidden > 0 && (
-              <span className="text-[11px] text-zinc-600">+{formatNumber(view.hidden)} more</span>
-            )}
           </div>
 
           {/*
@@ -212,8 +229,31 @@ export function ResultScreen({
             onDelete={onDelete}
             onReveal={searching ? onReveal : undefined}
             showBar={false}
-            emptyMessage={searching ? "No matches." : "This folder is empty."}
+            emptyMessage={
+              waiting ? "Searching…" : searching ? "No matches." : "This folder is empty."
+            }
           />
+
+          {/* Large folders arrive in pages, so say how much is not on screen yet. */}
+          {!searching && view.hidden > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 border-t border-zinc-800/60 shrink-0">
+              <span className="text-[11px] text-zinc-600 flex-1 tabular-nums">
+                Showing {formatNumber(view.rows.length)} of{" "}
+                {formatNumber(view.rows.length + view.hidden)}
+              </span>
+              <button
+                onClick={onLoadMore}
+                disabled={loadingMore}
+                className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-zinc-800 text-zinc-300 border border-zinc-700/50
+                  hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-wait
+                  focus-visible:outline-2 focus-visible:outline-accent-500"
+              >
+                {loadingMore
+                  ? "Loading…"
+                  : `Load ${formatNumber(Math.min(VIEW_PAGE_SIZE, view.hidden))} more`}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

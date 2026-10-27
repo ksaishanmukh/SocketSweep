@@ -49,7 +49,11 @@ export const appBreakdown = (limit?: number) => invoke<AppUsage[]>("app_breakdow
 
 export const search = (query: string, limit?: number) => invoke<Row[]>("search", { query, limit });
 
-export const deleteNode = (id: number) => invoke<Deleted>("delete", { id });
+/**
+ * `gen` is the generation the id was read from. The host refuses a stale one, so
+ * a row left over from before a rescan cannot delete whatever now has its id.
+ */
+export const deleteNode = (id: number, gen: number) => invoke<Deleted>("delete", { id, gen });
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
