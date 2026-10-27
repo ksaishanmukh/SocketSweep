@@ -1,8 +1,9 @@
 //! Path validation for destructive operations.
 //!
-//! The only place a delete is authorised, and the only place one is carried
-//! out: what makes a delete safe is the pairing of how a path is resolved with
-//! how it is then removed, so the two live together.
+//! The only place a delete is authorised. What makes a delete safe is the
+//! pairing of how a path is resolved here with how it is then removed
+//! ([`delete_tree`](super::delete_tree), which never follows a symbolic
+//! link), so the two live side by side in `actions`.
 //!
 //! It lives here, next to the filesystem, rather than on the desktop: a check on
 //! the desktop is one that anything speaking to the socket directly never
@@ -55,9 +56,26 @@ impl std::fmt::Display for GuardError {
     }
 }
 
+/// [`Path::canonicalize`], minus the `\\?\` prefix Windows adds, so a
+/// resolved path can still be joined with `/` the way the engine builds
+/// paths. Exactly `canonicalize` anywhere else.
+pub fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {
+    let p = path.canonicalize()?;
+    #[cfg(windows)]
+    {
+        let s = p.as_os_str().to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            let b = rest.as_bytes();
+            if b.len() >= 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {
+                return Ok(PathBuf::from(rest));
+            }
+        }
+    }
+    Ok(p)
+}
+
 fn canonical_root(root: &Path) -> Result<PathBuf, GuardError> {
-    root.canonicalize()
-        .map_err(|_| GuardError::NotFound(root.to_path_buf()))
+    canonicalize(root).map_err(|_| GuardError::NotFound(root.to_path_buf()))
 }
 
 /// Resolve a delete target and confirm it sits strictly beneath `root`.
@@ -95,9 +113,7 @@ pub fn resolve_under_root(root: &Path, target: &Path) -> Result<PathBuf, GuardEr
         Some(p) if !p.as_os_str().is_empty() => p,
         _ => Path::new("."),
     };
-    let parent = parent
-        .canonicalize()
-        .map_err(|_| GuardError::NotFound(target.to_path_buf()))?;
+    let parent = canonicalize(parent).map_err(|_| GuardError::NotFound(target.to_path_buf()))?;
     let resolved = parent.join(name);
 
     // The entry itself must exist, but is looked at rather than through.
@@ -124,9 +140,7 @@ pub fn resolve_under_root(root: &Path, target: &Path) -> Result<PathBuf, GuardEr
 /// chain to `/storage/emulated/0` on a typical device.
 pub fn resolve_at_or_under_root(root: &Path, target: &Path) -> Result<PathBuf, GuardError> {
     let root = canonical_root(root)?;
-    let resolved = target
-        .canonicalize()
-        .map_err(|_| GuardError::NotFound(target.to_path_buf()))?;
+    let resolved = canonicalize(target).map_err(|_| GuardError::NotFound(target.to_path_buf()))?;
 
     if !resolved.starts_with(&root) {
         return Err(GuardError::OutsideRoot {
@@ -135,6 +149,19 @@ pub fn resolve_at_or_under_root(root: &Path, target: &Path) -> Result<PathBuf, G
         });
     }
     Ok(resolved)
+}
+
+/// Resolve a copy source: as [`resolve_under_root`], so a symbolic link as the
+/// final component is listed as a link rather than followed, except that the
+/// root itself may be copied (copying only reads).
+pub fn resolve_for_copy(root: &Path, target: &Path) -> Result<PathBuf, GuardError> {
+    match resolve_under_root(root, target) {
+        Err(GuardError::IsRoot(p)) => Ok(p),
+        // `/sdcard/` or `/sdcard/DCIM/..`: a directory named by reference.
+        // Reading through it is harmless; judge it by where it leads.
+        Err(GuardError::NoFinalName(_)) => resolve_at_or_under_root(root, target),
+        other => other,
+    }
 }
 
 /// The last component of `path` exactly as written, or `None` if it is empty,
@@ -155,45 +182,36 @@ fn final_name(path: &Path) -> Option<&std::ffi::OsStr> {
     path.file_name()
 }
 
-/// Remove a path returned by [`resolve_under_root`], returning how many entries
-/// went with it.
-///
-/// The entry is judged by `symlink_metadata`, so a symlink is unlinked rather
-/// than followed. Within a directory, [`std::fs::remove_dir_all`] likewise
-/// unlinks symlinks without descending into them.
-pub fn remove(path: &Path) -> std::io::Result<u64> {
-    let meta = std::fs::symlink_metadata(path)?;
-
-    if meta.is_symlink() || !meta.is_dir() {
-        std::fs::remove_file(path)?;
-        return Ok(1);
-    }
-
-    let count = count_entries(path);
-    std::fs::remove_dir_all(path)?;
-    Ok(count)
-}
-
-fn count_entries(path: &Path) -> u64 {
-    let mut n = 1;
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            // `file_type` does not follow symlinks, so a link to a directory
-            // counts as one entry, as it is removed as one.
-            match entry.file_type() {
-                Ok(t) if t.is_dir() => n += count_entries(&entry.path()),
-                Ok(_) => n += 1,
-                Err(_) => {}
-            }
-        }
-    }
-    n
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::atomic::AtomicBool;
+
+    /// Delete as the session does, returning the items removed.
+    fn remove(path: &Path) -> std::io::Result<u64> {
+        let cancel = AtomicBool::new(false);
+        super::super::delete_tree(path, &cancel, &mut |_| {})
+            .map(|(items, _)| items)
+            .map_err(|e| std::io::Error::other(e.message))
+    }
+
+    #[test]
+    fn a_copy_may_name_the_root_but_not_outside_it() {
+        let f = fixture();
+        let canonical = canonicalize(&f.root).unwrap();
+        assert_eq!(resolve_for_copy(&f.root, &f.root), Ok(canonical.clone()));
+        let with_slash = format!("{}/", f.root.to_string_lossy());
+        assert_eq!(
+            resolve_for_copy(&f.root, Path::new(&with_slash)),
+            Ok(canonical)
+        );
+        assert!(resolve_for_copy(&f.root, &f.root.join("DCIM")).is_ok());
+        assert!(matches!(
+            resolve_for_copy(&f.root, &f.outside),
+            Err(GuardError::OutsideRoot { .. })
+        ));
+    }
 
     struct Fixture {
         _tmp: tempfile::TempDir,
@@ -331,7 +349,7 @@ mod tests {
     #[test]
     fn scan_variant_permits_the_root_but_still_rejects_outside() {
         let f = fixture();
-        let canonical = f.root.canonicalize().unwrap();
+        let canonical = canonicalize(&f.root).unwrap();
         assert_eq!(resolve_at_or_under_root(&f.root, &f.root), Ok(canonical));
         assert!(resolve_at_or_under_root(&f.root, &f.root.join("DCIM")).is_ok());
         assert!(matches!(
@@ -425,7 +443,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
 
         let resolved = resolve_at_or_under_root(&root, &root).unwrap();
-        assert_eq!(resolved, root.canonicalize().unwrap());
+        assert_eq!(resolved, canonicalize(&root).unwrap());
         assert!(resolved.as_os_str().as_bytes().ends_with(b"card\xFF"));
     }
 }

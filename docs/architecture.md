@@ -31,17 +31,18 @@ Every contract has a **fake** implementation, so each side can be tested alone.
 
 ### Workspace layout
 
-| Path                   | Role                                                                                   |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `crates/wire`          | Host ↔ phone protocol types, framing, handshake                                        |
-| `crates/gui-contract`  | GUI ↔ host command and event types (specta)                                            |
-| `crates/transport`     | `Transport` trait and `FakeTransport`                                                  |
-| `crates/transport-adb` | adb implementation: smart sockets, shell v2, sync SEND/RECV2, USB and wireless         |
-| `crates/host-core`     | Tree index, session client, focus debounce, delete/copy orchestration, history         |
-| `crates/daemon`        | Phone binary: `listener`, `session`, `sched`, `aggregate`, `pool`, `fswalk`, `actions` |
-| `crates/sim`           | Dev-only: `SimFs`, discrete-event simulator, jwalk-like baseline, `FakeDaemon`         |
-| `src-tauri`            | Thin shell: maps generated commands to host-core and emits events                      |
-| `src/`                 | React features that import only `src/bindings.ts`, through `src/api/`                  |
+| Path                   | Role                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `crates/wire`          | Host ↔ phone protocol types, framing, handshake                                                                           |
+| `crates/gui-contract`  | GUI ↔ host command and event types (specta)                                                                               |
+| `crates/transport`     | `Transport` trait and `FakeTransport`                                                                                     |
+| `crates/transport-adb` | adb implementation: smart sockets, shell v2, sync SEND/RECV2, USB and wireless                                            |
+| `crates/host-core`     | Tree index, session client, focus debounce, delete/copy orchestration, history                                            |
+| `crates/daemon`        | Phone binary (lib + bin): `listener`, `session`, `outbox`, `fs_rustix` (`fswalk`), `actions`; the scan is `crates/engine` |
+| `crates/engine`        | `sched`, `aggregate`, `pool`, `trait Fs`, `trait EventSink`, `StdFs`                                                      |
+| `crates/sim`           | Dev-only: `SimFs`, discrete-event simulator, jwalk-like baseline, `FakeDaemon`                                            |
+| `src-tauri`            | Thin shell: maps generated commands to host-core and emits events                                                         |
+| `src/`                 | React features that import only `src/bindings.ts`, through `src/api/`                                                     |
 
 The daemon is built for `aarch64-linux-android` (phones) and
 `x86_64-linux-android` (emulator, for end-to-end tests), at API 30 (Android 11)
@@ -204,6 +205,50 @@ the pure state machine: `pick`, `apply`, `set_focus`, `clear_focus`, `prune`,
 moment the state changes. `pool::Scan` runs it on W worker threads plus a ticker
 (skeleton budget, `Progress`), and is the handle the session uses for `Focus`,
 `ClearFocus`, `Cancel` and delete prunes.
+
+### The daemon process (`crates/daemon`)
+
+```text
+SOCKETSWEEP_TOKEN=<64 hex> socketsweep-daemon --socket <abstract-name> [--root <path>] [--threads <n>]
+```
+
+`--root` (default `/sdcard`) confines every request; `--threads` sets the
+default workers per scan reported in `Welcome`. Logs go to stderr. Exit codes:
+0 after `Shutdown`, 1 if the socket cannot be bound, 2 for bad arguments, 3 for
+a missing or malformed token, 4 on a host that is not Linux or Android.
+
+The crate is a library plus that binary. Everything but `fs_rustix` and
+`listener` is portable and tested on every host:
+
+- `session` sees the connection as a reader, a writer and a shutdown hook
+  (`Conn`), and the phone as `Services`: an `Arc<dyn Fs>` and an
+  `Arc<dyn Actions>`. `crates/sim`'s `FakeDaemon` runs it over an in-memory
+  pipe with `SimFs` and `SimActions`.
+- `outbox` is the writer: control frames first, then bulk events, each encoded
+  as it is queued and batched per scan into `Scan` frames of at most 64 KiB,
+  waiting at most 50 ms to fill a batch; `Heartbeat` after 2 s idle; the host
+  is given up after 30 s of silence, which shuts the connection.
+- `actions::Actions` resolves request paths and performs delete and copy.
+  `LocalActions` is the real one (`std::fs` plus the guard).
+
+Request handling:
+
+- Ids must be non-zero and not in use (`BadRequest`, `DuplicateId`). Several
+  scans, deletes and copies may run at once; `Busy` is not used.
+- A hint (`Focus`, `ClearFocus`, `Cancel`) naming no running request is
+  answered `Failed { BadRequest }` under the hint's own id, which the host
+  ignores.
+- `StartScan` resolves the root (all links followed, at or under `--root`),
+  then opens it; either failure is `Failed` before `Started`.
+- `Delete` resolves through the guard, prunes the hinted directory only if the
+  scan's path for it equals the resolved path (otherwise the hint is ignored),
+  then deletes, sending `DeleteProgress` at most every 500 ms. `Deleted.totals`
+  covers everything removed, the named entry itself included. Being a control
+  frame, `Deleted` may overtake the scan's `Pruned`.
+- `PrepareCopy` needs `COPY_MANIFEST`; parts carry at most 4,096 items, the
+  named entry first (`rel` empty), each directory before its contents.
+- A lost connection cancels everything it started; an authenticated new
+  connection shuts the previous one.
 
 ### Directory table
 

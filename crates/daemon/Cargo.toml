@@ -1,18 +1,29 @@
 [package]
 name = "socketsweep-daemon"
-description = "SocketSweep on-device scan daemon (Android aarch64)"
+description = "SocketSweep on-device scan daemon (Android aarch64 and x86_64)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+
+# The portable part (session, actions) is a library, so it is tested on every
+# host and `socketsweep-sim` can run it over an in-memory pipe as `FakeDaemon`.
+[lib]
+name = "socketsweep_daemon"
+path = "src/lib.rs"
 
 [[bin]]
 name = "socketsweep-daemon"
 path = "src/main.rs"
 
 [dependencies]
-socketsweep-protocol = { workspace = true }
-socketsweep-scanner = { workspace = true }
+socketsweep-wire = { workspace = true }
+socketsweep-engine = { workspace = true }
+postcard = { workspace = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+rustix = { version = "1.1", default-features = false, features = ["fs", "std"] }
 
 [dev-dependencies]
 tempfile = "3"
+socketsweep-transport = { workspace = true, features = ["fake"] }
