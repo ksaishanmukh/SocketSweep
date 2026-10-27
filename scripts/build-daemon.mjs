@@ -22,7 +22,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TARGET = "aarch64-linux-android";
 const PROFILE = "release-daemon";
 /** Minimum supported Android API level. */
-const API_LEVEL = 31;
+const API_LEVEL = 30;
 
 const HOST_TAG = {
   win32: "windows-x86_64",
@@ -31,7 +31,7 @@ const HOST_TAG = {
 }[process.platform];
 
 function findNdk() {
-  for (const key of ["ANDROID_NDK_LATEST_HOME", "ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"]) {
+  for (const key of ["ANDROID_NDK_HOME", "ANDROID_NDK_LATEST_HOME", "ANDROID_NDK_ROOT"]) {
     const v = process.env[key];
     if (v && existsSync(join(v, "toolchains/llvm/prebuilt"))) return v;
   }

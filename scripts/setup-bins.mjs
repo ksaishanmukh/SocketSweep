@@ -11,7 +11,8 @@
 // ============================================================================
 
 import { execFileSync } from "node:child_process";
-import { createWriteStream, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createWriteStream, existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, copyFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -22,18 +23,30 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN_DIR = join(ROOT, "src-tauri", "bin");
 
-/** Per-platform download URL and the files we lift out of the archive. */
+/**
+ * Pinned platform-tools release. Bump the version and all three hashes together
+ * (sha256 of the zip served at each URL below); the download is rejected if the
+ * hash differs, so a moved or tampered archive never reaches the bundle.
+ */
+const PLATFORM_TOOLS_VERSION = "37.0.1";
+const url = (os) =>
+  `https://dl.google.com/android/repository/platform-tools_r${PLATFORM_TOOLS_VERSION}-${os}.zip`;
+
+/** Per-platform download URL, expected SHA-256, and the files we lift out of the archive. */
 const TARGETS = {
   win32: {
-    url: "https://dl.google.com/android/repository/platform-tools-latest-windows.zip",
+    url: url("win"),
+    sha256: "45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99",
     files: ["adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"],
   },
   darwin: {
-    url: "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip",
+    url: url("darwin"),
+    sha256: "ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d",
     files: ["adb"],
   },
   linux: {
-    url: "https://dl.google.com/android/repository/platform-tools-latest-linux.zip",
+    url: url("linux"),
+    sha256: "d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1",
     files: ["adb"],
   },
 };
@@ -46,9 +59,11 @@ function unzip(zipPath, destDir) {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${destDir}' -Force`,
+        // Paths travel via the environment, never interpolated into the script,
+        // so quotes or other metacharacters in them cannot break the command.
+        "Expand-Archive -LiteralPath $env:SS_ZIP -DestinationPath $env:SS_DEST -Force",
       ],
-      { stdio: "inherit" },
+      { stdio: "inherit", env: { ...process.env, SS_ZIP: zipPath, SS_DEST: destDir } },
     );
   } else {
     execFileSync("unzip", ["-qo", zipPath, "-d", destDir], { stdio: "inherit" });
@@ -84,6 +99,15 @@ async function main() {
 
     const zipPath = join(work, "platform-tools.zip");
     await pipeline(Readable.fromWeb(res.body), createWriteStream(zipPath));
+
+    const actual = createHash("sha256").update(readFileSync(zipPath)).digest("hex");
+    if (actual !== target.sha256) {
+      throw new Error(
+        `SHA-256 mismatch for ${target.url}
+  expected ${target.sha256}
+  actual   ${actual}`,
+      );
+    }
 
     console.log("Extracting…");
     unzip(zipPath, work);
