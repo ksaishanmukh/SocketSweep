@@ -104,7 +104,7 @@ async function main() {
     // Android-specific setup the daemon needs.
     const envKey = `CARGO_TARGET_${target.toUpperCase().replace(/-/g, "_")}_LINKER`;
 
-    console.log(`Building ${target} (${PROFILE})…`);
+    console.log(`Building ${target} (${PROFILE})ï¿½`);
     execFileSync(
       "cargo",
       ["build", "-p", "socketsweep-daemon", "--target", target, "--profile", PROFILE],
