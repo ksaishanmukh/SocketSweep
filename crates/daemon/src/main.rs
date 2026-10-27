@@ -12,6 +12,14 @@
 //! `untrusted_app` is denied `unix_stream_socket connectto` into that domain, so
 //! an abstract socket is not reachable the same way. `adb forward
 //! localabstract:` exists for exactly this.
+//!
+//! # Why a token as well
+//!
+//! The socket keeps other apps on the device out, but `adb forward` re-exposes
+//! it as a loopback TCP port on the desktop, open to every local process there.
+//! The daemon therefore refuses to start without a per-session token in
+//! `SOCKETSWEEP_TOKEN` and serves only connections that present it in their
+//! opening `Hello`; see the protocol crate's handshake section.
 
 // Compiled on every host so its tests run during ordinary development, though
 // its only caller, `serve`, is Linux-family only.

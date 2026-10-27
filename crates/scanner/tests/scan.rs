@@ -264,10 +264,99 @@ fn max_depth_is_respected() {
         threads: 1,
         max_depth: 2,
     };
-    let (stats, _) = scan_with(&cfg);
+    let (stats, frames) = scan_with(&cfg);
 
     assert_eq!(stats.files, 0, "deep.txt sits below the depth limit");
     assert!(stats.dirs < 6);
+
+    let dirs = dir_frames(&frames);
+    assert_eq!(dirs.len(), 2, "the root and a are read; b is too deep");
+    assert!(!dirs.contains_key(&tmp.path().join("a/b")));
+    assert_eq!(
+        stats.errors, 1,
+        "b is listed by a but never read, which must not pass silently"
+    );
+}
+
+/// The daemon's default: `threads: 0` borrows rayon's global pool instead of
+/// building one, a separate path through jwalk from every explicit count.
+#[test]
+fn the_default_thread_pool_scans_the_same_tree() {
+    let tmp = fixture();
+    let (baseline, base_frames) = run(tmp.path(), 1);
+    let (stats, frames) = run(tmp.path(), 0);
+
+    assert_eq!(stats.files, baseline.files);
+    assert_eq!(stats.dirs, baseline.dirs);
+    assert_eq!(stats.total_size, baseline.total_size);
+    assert_eq!(stats.errors, 0);
+    assert_eq!(
+        dir_frames(&frames).keys().collect::<HashSet<_>>(),
+        dir_frames(&base_frames).keys().collect::<HashSet<_>>(),
+    );
+}
+
+/// Fails its first write, as a socket does once the host has gone, and records
+/// everything after it.
+#[derive(Clone)]
+struct FailsOnce {
+    failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    received: SharedSink,
+}
+
+impl std::io::Write for FailsOnce {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        if !self.failed.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return Err(std::io::ErrorKind::BrokenPipe.into());
+        }
+        self.received.write(b)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Once the host is gone there is no point reading the rest of the tree.
+///
+/// The root frame alone overflows the write buffer, so its write reaches the
+/// sink and fails before any subdirectory is read. The subdirectories' frames
+/// would together overflow the buffer again, so if the walk carried on they
+/// would show up at the sink.
+#[test]
+fn a_failed_write_stops_the_walk() {
+    let tmp = tempfile::tempdir().unwrap();
+    let long = "x".repeat(180);
+    for i in 0..1_500 {
+        fs::write(tmp.path().join(format!("{long}{i:04}")), b"").unwrap();
+    }
+    for d in 0..30 {
+        let dir = tmp.path().join(format!("d{d:02}"));
+        fs::create_dir(&dir).unwrap();
+        for i in 0..50 {
+            fs::write(dir.join(format!("{long}{i:02}")), b"").unwrap();
+        }
+    }
+
+    let sink = FailsOnce {
+        failed: Default::default(),
+        received: SharedSink::new(),
+    };
+    let cfg = ScanConfig {
+        root: tmp.path().to_path_buf(),
+        threads: 1,
+        max_depth: 64,
+    };
+    let err = scan(&cfg, sink.clone()).unwrap_err();
+
+    assert!(matches!(err, ScanError::Protocol(_)), "got {err:?}");
+    // At most the root frame's length prefix, which was still buffered when its
+    // body failed to send and is released when the writer drops.
+    let received = sink.received.take();
+    assert!(
+        received.len() <= 4,
+        "{} bytes reached the sink after the write failed: the walk kept going",
+        received.len()
+    );
 }
 
 #[cfg(unix)]

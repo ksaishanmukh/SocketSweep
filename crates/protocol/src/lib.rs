@@ -15,6 +15,21 @@
 //! changes the meaning of every variant after it; daemon and host ship together
 //! in one bundle, so this is safe to change, but never mix versions.
 //!
+//! # Handshake
+//!
+//! Every connection opens with [`Request::Hello`], carrying the session token
+//! and [`PROTOCOL_VERSION`]. The daemon answers [`Frame::Pong`] and then serves
+//! further requests on that connection, or answers [`Frame::Error`] and closes
+//! it. Anything other than `Hello` as the first request is refused the same
+//! way.
+//!
+//! The token is [`TOKEN_LEN`] random bytes the host generates per session. It
+//! reaches the daemon through the [`TOKEN_ENV`] environment variable,
+//! hex-encoded, never through argv. The abstract socket keeps other apps on the
+//! device out, but anything on the desktop that can reach the `adb forward`
+//! port could otherwise drive the daemon, and its command set includes
+//! recursive delete.
+//!
 //! # Paths are bytes, not strings
 //!
 //! Android filenames are arbitrary byte sequences with no guarantee of being
@@ -30,11 +45,33 @@ use std::io::{self, Read, Write};
 /// reader allocate wildly. A 100k-entry directory encodes to a few MB.
 pub const MAX_FRAME_BYTES: u32 = 64 * 1024 * 1024;
 
+/// Sent in [`Request::Hello`]. The daemon refuses a connection whose version
+/// differs, so a stale daemon left on the device fails loudly instead of
+/// misreading frames. Bump it whenever the wire format changes.
+pub const PROTOCOL_VERSION: u16 = 2;
+
+/// Length in bytes of the per-session token.
+pub const TOKEN_LEN: usize = 32;
+
+/// The per-session shared secret presented in [`Request::Hello`].
+pub type Token = [u8; TOKEN_LEN];
+
+/// Environment variable through which the daemon receives its expected token,
+/// as exactly `2 * TOKEN_LEN` hex digits (either case). See [`token_to_hex`].
+pub const TOKEN_ENV: &str = "SOCKETSWEEP_TOKEN";
+
 /// Host → daemon.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Request {
     Ping,
     /// Walk `root` and stream [`Frame::Dir`] until [`Frame::ScanDone`].
+    ///
+    /// Every reply ends in exactly one `ScanDone`. A rejected or unreadable root
+    /// is reported as a [`Frame::Error`] followed by `ScanDone` with default
+    /// (zero) stats, so the host can always read until `ScanDone` rather than
+    /// relying on a timeout. The one exception is the connection itself
+    /// failing part-way through the stream, after which the daemon closes it
+    /// and the host sees end of stream instead.
     Scan {
         root: Vec<u8>,
     },
@@ -44,6 +81,17 @@ pub enum Request {
         path: Vec<u8>,
     },
     Shutdown,
+    /// Must be the first request on every connection; see the
+    /// [handshake](crate#handshake). Answered with [`Frame::Pong`] when `token`
+    /// matches the daemon's and `protocol` equals [`PROTOCOL_VERSION`],
+    /// otherwise with [`Frame::Error`], after which the daemon closes the
+    /// connection.
+    ///
+    /// Last in the enum so the older variants keep their wire index.
+    Hello {
+        token: Token,
+        protocol: u16,
+    },
 }
 
 /// Daemon → host. A scan produces many `Dir` frames then one `ScanDone`.
@@ -103,6 +151,50 @@ pub struct ScanStats {
     pub elapsed_ms: u64,
 }
 
+// ── Session token ───────────────────────────────────────────────────────────
+
+/// Encode a token as lowercase hex, the form [`TOKEN_ENV`] carries.
+pub fn token_to_hex(token: &Token) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(TOKEN_LEN * 2);
+    for b in token {
+        s.push(DIGITS[usize::from(b >> 4)] as char);
+        s.push(DIGITS[usize::from(b & 0x0f)] as char);
+    }
+    s
+}
+
+/// Decode a token from exactly `2 * TOKEN_LEN` hex digits. Whitespace is not
+/// trimmed: a malformed variable should stop the daemon starting, not be
+/// quietly repaired.
+pub fn token_from_hex(s: &str) -> Option<Token> {
+    fn nibble(c: u8) -> Option<u8> {
+        match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            b'A'..=b'F' => Some(c - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    let bytes = s.as_bytes();
+    if bytes.len() != TOKEN_LEN * 2 {
+        return None;
+    }
+    let mut token = [0u8; TOKEN_LEN];
+    for (out, pair) in token.iter_mut().zip(bytes.chunks_exact(2)) {
+        *out = (nibble(pair[0])? << 4) | nibble(pair[1])?;
+    }
+    Some(token)
+}
+
+/// Compare two tokens in time that does not depend on where they first differ,
+/// so a timing probe cannot learn how much of a guess was right.
+pub fn tokens_match(a: &Token, b: &Token) -> bool {
+    let diff = a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y));
+    std::hint::black_box(diff) == 0
+}
+
 // ── Framing ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -152,15 +244,26 @@ pub fn write_msg<W: Write, T: Serialize>(w: &mut W, msg: &T) -> Result<(), Proto
 /// Read one length-prefixed message.
 ///
 /// Returns `Ok(None)` on a clean end of stream — the peer closed between frames,
-/// which is normal shutdown, not an error.
+/// which is normal shutdown, not an error. A stream that ends part-way through
+/// the length prefix is not a clean close and is reported as
+/// [`ProtocolError::Malformed`].
 pub fn read_msg<R: Read, T: serde::de::DeserializeOwned>(
     r: &mut R,
 ) -> Result<Option<T>, ProtocolError> {
     let mut len_buf = [0u8; 4];
-    match r.read_exact(&mut len_buf) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e.into()),
+    let mut filled = 0;
+    while filled < len_buf.len() {
+        match r.read(&mut len_buf[filled..]) {
+            Ok(0) if filled == 0 => return Ok(None),
+            Ok(0) => {
+                return Err(ProtocolError::Malformed(format!(
+                    "stream ended {filled} bytes into a length prefix"
+                )))
+            }
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e.into()),
+        }
     }
 
     let len = u32::from_le_bytes(len_buf);
@@ -225,6 +328,10 @@ mod tests {
                 path: b"/sdcard/Download/big.zip".to_vec(),
             },
             Request::Shutdown,
+            Request::Hello {
+                token: [0xA5; TOKEN_LEN],
+                protocol: PROTOCOL_VERSION,
+            },
         ] {
             let mut buf = Vec::new();
             write_msg(&mut buf, &req).unwrap();
@@ -308,6 +415,97 @@ mod tests {
 
         let err = read_msg::<_, Frame>(&mut buf.as_slice()).unwrap_err();
         assert!(matches!(err, ProtocolError::Malformed(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn a_stream_ending_inside_the_length_prefix_is_an_error() {
+        let mut full = Vec::new();
+        write_msg(&mut full, &dir_frame()).unwrap();
+
+        for cut in 1..4 {
+            let err = read_msg::<_, Frame>(&mut &full[..cut]).unwrap_err();
+            assert!(
+                matches!(err, ProtocolError::Malformed(_)),
+                "{cut} prefix bytes: got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_stream_is_a_clean_end() {
+        assert!(read_msg::<_, Frame>(&mut &[][..]).unwrap().is_none());
+    }
+
+    /// Hands back one byte per call, as a socket is entitled to.
+    struct Trickle<'a>(&'a [u8]);
+
+    impl Read for Trickle<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            match (self.0.split_first(), buf.first_mut()) {
+                (Some((b, rest)), Some(slot)) => {
+                    *slot = *b;
+                    self.0 = rest;
+                    Ok(1)
+                }
+                _ => Ok(0),
+            }
+        }
+    }
+
+    #[test]
+    fn a_length_prefix_split_across_reads_is_reassembled() {
+        let mut buf = Vec::new();
+        write_msg(&mut buf, &dir_frame()).unwrap();
+        let back: Frame = read_msg(&mut Trickle(&buf)).unwrap().unwrap();
+        assert_eq!(back, dir_frame());
+    }
+
+    /// Hello was appended, so the older requests keep their wire index.
+    #[test]
+    fn hello_does_not_renumber_existing_requests() {
+        assert_eq!(postcard::to_stdvec(&Request::Ping).unwrap(), [0]);
+        assert_eq!(postcard::to_stdvec(&Request::Shutdown).unwrap(), [3]);
+        let hello = postcard::to_stdvec(&Request::Hello {
+            token: [0; TOKEN_LEN],
+            protocol: 1,
+        })
+        .unwrap();
+        assert_eq!(hello[0], 4);
+    }
+
+    #[test]
+    fn tokens_round_trip_through_hex() {
+        let token: Token = std::array::from_fn(|i| (i * 37) as u8);
+        let hex = token_to_hex(&token);
+        assert_eq!(hex.len(), TOKEN_LEN * 2);
+        assert_eq!(token_from_hex(&hex), Some(token));
+        assert_eq!(token_from_hex(&hex.to_uppercase()), Some(token));
+    }
+
+    #[test]
+    fn malformed_hex_tokens_are_rejected() {
+        let good = "ab".repeat(TOKEN_LEN);
+        assert!(token_from_hex(&good).is_some());
+        assert_eq!(token_from_hex(""), None);
+        assert_eq!(token_from_hex(&good[2..]), None, "too short");
+        assert_eq!(token_from_hex(&format!("{good}ab")), None, "too long");
+        assert_eq!(token_from_hex(&format!(" {}", &good[1..])), None);
+        assert_eq!(token_from_hex(&"zz".repeat(TOKEN_LEN)), None);
+    }
+
+    #[test]
+    fn token_comparison_is_exact() {
+        let a: Token = [7; TOKEN_LEN];
+        let same = a;
+        assert!(tokens_match(&a, &same));
+
+        let mut last = a;
+        last[TOKEN_LEN - 1] ^= 1;
+        assert!(!tokens_match(&a, &last));
+
+        let mut first = a;
+        first[0] ^= 0x80;
+        assert!(!tokens_match(&a, &first));
     }
 
     #[test]
