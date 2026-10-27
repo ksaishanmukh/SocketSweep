@@ -679,13 +679,18 @@ fn sync_header(id: &[u8; 4], n: u32) -> [u8; 8] {
 
 /// `SEND <path>,<mode>`, the file as `DATA` chunks, `DONE <mtime>`, then the
 /// phone's `OKAY` or `FAIL <reason>`.
+///
+/// The mode goes out in decimal and includes the file-type bits (`S_IFREG`),
+/// the same `"%s,%d"` form upstream adb's client sends, so 0o755 becomes
+/// `33261` (0o100755).
 fn sync_send<S: Read + Write>(
     s: &mut S,
     file: &mut impl Read,
     remote: &str,
     mode: u32,
 ) -> Wire<()> {
-    let spec = format!("{remote},0{mode:o}");
+    const S_IFREG: u32 = 0o100000;
+    let spec = format!("{remote},{}", S_IFREG | mode);
     s.write_all(&sync_header(b"SEND", spec.len() as u32))?;
     s.write_all(spec.as_bytes())?;
 
@@ -902,11 +907,12 @@ mod tests {
         };
         sync_send(&mut s, &mut &b"hello"[..], "/data/local/tmp/x", 0o755).unwrap();
         let w = &s.written;
-        assert_eq!(&w[..8], &sync_header(b"SEND", 22));
-        assert_eq!(&w[8..30], b"/data/local/tmp/x,0755");
-        assert_eq!(&w[30..38], &sync_header(b"DATA", 5));
-        assert_eq!(&w[38..43], b"hello");
-        assert_eq!(&w[43..47], b"DONE");
+        // "/data/local/tmp/x" (17) + "," + "33261" (0o100755) = 23 bytes.
+        assert_eq!(&w[..8], &sync_header(b"SEND", 23));
+        assert_eq!(&w[8..31], b"/data/local/tmp/x,33261");
+        assert_eq!(&w[31..39], &sync_header(b"DATA", 5));
+        assert_eq!(&w[39..44], b"hello");
+        assert_eq!(&w[44..48], b"DONE");
 
         let mut s = Duplex {
             written: Vec::new(),
