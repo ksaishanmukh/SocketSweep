@@ -22,26 +22,26 @@ Each layer talks only to its immediate neighbour, and only through a contract
 crate. A module's internals may change freely as long as its contract holds.
 Every contract has a **fake** implementation, so each side can be tested alone.
 
-| Boundary | Contract | How it is enforced | Fake |
-|---|---|---|---|
-| GUI ↔ host | `crates/gui-contract`: command and event types | `tauri-specta` generates `src/bindings.ts`; CI fails if it is stale. React code imports only `src/api/` | `src/api` mock in vitest |
-| host ↔ transport | `crates/transport`: `trait Transport`, `trait Duplex` | Rust trait; host-core depends on the trait only | `FakeTransport` (in-memory device) |
-| host ↔ phone | `crates/wire`: protocol v4 | One crate for both ends; golden byte tests; the version must match exactly | `FakeDaemon` (in `crates/sim`) |
-| daemon internals | `trait Fs`, `trait EventSink`; `sched` is a pure state machine | Rust traits | `SimFs`, a recording sink |
+| Boundary         | Contract                                                       | How it is enforced                                                                                      | Fake                               |
+| ---------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| GUI ↔ host       | `crates/gui-contract`: command and event types                 | `tauri-specta` generates `src/bindings.ts`; CI fails if it is stale. React code imports only `src/api/` | `src/api` mock in vitest           |
+| host ↔ transport | `crates/transport`: `trait Transport`, `trait Duplex`          | Rust trait; host-core depends on the trait only                                                         | `FakeTransport` (in-memory device) |
+| host ↔ phone     | `crates/wire`: protocol v4                                     | One crate for both ends; golden byte tests; the version must match exactly                              | `FakeDaemon` (in `crates/sim`)     |
+| daemon internals | `trait Fs`, `trait EventSink`; `sched` is a pure state machine | Rust traits                                                                                             | `SimFs`, a recording sink          |
 
 ### Workspace layout
 
-| Path | Role |
-|---|---|
-| `crates/wire` | Host ↔ phone protocol types, framing, handshake |
-| `crates/gui-contract` | GUI ↔ host command and event types (specta) |
-| `crates/transport` | `Transport` trait and `FakeTransport` |
-| `crates/transport-adb` | adb implementation: smart sockets, shell v2, sync SEND/RECV2, USB and wireless |
-| `crates/host-core` | Tree index, session client, focus debounce, delete/copy orchestration, history |
-| `crates/daemon` | Phone binary: `listener`, `session`, `sched`, `aggregate`, `pool`, `fswalk`, `actions` |
-| `crates/sim` | Dev-only: `SimFs`, discrete-event simulator, jwalk-like baseline, `FakeDaemon` |
-| `src-tauri` | Thin shell: maps generated commands to host-core and emits events |
-| `src/` | React features that import only `src/bindings.ts`, through `src/api/` |
+| Path                   | Role                                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| `crates/wire`          | Host ↔ phone protocol types, framing, handshake                                        |
+| `crates/gui-contract`  | GUI ↔ host command and event types (specta)                                            |
+| `crates/transport`     | `Transport` trait and `FakeTransport`                                                  |
+| `crates/transport-adb` | adb implementation: smart sockets, shell v2, sync SEND/RECV2, USB and wireless         |
+| `crates/host-core`     | Tree index, session client, focus debounce, delete/copy orchestration, history         |
+| `crates/daemon`        | Phone binary: `listener`, `session`, `sched`, `aggregate`, `pool`, `fswalk`, `actions` |
+| `crates/sim`           | Dev-only: `SimFs`, discrete-event simulator, jwalk-like baseline, `FakeDaemon`         |
+| `src-tauri`            | Thin shell: maps generated commands to host-core and emits events                      |
+| `src/`                 | React features that import only `src/bindings.ts`, through `src/api/`                  |
 
 The daemon is built for `aarch64-linux-android` (phones) and
 `x86_64-linux-android` (emulator, for end-to-end tests), at API 30 (Android 11)
@@ -50,10 +50,12 @@ and above. One phone at a time, but every contract carries a session id.
 ## 2. Wire protocol v4 (host ↔ phone)
 
 ### Framing
+
 A 4-byte little-endian length followed by a postcard body. At most 16 MiB per
 frame. Large directory listings are split into parts of at most 4,096 entries.
 
 ### Handshake
+
 The first frame on every connection is a standalone `Hello`. Its first fields
 are **frozen forever**, so any future daemon can read the version with
 `postcard::take_from_bytes`.
@@ -129,6 +131,7 @@ pub struct Totals { apparent: u64, disk: u64, files: u32, dirs: u32, errors: u32
   `Stats` event, which refers to entries by their position in the listing.
 
 ### Ordering guarantees (the host relies on these)
+
 - **G1 – introduced before referenced.** A `DirId` is introduced in its
   parent's `Listing` (the root in `Started`) before any event refers to it.
 - **G2 – fixed order per directory.** For directory D: all `Listing(D)` parts,
@@ -144,6 +147,7 @@ workers only after the event that introduces them has been queued. An unknown
 buffer.
 
 ### Back-pressure, keepalive, cancellation
+
 - **Back-pressure:** two queues. The bulk queue has a high-water mark of 4 MiB
   and a low-water mark of 2 MiB. Above the high mark, workers stop taking new
   tasks; adding to the queue never blocks, so the lock is never held while
@@ -157,6 +161,7 @@ buffer.
   `Finished { outcome: Cancelled }`. A lost connection cancels everything.
 
 ### Identity
+
 - `DirId` is used only within one scan: in events, in `Focus`, and in the
   host's dense `Vec<NodeId>` lookup.
 - **Path bytes are the lasting identity:** delete, copy, and the future
@@ -170,26 +175,29 @@ buffer.
 std threads only, no async runtime: one reader thread, one writer thread, and
 W worker threads.
 
-| Module | Responsibility | Contract |
-|---|---|---|
-| `listener` | Bind the abstract socket and accept connections | An authenticated new connection replaces the old one |
-| `session` | Handshake, reader thread, writer thread with two queues | `trait EventSink { fn bulk(&self, Vec<ScanEvent>); fn control(&self, ServerFrame); fn congested(&self) -> bool; }` |
-| `fswalk` | Read a directory and stat its entries | `trait Fs { fn read_names(..); fn stat_all(..); fn list_full(..); }`. The real version uses rustix: `openat(O_DIRECTORY\|O_NOFOLLOW)`, `getdents64`, `statat(AT_SYMLINK_NOFOLLOW)` |
-| `sched` | Directory table, tiers, allocation, choosing work. Pure: no threads, time passed in | inputs → `Vec<ScanEvent>` |
-| `aggregate` | Running totals, open-child counts, the completion cascade | Lives in `ScanState` under the same lock as `sched` |
-| `pool` | Worker threads | `loop { lock; pick; unlock; do task; lock; apply; unlock }` |
-| `actions` | Delete (symlink-safe guard: canonicalise the parent, never follow the final component), copy manifest | — |
+| Module      | Responsibility                                                                                        | Contract                                                                                                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `listener`  | Bind the abstract socket and accept connections                                                       | An authenticated new connection replaces the old one                                                                                                                               |
+| `session`   | Handshake, reader thread, writer thread with two queues                                               | `trait EventSink { fn bulk(&self, Vec<ScanEvent>); fn control(&self, ServerFrame); fn congested(&self) -> bool; }`                                                                 |
+| `fswalk`    | Read a directory and stat its entries                                                                 | `trait Fs { fn read_names(..); fn stat_all(..); fn list_full(..); }`. The real version uses rustix: `openat(O_DIRECTORY\|O_NOFOLLOW)`, `getdents64`, `statat(AT_SYMLINK_NOFOLLOW)` |
+| `sched`     | Directory table, tiers, allocation, choosing work. Pure: no threads, time passed in                   | inputs → `Vec<ScanEvent>`                                                                                                                                                          |
+| `aggregate` | Running totals, open-child counts, the completion cascade                                             | Lives in `ScanState` under the same lock as `sched`                                                                                                                                |
+| `pool`      | Worker threads                                                                                        | `loop { lock; pick; unlock; do task; lock; apply; unlock }`                                                                                                                        |
+| `actions`   | Delete (symlink-safe guard: canonicalise the parent, never follow the final component), copy manifest | —                                                                                                                                                                                  |
 
 ### Tasks
+
 ```rust
 enum Task { Names(DirId) /* getdents + d_type only */,
             StatDir(DirId) /* deferred stats */,
             Full(DirId) /* getdents + stat together */ }
 ```
+
 Workers are reassigned only between tasks; no task is interrupted part-way. A
 directory entry whose type comes back as `DT_UNKNOWN` is stat'ed immediately.
 
 ### Directory table
+
 ```rust
 struct DirRec {
     parent: DirId, name: Box<[u8]>, depth: u8, first_child: DirId, next_sibling: DirId,
@@ -201,6 +209,7 @@ struct DirRec {
     totals: Totals,
 }
 ```
+
 - **Counter upkeep:** every state change updates the counters along the chain of
   parents (at most 64 steps).
 - **When a directory is Done:** it is listed, its stats are done, and
@@ -212,6 +221,7 @@ struct DirRec {
   `max_depth`, complete immediately with an error flag.
 
 ### Skeleton phase (breadth-first without barriers)
+
 - **Ordering:** the Back tier hands out tasks shallowest-first, using per-depth
   buckets. No worker ever waits for a level to finish.
 - **Phase end:** the skeleton phase ends when one of these holds: the frontier
@@ -222,14 +232,15 @@ struct DirRec {
   `DirId`), using `Full` tasks. Skeleton directories still owe a `StatDir`.
 
 ### Proximity allocation (gradual hiring)
+
 The three tiers are defined relative to the open folder F and its parent P. Each
 tier's pending work is O(1), from the counters:
 
-| Tier | Contents | Pending work |
-|---|---|---|
-| `Open` | subtree(F) | `pending_desc(F)` |
-| `Near` | the subtrees of F's siblings | `pending_desc(P) − pending_desc(F)` |
-| `Back` | everything else | `pending_desc(root) − pending_desc(P)` |
+| Tier   | Contents                     | Pending work                           |
+| ------ | ---------------------------- | -------------------------------------- |
+| `Open` | subtree(F)                   | `pending_desc(F)`                      |
+| `Near` | the subtrees of F's siblings | `pending_desc(P) − pending_desc(F)`    |
+| `Back` | everything else              | `pending_desc(root) − pending_desc(P)` |
 
 With no focus, or with the focus at the root, everything is `Open`. The
 scheduler then behaves like a plain parallel walk.
@@ -245,6 +256,7 @@ A folder the user has just opened gets one worker; it gets its full share only
 if the user stays.
 
 **Seats (D'Hondt), recomputed in O(W) on every pick:**
+
 1. Give the floors first.
 2. Give each remaining seat to the tier with the highest
    `weight / (seats + 1)`, among tiers that are below their cap and still have
@@ -252,14 +264,15 @@ if the user stays.
 3. Seats a tier cannot use go to the other tiers, so no worker sits idle while
    any work exists.
 
-| W | Steady state (open / near / back) | First 400 ms after a click | Focus fully measured |
-|---|---|---|---|
-| 8 (default) | 3 / 1 / 4 | 1 / 1 / 6 | 0 / 2 / 6 |
+| W           | Steady state (open / near / back) | First 400 ms after a click | Focus fully measured |
+| ----------- | --------------------------------- | -------------------------- | -------------------- |
+| 8 (default) | 3 / 1 / 4                         | 1 / 1 / 6                  | 0 / 2 / 6            |
 
 As the user moves closer to a folder X, X's share grows: about 0.3 → 1 → 1–2 →
 3 workers.
 
 **`pick(worker)`:**
+
 1. Release the worker's seat. Wait if the queue is congested or the scan is
    cancelled.
 2. Choose the tier with the largest `target − active`. Ties go first to the
@@ -280,6 +293,7 @@ finish tasks, until the counts match the targets. Each task moves from waiting
 to in-progress exactly once, under the lock, so nothing is lost or done twice.
 
 **Avoiding churn:**
+
 - the host combines focus changes over 150 ms and sends only the last;
 - the dwell ramp;
 - workers keep their tier and anchor when they can;
@@ -290,6 +304,7 @@ to in-progress exactly once, under the lock, so nothing is lost or done twice.
 The limit is the phone's storage service (MediaProvider), not the CPU.
 
 ### Delete during a scan
+
 - The subtree is marked `Pruned` and its counts are removed.
 - If the deleted node was finished, or is a file, its totals are subtracted
   from each parent up to and including the first parent that is not yet
@@ -300,6 +315,7 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
 - The daemon emits `Pruned`, then deletes the files and replies `Deleted`.
 
 ### Copy
+
 1. `PrepareCopy` resolves the path through the guard and streams a
    `CopyManifest` listing `{ rel, size, mode, mtime }`. Symlinks are listed as
    skipped.
@@ -321,6 +337,7 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
 
   A file is unknown until its `Stats` arrive. Disk usage is the default display;
   apparent size is a GUI setting.
+
 - **Focus:** opening a folder (by click, breadcrumb, treemap drill-down, or "go
   to" from search) maps it to a `DirId`. A file maps to its parent folder. The
   first change is sent immediately; later changes are combined over 150 ms.
@@ -347,6 +364,7 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   - `SkeletonReady` arrives within 1 s of virtual time.
 
   Golden traces catch scheduling regressions.
+
 - **Integration:**
   - the threaded pool runs against `RealFs` and a `SlowFs` wrapper that adds
     delays;
@@ -372,6 +390,7 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   - (c) 10 clicks within 1 s.
 
 Acceptance criteria:
+
 1. Directory opens and stats match the baseline, with at most 1% extra
    (handles reopened for deferred stats).
 2. Script (a): total time ≤ 1.05× jwalk at the median, ≤ 1.10× at the 90th
@@ -386,6 +405,7 @@ If criterion 2 fails, try these in order: turn off deferred stats outside the
 Open tier, retune the weights, then revisit the design.
 
 ## 7. Open risks
+
 - The scan may stop getting faster beyond some worker count, because the
   phone's storage service handles a limited number of requests at once.
   Measure W on real phones.
