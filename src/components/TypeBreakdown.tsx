@@ -1,5 +1,6 @@
+import type { SizeMetric, TypeGroup } from "../api";
 import { formatBytes, formatNumber } from "../lib/format";
-import type { TypeGroup } from "../lib/types";
+import { sizeOf } from "../lib/size";
 
 /**
  * Storage by kind of file.
@@ -20,8 +21,8 @@ const HUES: Record<string, string> = {
   Other: "#52525b",
 };
 
-export function TypeBreakdown({ groups }: { groups: TypeGroup[] }) {
-  const total = groups.reduce((sum, g) => sum + g.size, 0);
+export function TypeBreakdown({ groups, metric }: { groups: TypeGroup[]; metric: SizeMetric }) {
+  const total = groups.reduce((sum, g) => sum + sizeOf(g.size, metric), 0);
 
   if (groups.length === 0) {
     return (
@@ -43,17 +44,18 @@ export function TypeBreakdown({ groups }: { groups: TypeGroup[] }) {
           <div
             key={g.label}
             style={{
-              width: `${total > 0 ? (g.size / total) * 100 : 0}%`,
+              width: `${total > 0 ? (sizeOf(g.size, metric) / total) * 100 : 0}%`,
               background: HUES[g.label] ?? HUES.Other,
             }}
-            title={`${g.label} — ${formatBytes(g.size)}`}
+            title={`${g.label} — ${formatBytes(sizeOf(g.size, metric))}`}
           />
         ))}
       </div>
 
       <ul className="flex flex-col gap-3">
         {groups.map((g) => {
-          const share = total > 0 ? (g.size / total) * 100 : 0;
+          const size = sizeOf(g.size, metric);
+          const share = total > 0 ? (size / total) * 100 : 0;
           return (
             <li key={g.label} className="flex items-center gap-3">
               <span
@@ -74,7 +76,7 @@ export function TypeBreakdown({ groups }: { groups: TypeGroup[] }) {
               </div>
 
               <span className="text-xs font-mono text-zinc-400 w-20 text-right tabular-nums shrink-0">
-                {formatBytes(g.size)}
+                {formatBytes(size)}
               </span>
               <span className="text-xs text-zinc-600 w-14 text-right tabular-nums shrink-0">
                 {share.toFixed(1)}%

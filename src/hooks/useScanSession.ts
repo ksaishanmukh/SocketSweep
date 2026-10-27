@@ -1,95 +1,51 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as ipc from "../lib/ipc";
-import {
-  ROOT_ID,
-  type Crumb,
-  type Row,
-  type ScanRecord,
-  type AppUsage,
-  type Stats,
-  type TreemapNode,
-  type TypeGroup,
-  type View,
-} from "../lib/types";
+import { errorMessage, type Row, type SizeMetric, type Totals } from "../api";
+import type { Notify, SessionDeps } from "./types";
+import { useAnalyses } from "./useAnalyses";
+import { useCopy } from "./useCopy";
+import { useDelete } from "./useDelete";
+import { useNavigation } from "./useNavigation";
+import { useSearch } from "./useSearch";
+import { useSessionLifecycle } from "./useSessionLifecycle";
+
+export { VIEW_PAGE_SIZE } from "./useNavigation";
+export type { CopyState } from "./useCopy";
+export type { Phase, ScanInfo } from "./useSessionLifecycle";
 
 /** Which analysis the main canvas is showing. */
 export type Mode = "treemap" | "largest" | "types" | "apps";
 
-/** `failed` is a scan that did not finish: connected, but with nothing trustworthy to show. */
-export type Phase = "setup" | "connecting" | "scanning" | "result" | "failed";
-
 const MAX_LOG_LINES = 200;
-const SEARCH_DEBOUNCE_MS = 150;
-/** How many more rows "Load more" asks the host for each time. */
-export const VIEW_PAGE_SIZE = 500;
-
-/** Joins a directory and a name without doubling the separator. */
-function joinPath(dir: string, name: string): string {
-  return dir.endsWith("/") ? `${dir}${name}` : `${dir}/${name}`;
-}
-
-/** Search results, tagged with the query they answered. */
-interface Hits {
-  query: string;
-  rows: Row[];
-}
+/** How often the treemap and analyses are re-read while sizes are still arriving. */
+const LIVE_REFRESH_MS = 1500;
 
 /**
- * The connect → scan → navigate → delete state machine.
+ * The whole GUI-side session: connect, scan, browse, search, delete, copy.
  *
- * Lifted out of the app component, where it was interleaved with JSX, toast
- * timers and icon definitions in a single 864-line file.
+ * A composition of smaller hooks, each owning one concern:
  *
- * Two counters keep late replies from landing on the wrong screen. The
- * *generation* changes whenever the tree is replaced or dropped (a scan starts,
- * the device is disconnected); any reply that began under an older one is
- * discarded, because the ids in it name nothing now. The *navigation* counter
- * orders navigations within one generation, so the slower of two quick clicks
- * cannot overwrite the later one.
+ * - `useSessionLifecycle`: connect / scan / disconnect, the `scan-progress` and
+ *   `connection-lost` events, and the session id.
+ * - `useNavigation`: the open folder, its path and treemap, and `focus`.
+ * - `useSearch`, `useAnalyses`: queries over the whole tree.
+ * - `useDelete`, `useCopy`: actions on a node.
+ *
+ * What ties them together is the session id (`NodeRef.session`): anything that
+ * began under an older session is dropped when it replies, because the node
+ * ids in it name nothing in the current tree.
  */
-export function useScanSession(notify: (msg: string, type?: "error" | "success" | "info") => void) {
-  const [phase, setPhase] = useState<Phase>("setup");
-  const [failure, setFailure] = useState<string | null>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [view, setView] = useState<View | null>(null);
-  /** Mirrors `view` for async code that must not read a stale closure. */
-  const viewRef = useRef<View | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [crumbs, setCrumbs] = useState<Crumb[]>([]);
-  const [treemap, setTreemap] = useState<TreemapNode | null>(null);
-  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
-  const [scanningPath, setScanningPath] = useState("");
+export function useScanSession(notify: Notify) {
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const sessionRef = useRef<number | null>(null);
+  const [totals, setTotals] = useState<Totals | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [mode, setModeState] = useState<Mode>("treemap");
+  const modeRef = useRef<Mode>("treemap");
 
-  const [mode, setMode] = useState<Mode>("treemap");
-  const [largest, setLargest] = useState<Row[]>([]);
-  const [types, setTypes] = useState<TypeGroup[]>([]);
-  const [apps, setApps] = useState<AppUsage[]>([]);
-  /** Baseline captured at connect, so a rescan still compares to last session. */
-  const [previous, setPrevious] = useState<ScanRecord | null>(null);
-
-  const [query, setQuery] = useState("");
-  const [searchHits, setSearchHits] = useState<Hits | null>(null);
-  /** Bumped to re-run the current search, e.g. after a delete. */
-  const [searchNonce, setSearchNonce] = useState(0);
-
-  // Exposed so the owner of any id-bearing state (the delete dialog) can tell
-  // that its ids went stale. The ref is what async code compares against.
-  const [generation, setGeneration] = useState(0);
-  useEffect(() => {
-    viewRef.current = view;
-  }, [view]);
-  const generationRef = useRef(0);
-  const navSeq = useRef(0);
-  /** Progress events that arrive outside a scan are leftovers and must not repaint. */
-  const scanning = useRef(false);
-
-  // Derived rather than stored: "no query" is a property of the query, so
-  // writing it into state from an effect would only add a render pass. Hits are
-  // shown only for the query they answered, so a late or old answer can never
-  // be presented as the answer to what is in the box now.
-  const trimmedQuery = query.trim();
-  const searchResults = trimmedQuery && searchHits?.query === trimmedQuery ? searchHits.rows : null;
+  // Disk usage is what deleting frees, so it is the default; apparent size is
+  // the file-manager number.
+  const [metric, setMetricState] = useState<SizeMetric>("disk");
+  const metricRef = useRef<SizeMetric>("disk");
 
   const log = useCallback((msg: string) => {
     setLogs((prev) =>
@@ -99,7 +55,7 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
 
   const fail = useCallback(
     (err: unknown) => {
-      const message = ipc.errorMessage(err);
+      const message = errorMessage(err);
       notify(message, "error");
       log(`[ERROR] ${message}`);
       return message;
@@ -107,350 +63,118 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
     [log, notify],
   );
 
-  /** Starts a new generation: every reply still in flight is now stale. */
-  const nextGeneration = useCallback(() => {
-    generationRef.current += 1;
-    navSeq.current += 1;
-    setGeneration(generationRef.current);
-    return generationRef.current;
+  const deps: SessionDeps = { sessionRef, metricRef, log, fail };
+  const nav = useNavigation(deps);
+  const analyses = useAnalyses(deps);
+  const search = useSearch({ sessionRef, sessionId });
+  const copier = useCopy({ sessionRef, log, notify });
+
+  const { clear: clearNav } = nav;
+  const { clear: clearAnalyses } = analyses;
+  const { clear: clearSearch } = search;
+  const { reset: resetCopy } = copier;
+  const reset = useCallback(() => {
+    clearNav();
+    clearAnalyses();
+    clearSearch();
+    resetCopy();
+  }, [clearAnalyses, clearNav, clearSearch, resetCopy]);
+
+  const lifecycle = useSessionLifecycle({
+    ...deps,
+    notify,
+    setSessionId,
+    setTotals,
+    nav,
+    analyses,
+    search,
+    reset,
+  });
+  const remove = useDelete({ ...deps, notify, nav, analyses, search, setTotals });
+
+  const setMode = useCallback((next: Mode) => {
+    modeRef.current = next;
+    setModeState(next);
   }, []);
 
-  /** Forgets everything that refers to node ids of the tree being replaced. */
-  const clearTree = useCallback(() => {
-    setView(null);
-    setLoadingMore(false);
-    setCrumbs([]);
-    setTreemap(null);
-    setLargest([]);
-    setTypes([]);
-    setApps([]);
-    setQuery("");
-    setSearchHits(null);
-  }, []);
+  /** Changing the size re-sorts everything the host sorted for us, so ask again. */
+  const { reload, refreshTreemap } = nav;
+  const { refresh: refreshAnalyses } = analyses;
+  const { rerun: rerunSearch } = search;
+  const setMetric = useCallback(
+    (next: SizeMetric) => {
+      if (metricRef.current === next) return;
+      metricRef.current = next;
+      setMetricState(next);
+      void reload();
+      void refreshAnalyses();
+      rerunSearch();
+    },
+    [refreshAnalyses, reload, rerunSearch],
+  );
 
-  // Live scan updates. The host pushes only the view we said we were watching,
-  // so this payload does not grow with the size of the device.
+  // Sizes keep climbing while the scan runs, and the treemap and analyses are
+  // snapshots: re-read them on a slow tick. The open folder's rows need no
+  // tick, because the host pushes them with every `scan-progress`.
+  const browsing = lifecycle.phase === "browsing";
+  const running = lifecycle.scanInfo?.running ?? false;
   useEffect(() => {
-    const pending = ipc.onScanProgress((p) => {
-      if (!scanning.current) return;
-      setStats(p.stats);
-      if (p.view) {
-        setView(p.view);
-        setScanningPath(p.view.path);
-      }
-    });
-    return () => {
-      pending.then((off) => off());
-    };
-  }, []);
+    if (!browsing || !running) return;
+    const timer = setInterval(() => {
+      refreshTreemap();
+      if (modeRef.current !== "treemap") void refreshAnalyses();
+    }, LIVE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [browsing, running, refreshAnalyses, refreshTreemap]);
 
-  /** The cross-tree analyses. Cheap Rust queries, so just re-run both. */
-  const refreshAnalyses = useCallback(async () => {
-    const gen = generationRef.current;
-    try {
-      const [top, groups, owners] = await Promise.all([
-        ipc.largestFiles(100),
-        ipc.typeBreakdown(),
-        ipc.appBreakdown(50),
-      ]);
-      if (gen !== generationRef.current) return;
-      setLargest(top);
-      setTypes(groups);
-      setApps(owners);
-    } catch {
-      // These are secondary views; a failure here should not disturb the scan.
-    }
-  }, []);
+  // A folder the phone has just finished measuring is worth redrawing at once.
+  const settled = lifecycle.scanInfo?.focusSettled ?? false;
+  useEffect(() => {
+    if (browsing && settled) refreshTreemap();
+  }, [browsing, settled, refreshTreemap]);
 
-  const loadTreemap = useCallback(async (id: number, seq: number, gen: number) => {
-    const current = () => seq === navSeq.current && gen === generationRef.current;
-    try {
-      const next = await ipc.getTreemap(id, 2);
-      if (current()) setTreemap(next);
-    } catch {
-      // A stale treemap is not worth interrupting the user over.
-      if (current()) setTreemap(null);
-    }
-  }, []);
-
-  /**
-   * Opens a folder. Resolves false only when the host could not show it; a
-   * navigation overtaken by a newer one counts as fine, since the newer one
-   * reports for itself.
-   */
-  const open = useCallback(
-    async (id: number): Promise<boolean> => {
-      const seq = ++navSeq.current;
-      const gen = generationRef.current;
-      try {
-        const [nextView, nextCrumbs] = await Promise.all([ipc.getView(id), ipc.getBreadcrumbs(id)]);
-        if (gen !== generationRef.current) return false;
-        if (seq !== navSeq.current) return true;
-        setView(nextView);
-        setCrumbs(nextCrumbs);
-        void loadTreemap(id, seq, gen);
-        return true;
-      } catch (err) {
-        if (gen === generationRef.current && seq === navSeq.current) fail(err);
-        return false;
-      }
-    },
-    [fail, loadTreemap],
-  );
-
-  /** Shows a view the host already returned, then fills in what hangs off it. */
-  const showView = useCallback(
-    (next: View) => {
-      const seq = ++navSeq.current;
-      const gen = generationRef.current;
-      setView(next);
-      ipc
-        .getBreadcrumbs(next.id)
-        .then((c) => {
-          if (seq === navSeq.current && gen === generationRef.current) setCrumbs(c);
-        })
-        .catch((err) => log(`[ERROR] ${ipc.errorMessage(err)}`));
-      void loadTreemap(next.id, seq, gen);
-    },
-    [loadTreemap, log],
-  );
-
-  /** Fetches the next page of a folder that has more rows than were loaded. */
-  const loadMore = useCallback(async () => {
-    if (!view || view.hidden <= 0) return;
-    const { id } = view;
-    const seq = navSeq.current;
-    const gen = generationRef.current;
-    setLoadingMore(true);
-    try {
-      const next = await ipc.getView(id, view.rows.length + VIEW_PAGE_SIZE);
-      // If the user went elsewhere meanwhile, these rows belong to a folder
-      // that is no longer open.
-      if (seq === navSeq.current && gen === generationRef.current) setView(next);
-    } catch (err) {
-      if (gen === generationRef.current) fail(err);
-    } finally {
-      if (gen === generationRef.current) setLoadingMore(false);
-    }
-  }, [fail, view]);
-
+  const { open } = nav;
   /**
    * Jump to the folder containing a cross-tree result, and back to the treemap
    * so the destination has context. Finding a huge file is only half the job.
    */
   const reveal = useCallback(
     async (row: Row) => {
-      if (row.parentId === undefined) return;
+      if (!row.parentNode) return;
       setMode("treemap");
-      setQuery("");
-      await open(row.parentId);
+      clearSearch();
+      await open(row.parentNode);
     },
-    [open],
+    [clearSearch, open, setMode],
   );
-
-  const scan = useCallback(async () => {
-    const gen = nextGeneration();
-    // The old tree is gone the moment a scan starts. Keeping its view around
-    // would let a failed rescan show half of one scan under the totals of
-    // another.
-    clearTree();
-    scanning.current = true;
-    setFailure(null);
-    setPhase("scanning");
-    setElapsedMs(null);
-    setScanningPath("");
-    const started = performance.now();
-    log("[SCAN] Walking the device…");
-
-    try {
-      const final = await ipc.scan();
-      // Disconnect cancels a running scan; it has already reset everything.
-      if (gen !== generationRef.current) return;
-      scanning.current = false;
-      setStats(final);
-      setElapsedMs(performance.now() - started);
-
-      if (!(await open(ROOT_ID))) {
-        if (gen !== generationRef.current) return;
-        // `open` has already shown why.
-        setFailure("The scan finished, but its results could not be opened.");
-        clearTree();
-        setPhase("failed");
-        return;
-      }
-      if (gen !== generationRef.current) return;
-      void refreshAnalyses();
-      setPhase("result");
-      log(`[SCAN] ${final.files.toLocaleString()} files, ${final.dirs.toLocaleString()} folders.`);
-    } catch (err) {
-      if (gen !== generationRef.current) return;
-      scanning.current = false;
-      const message = fail(err);
-      // The host keeps the partial tree but never marks it finished, so none of
-      // it is offered as a result.
-      clearTree();
-      setStats(null);
-      setFailure(message);
-      setPhase("failed");
-    }
-  }, [clearTree, fail, log, nextGeneration, open, refreshAnalyses]);
-
-  /** `serial` picks a specific device; omitted, the host chooses the only usable one. */
-  const connect = useCallback(
-    async (serial?: string) => {
-      setFailure(null);
-      setPhase("connecting");
-      try {
-        log("[ADB] Looking for a device…");
-        const info = await ipc.connect(serial);
-        // Captured once per connection, so a rescan still compares against the
-        // previous session rather than against the scan a moment ago.
-        setPrevious(info.previous);
-        log(`[ADB] ${info.model} (${info.serial}).`);
-        log("[SOCKET] Daemon listening on an abstract socket.");
-        await scan();
-      } catch (err) {
-        fail(err);
-        setPhase("setup");
-      }
-    },
-    [fail, log, scan],
-  );
-
-  const disconnect = useCallback(async () => {
-    // First, so replies to anything still running are dropped, including the
-    // scan that this call is about to cancel.
-    nextGeneration();
-    scanning.current = false;
-    log("[SOCKET] Stopping the daemon…");
-    try {
-      await ipc.disconnect();
-      notify("Disconnected", "info");
-    } catch {
-      log("[SOCKET] Daemon was already stopped.");
-    }
-    clearTree();
-    setStats(null);
-    setFailure(null);
-    setElapsedMs(null);
-    setScanningPath("");
-    setMode("treemap");
-    setPrevious(null);
-    setPhase("setup");
-  }, [clearTree, log, nextGeneration, notify]);
-
-  const remove = useCallback(
-    async (row: Row) => {
-      const gen = generationRef.current;
-      log(`[DELETE] ${row.name}…`);
-      try {
-        const result = await ipc.deleteNode(row.id, row.gen);
-        if (gen !== generationRef.current) return;
-        setStats(result.stats);
-        // Never null: if the open folder went away, this is its nearest
-        // surviving ancestor, so the screen never points at a deleted node.
-        const before = viewRef.current;
-        showView(result.view);
-        // The host caps the returned view at one page. If the same folder had
-        // more rows loaded, fetch them again so the list does not collapse.
-        const wanted = before && before.id === result.view.id ? before.rows.length : 0;
-        if (wanted > result.view.rows.length && result.view.hidden > 0) {
-          const seq = navSeq.current;
-          try {
-            const full = await ipc.getView(result.view.id, wanted);
-            if (seq === navSeq.current && gen === generationRef.current) setView(full);
-          } catch {
-            // The capped view is already showing; "Load more" still works.
-          }
-        }
-        // A deleted node may still be sitting in the results list, along with
-        // anything that lived inside it: drop the node itself and every hit
-        // whose containing folder is the deleted folder or below it.
-        const base = row.parent ?? before?.path;
-        const deleted = row.isDir && base !== undefined ? joinPath(base, row.name) : null;
-        setSearchHits((hits) =>
-          hits
-            ? {
-                ...hits,
-                rows: hits.rows.filter(
-                  (h) =>
-                    h.id !== row.id &&
-                    !(
-                      deleted !== null &&
-                      h.parent !== undefined &&
-                      (h.parent === deleted || h.parent.startsWith(deleted + "/"))
-                    ),
-                ),
-              }
-            : hits,
-        );
-        setSearchNonce((n) => n + 1);
-        void refreshAnalyses();
-        notify(`Deleted ${row.name}`, "success");
-        log(`[DELETE] Removed ${result.items.toLocaleString()} items.`);
-      } catch (err) {
-        // Includes "Results are out of date": the host refuses and nothing
-        // changes, so all there is to do is say so.
-        fail(err);
-      }
-    },
-    [fail, log, notify, refreshAnalyses, showView],
-  );
-
-  const updateQuery = useCallback((next: string) => {
-    setQuery(next);
-    if (!next.trim()) setSearchHits(null);
-  }, []);
-
-  // Debounced so typing does not fire a query per keystroke.
-  const searchSeq = useRef(0);
-  useEffect(() => {
-    const seq = ++searchSeq.current;
-    if (!trimmedQuery) return;
-
-    const gen = generationRef.current;
-    const timer = setTimeout(async () => {
-      // Drop a slow response that a newer query, a rescan or a disconnect has
-      // already superseded.
-      const current = () => seq === searchSeq.current && gen === generationRef.current;
-      try {
-        const rows = await ipc.search(trimmedQuery);
-        if (current()) setSearchHits({ query: trimmedQuery, rows });
-      } catch {
-        if (current()) setSearchHits({ query: trimmedQuery, rows: [] });
-      }
-    }, SEARCH_DEBOUNCE_MS);
-
-    return () => clearTimeout(timer);
-  }, [trimmedQuery, searchNonce]);
 
   return {
-    phase,
-    failure,
-    generation,
-    stats,
-    view,
-    loadingMore,
-    crumbs,
-    treemap,
-    elapsedMs,
-    scanningPath,
+    ...lifecycle,
+    sessionId,
+    totals,
     logs,
-    query,
-    searchResults,
+    metric,
+    setMetric,
     mode,
-    largest,
-    types,
-    apps,
-    previous,
-    setQuery: updateQuery,
     setMode,
+    view: nav.view,
+    crumbs: nav.crumbs,
+    treemap: nav.treemap,
+    loadingMore: nav.loadingMore,
+    open: nav.open,
+    loadMore: nav.loadMore,
     reveal,
-    connect,
-    disconnect,
-    scan,
-    open,
-    loadMore,
+    query: search.query,
+    setQuery: search.setQuery,
+    searchResults: search.results,
+    largest: analyses.largest,
+    types: analyses.types,
+    apps: analyses.apps,
     remove,
+    copy: copier.copy,
+    startCopy: copier.start,
+    cancelCopy: copier.cancel,
   };
 }
+
+export type ScanSession = ReturnType<typeof useScanSession>;

@@ -1,5 +1,5 @@
 /**
- * A scan that did not finish.
+ * A scan that never produced anything to browse.
  *
  * Nothing from the partial walk is shown: its totals and folders would be
  * missing an unknown share of the device. The phone is still connected, so the
@@ -22,7 +22,7 @@ export function FailedScreen({
         </h2>
         {message && <p className="mt-2 text-sm text-zinc-500 leading-relaxed">{message}</p>}
         <p className="mt-2 text-xs text-zinc-600">
-          Partial results are not shown, because they would leave out part of the device.
+          Nothing was listed before it stopped, so there is nothing to browse yet.
         </p>
       </div>
 

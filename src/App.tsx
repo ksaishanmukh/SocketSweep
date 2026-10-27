@@ -1,32 +1,32 @@
 import { useState } from "react";
+import type { Row } from "./api";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConsoleDrawer } from "./components/ConsoleDrawer";
+import { CopyBar } from "./components/CopyBar";
 import { FailedScreen } from "./components/screens/FailedScreen";
 import { ResultScreen } from "./components/screens/ResultScreen";
-import { ScanningScreen } from "./components/screens/ScanningScreen";
 import { SetupScreen } from "./components/screens/SetupScreen";
 import { Toasts } from "./components/Toasts";
 import { useScanSession } from "./hooks/useScanSession";
 import { useToasts } from "./hooks/useToasts";
-import type { Row } from "./lib/types";
+import { joinPath } from "./lib/path";
+import { nodeKey } from "./lib/size";
 import "./App.css";
 
 export default function App() {
   const { toasts, push, dismiss } = useToasts();
   const session = useScanSession(push);
 
-  // `dir` is captured when the dialog opens, because the live view keeps changing under it.
-  // So is the generation: a rescan or disconnect replaces the tree, and a
-  // dialog still holding a row from the old one must not be shown, let alone
-  // confirmed.
-  const [request, setRequest] = useState<{ row: Row; dir?: string; generation: number } | null>(
-    null,
-  );
+  // The full path is captured when the dialog opens, because the live view
+  // keeps changing under it. So is the row's session (in its NodeRef): a rescan
+  // or disconnect replaces the tree, and a dialog still holding a row from the
+  // old one must not be shown, let alone confirmed.
+  const [request, setRequest] = useState<{ row: Row; path: string } | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
 
-  const confirming = request?.generation === session.generation ? request : null;
+  const confirming = request?.row.node.session === session.sessionId ? request : null;
   const requestDelete = (row: Row) =>
-    setRequest({ row, dir: row.parent ?? session.view?.path, generation: session.generation });
+    setRequest({ row, path: joinPath(row.parent ?? session.view?.path ?? "", row.name) });
 
   // Everything behind the dialog is inert so focus and clicks cannot leave it.
   const inert = confirming !== null;
@@ -37,11 +37,11 @@ export default function App() {
 
       <main className="flex-1 flex flex-col min-h-0" inert={inert}>
         {(session.phase === "setup" || session.phase === "connecting") && (
-          <SetupScreen onConnect={session.connect} loading={session.phase === "connecting"} />
-        )}
-
-        {session.phase === "scanning" && (
-          <ScanningScreen stats={session.stats} current={session.scanningPath} />
+          <SetupScreen
+            onConnect={session.connect}
+            loading={session.phase === "connecting"}
+            status={session.status}
+          />
         )}
 
         {session.phase === "failed" && (
@@ -52,34 +52,13 @@ export default function App() {
           />
         )}
 
-        {session.phase === "result" && session.view && session.stats && (
-          <ResultScreen
-            view={session.view}
-            crumbs={session.crumbs}
-            stats={session.stats}
-            treemap={session.treemap}
-            mode={session.mode}
-            largest={session.largest}
-            types={session.types}
-            apps={session.apps}
-            previous={session.previous}
-            onModeChange={session.setMode}
-            onReveal={session.reveal}
-            elapsedMs={session.elapsedMs}
-            query={session.query}
-            searchResults={session.searchResults}
-            onQueryChange={session.setQuery}
-            onOpen={session.open}
-            onLoadMore={session.loadMore}
-            loadingMore={session.loadingMore}
-            onRescan={session.scan}
-            onDisconnect={session.disconnect}
-            onDelete={requestDelete}
-          />
+        {session.phase === "browsing" && session.view && (
+          <ResultScreen session={session} view={session.view} onDelete={requestDelete} />
         )}
       </main>
 
       <div inert={inert}>
+        {session.copy && <CopyBar copy={session.copy} onCancel={session.cancelCopy} />}
         <ConsoleDrawer
           logs={session.logs}
           open={consoleOpen}
@@ -89,14 +68,14 @@ export default function App() {
 
       {confirming && (
         <ConfirmDialog
-          key={confirming.row.id}
+          key={nodeKey(confirming.row.node)}
           target={confirming.row}
-          dir={confirming.dir}
+          path={confirming.path}
           onCancel={() => setRequest(null)}
           onConfirm={() => {
-            const target = confirming.row;
+            const { row, path } = confirming;
             setRequest(null);
-            void session.remove(target);
+            void session.remove(row, path);
           }}
         />
       )}

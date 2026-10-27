@@ -1,9 +1,11 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import type { Row, SizeMetric } from "../api";
 import { formatBytes, formatNumber } from "../lib/format";
-import type { Row } from "../lib/types";
-import { IconFile, IconFolder, IconTrash } from "./icons";
+import { nodeKey, sizeOf } from "../lib/size";
+import { IconDownload, IconFile, IconFolder, IconTrash } from "./icons";
 import { SizeBar } from "./SizeBar";
+import { SizeCell } from "./SizeCell";
 
 const ROW_HEIGHT = 34;
 /** Cross-tree results carry a second line showing the containing folder. */
@@ -18,16 +20,25 @@ const ROW_HEIGHT_WITH_PARENT = 44;
 export function FileList({
   rows,
   totalSize,
+  metric,
   onOpen,
   onDelete,
+  onCopy,
+  copyDisabled = false,
   onReveal,
   showBar = true,
   emptyMessage = "This folder is empty.",
 }: {
   rows: Row[];
+  /** What a full bar means, in the chosen metric. */
   totalSize: number;
+  metric: SizeMetric;
   onOpen: (row: Row) => void;
   onDelete: (row: Row) => void;
+  /** "Copy to computer". Omitted, the button is not shown. */
+  onCopy?: (row: Row) => void;
+  /** A copy is already running; the host runs one at a time. */
+  copyDisabled?: boolean;
   /** Navigate to a row's containing folder. Only meaningful for cross-tree results. */
   onReveal?: (row: Row) => void;
   /**
@@ -48,7 +59,7 @@ export function FileList({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => (rows[i]?.parent ? ROW_HEIGHT_WITH_PARENT : ROW_HEIGHT),
-    getItemKey: (i) => rows[i]?.id ?? i,
+    getItemKey: (i) => (rows[i] ? nodeKey(rows[i].node) : i),
     overscan: 12,
   });
 
@@ -70,7 +81,7 @@ export function FileList({
           const row = rows[v.index];
           return (
             <div
-              key={row.id}
+              key={nodeKey(row.node)}
               role="listitem"
               style={{
                 position: "absolute",
@@ -84,8 +95,11 @@ export function FileList({
               <FileRow
                 row={row}
                 totalSize={totalSize}
+                metric={metric}
                 onOpen={onOpen}
                 onDelete={onDelete}
+                onCopy={onCopy}
+                copyDisabled={copyDisabled}
                 onReveal={onReveal}
                 showBar={showBar}
               />
@@ -100,22 +114,31 @@ export function FileList({
 function FileRow({
   row,
   totalSize,
+  metric,
   onOpen,
   onDelete,
+  onCopy,
+  copyDisabled,
   onReveal,
   showBar,
 }: {
   row: Row;
   totalSize: number;
+  metric: SizeMetric;
   onOpen: (row: Row) => void;
   onDelete: (row: Row) => void;
+  onCopy?: (row: Row) => void;
+  copyDisabled: boolean;
   onReveal?: (row: Row) => void;
   showBar: boolean;
 }) {
-  // A folder the scanner never read has size 0 because it is unknown, not empty.
-  const unknown = row.isDir && !row.listed;
-  const sizeText = unknown ? "—" : formatBytes(row.size);
-  const ratio = totalSize > 0 && !unknown ? row.size / totalSize : 0;
+  const isDir = row.kind === "dir";
+  // Not measured yet: the size is unknown, not 0, so there is nothing to draw a bar for.
+  const unknown = row.measure === "unknown";
+  const ratio = totalSize > 0 && !unknown ? sizeOf(row.size, metric) / totalSize : 0;
+  const sizeLabel = unknown
+    ? "size not measured yet"
+    : `${row.measure === "partial" ? "at least " : ""}${formatBytes(sizeOf(row.size, metric))}`;
 
   return (
     <div
@@ -128,8 +151,8 @@ function FileRow({
         }
       }}
     >
-      <span className={row.isDir ? "text-accent-400" : "text-zinc-500"}>
-        {row.isDir ? <IconFolder /> : <IconFile />}
+      <span className={isDir ? "text-accent-400" : "text-zinc-500"}>
+        {isDir ? <IconFolder /> : <IconFile />}
       </span>
 
       {/*
@@ -137,7 +160,7 @@ function FileRow({
         alone does not say where the thing lives. Clicking it navigates there.
       */}
       <div className="flex-1 min-w-0">
-        {row.isDir ? (
+        {isDir ? (
           <button
             className="w-full truncate text-left text-sm text-zinc-200 font-medium hover:text-accent-300 rounded focus-visible:outline-2 focus-visible:outline-accent-500"
             onClick={() => onOpen(row)}
@@ -158,25 +181,40 @@ function FileRow({
         )}
       </div>
 
-      {!row.complete && (
+      {row.unreadable && (
         <span
-          className="text-[10px] text-zinc-600"
-          title="Still being scanned"
-          aria-label="Still being scanned"
+          className="text-[10px] text-amber-500/80"
+          title="Some folders in here could not be read, so this size is low"
+          aria-label="Some folders could not be read"
         >
-          …
+          ⚠
         </span>
       )}
 
       {showBar && (unknown ? <span className="w-24 flex-shrink-0" /> : <SizeBar ratio={ratio} />)}
 
-      <span
-        className="w-20 text-right text-xs font-mono text-zinc-500 flex-shrink-0 tabular-nums"
-        title={unknown ? "Not scanned" : undefined}
-        aria-label={unknown ? "Size unknown, not scanned" : undefined}
-      >
-        {sizeText}
-      </span>
+      <SizeCell
+        size={row.size}
+        measure={row.measure}
+        metric={metric}
+        className="w-24 text-right text-xs font-mono text-zinc-500 flex-shrink-0 tabular-nums"
+      />
+
+      {onCopy && (
+        <button
+          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ml-1 px-2 py-1 rounded-md
+            bg-accent-600/15 border border-accent-500/30 text-accent-300
+            hover:bg-accent-500/25 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1
+            cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-accent-500"
+          onClick={() => onCopy(row)}
+          disabled={copyDisabled}
+          title={copyDisabled ? "A copy is already running" : "Copy to computer"}
+          aria-label={`Copy ${row.name} to computer`}
+        >
+          <IconDownload />
+          <span className="hidden sm:inline">Copy</span>
+        </button>
+      )}
 
       {/* Reachable on focus as well as hover, so it exists for keyboard users. */}
       <button
@@ -185,8 +223,8 @@ function FileRow({
           hover:bg-danger-500/30 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1
           cursor-pointer focus-visible:outline-2 focus-visible:outline-danger-500"
         onClick={() => onDelete(row)}
-        aria-label={`Delete ${row.name}, ${unknown ? "size unknown" : formatBytes(row.size)}${
-          row.isDir ? `, ${formatNumber(row.files)} files` : ""
+        aria-label={`Delete ${row.name}, ${sizeLabel}${
+          isDir ? `, ${formatNumber(row.files)} files` : ""
         }`}
       >
         <IconTrash />

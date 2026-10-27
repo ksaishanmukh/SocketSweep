@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { formatBytes, formatNumber } from "../lib/format";
-import type { Row } from "../lib/types";
+import type { Row } from "../api";
 import { IconTrash } from "./icons";
 
 /** Above this, the dialog asks the user to type the name rather than just click. */
@@ -10,27 +10,24 @@ const TYPE_TO_CONFIRM_FILES = 100;
 const FOCUSABLE =
   'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
-/** Joins a directory and a name without doubling the separator. */
-function joinPath(dir: string, name: string): string {
-  return dir.endsWith("/") ? `${dir}${name}` : `${dir}/${name}`;
-}
-
 /**
  * Deleting is the one irreversible thing this app does.
  *
  * The dialog leads with what will be lost — size, and file count for a folder —
  * because that is the information that prevents mistakes, and the host already
- * knows it. It traps focus while open and hands focus back to whatever opened it.
+ * knows it. The size is always the *disk* usage: that is what deleting frees,
+ * whichever size the main view is showing. It traps focus while open and hands
+ * focus back to whatever opened it.
  */
 export function ConfirmDialog({
   target,
-  dir,
+  path,
   onCancel,
   onConfirm,
 }: {
   target: Row;
-  /** Folder containing the target, when known. */
-  dir?: string;
+  /** The target's full path on the phone, for display; the delete itself goes by `target.node`. */
+  path: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -42,13 +39,20 @@ export function ConfirmDialog({
     onCancelRef.current = onCancel;
   });
 
-  // A folder the scanner never read reports 0 bytes, which says nothing about what is there.
-  const unscanned = !target.listed;
+  const isDir = target.kind === "dir";
+  const freed = target.size.disk;
+  // Not measured yet: the size says nothing about what is there.
+  const unscanned = target.measure === "unknown";
+  // Still being counted: the number is a lower bound.
+  const counting = target.measure === "partial";
   // Lossy names cannot be retyped, so they fall back to a fixed word.
   const untypeable = target.name.includes("\uFFFD") || target.name.trim() === "";
   const phrase = untypeable ? "DELETE" : target.name;
+  // A folder that is not fully measured may hold far more than it shows.
   const heavy =
-    unscanned || target.size >= TYPE_TO_CONFIRM_BYTES || target.files >= TYPE_TO_CONFIRM_FILES;
+    (isDir && (unscanned || counting)) ||
+    freed >= TYPE_TO_CONFIRM_BYTES ||
+    target.files >= TYPE_TO_CONFIRM_FILES;
   const armed = !heavy || typed.normalize("NFC") === phrase.normalize("NFC");
 
   useEffect(() => {
@@ -106,21 +110,22 @@ export function ConfirmDialog({
         </div>
 
         <p className="text-sm font-mono text-zinc-300 bg-zinc-950 p-2 rounded-lg break-all border border-zinc-800 mb-3">
-          {dir ? joinPath(dir, target.name) : target.name}
+          {path}
         </p>
 
         {unscanned ? (
           <p className="text-sm text-zinc-400 mb-4">
             <span className="font-semibold text-zinc-200">
-              Contents were not scanned — its real size is unknown.
+              Not measured yet — its real size is unknown.
             </span>{" "}
-            Everything inside will be deleted. It cannot be undone.
+            {isDir ? "Everything inside will be deleted. " : ""}It cannot be undone.
           </p>
         ) : (
           <p className="text-sm text-zinc-400 mb-4">
-            This frees{" "}
-            <span className="font-semibold text-zinc-200">{formatBytes(target.size)}</span>
-            {target.isDir && (
+            This frees {counting && "at least "}
+            <span className="font-semibold text-zinc-200">{formatBytes(freed)}</span>
+            {counting && " (still counting)"}
+            {isDir && (
               <>
                 {" "}
                 across{" "}

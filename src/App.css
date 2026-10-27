@@ -193,3 +193,52 @@ body {
   stroke: #fff;
   stroke-width: 3;
 }
+
+/* ── Sizes still being measured ──────────────────────────────────────── */
+@keyframes measuring-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+/* A folder or file whose size has not arrived yet: shimmering placeholder text. */
+.measuring {
+  animation: measuring-pulse 1.4s ease-in-out infinite;
+}
+
+/* The dot beside a number that is still a lower bound. */
+.counting-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 9999px;
+  background: oklch(0.75 0.15 80);
+  vertical-align: middle;
+  animation: measuring-pulse 1.4s ease-in-out infinite;
+}
+
+.indeterminate-bar {
+  width: 40%;
+  animation: indeterminate 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .measuring,
+  .counting-dot,
+  .indeterminate-bar {
+    animation: none;
+  }
+}

@@ -23,9 +23,19 @@ export interface TreemapProps {
   onOpen: (id: number, isDir: boolean) => void;
   onSelect?: (id: number) => void;
   selectedId?: number;
+  /** Tiles whose size is still a growing lower bound, marked with a "+". */
+  counting?: ReadonlySet<number>;
+  emptyMessage?: string;
 }
 
-export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
+export function Treemap({
+  items,
+  onOpen,
+  onSelect,
+  selectedId,
+  counting,
+  emptyMessage = "Nothing to show here.",
+}: TreemapProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   // Remembering which items the tile came from drops a stale tooltip after drilling in.
@@ -66,7 +76,7 @@ export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
     <div ref={hostRef} className="relative w-full h-full">
       {tiles.length === 0 ? (
         <div className="flex items-center justify-center h-full text-sm text-zinc-600">
-          Nothing to show here.
+          {emptyMessage}
         </div>
       ) : (
         <svg
@@ -104,7 +114,7 @@ export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
                 onFocus={() => onSelect?.(tile.id)}
                 tabIndex={0}
                 role="button"
-                aria-label={`${tile.name}, ${formatBytes(tile.size)}`}
+                aria-label={`${tile.name}, ${formatBytes(tile.size)}${counting?.has(tile.id) ? ", still counting" : ""}`}
                 className="treemap-tile cursor-pointer"
               >
                 <rect
@@ -138,6 +148,7 @@ export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
                     className="pointer-events-none select-none font-mono"
                   >
                     {formatBytes(tile.size)}
+                    {counting?.has(tile.id) ? "+" : ""}
                   </text>
                 )}
               </g>
@@ -155,7 +166,11 @@ export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
           }}
         >
           <p className="font-semibold text-zinc-200 max-w-48 truncate">{hovered.name}</p>
-          <p className="text-zinc-400 font-mono mt-0.5">{formatBytes(hovered.size)}</p>
+          <p className="text-zinc-400 font-mono mt-0.5">
+            {formatBytes(hovered.size)}
+            {counting?.has(hovered.id) ? "+" : ""}
+          </p>
+          {counting?.has(hovered.id) && <p className="text-amber-400/80 mt-0.5">Still counting</p>}
           {hovered.isDir && <p className="text-zinc-600 mt-0.5">Double-click to open</p>}
         </div>
       )}
