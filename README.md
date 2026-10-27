@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/License-GPL_3.0-blue.svg" alt="License: GPL 3.0" />
   <img src="https://img.shields.io/badge/Tauri-v2-FFC131.svg?logo=tauri&logoColor=white" alt="Tauri v2" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black" alt="React 19" />
-  <img src="https://img.shields.io/badge/Android-aarch64-3DDC84.svg?logo=android&logoColor=white" alt="Android aarch64" />
+  <img src="https://img.shields.io/badge/Android-11%2B%20arm64-3DDC84.svg?logo=android&logoColor=white" alt="Android 11+ arm64" />
   <img src="https://img.shields.io/badge/Rust-1.70+-000000.svg?logo=rust&logoColor=white" alt="Rust" />
   <br />
   <a href="https://github.com/sponsors/VishnuSrivatsava"><img src="https://img.shields.io/badge/♥_Sponsor-EA4AAA?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="Sponsor" /></a>
@@ -104,6 +104,10 @@ For comparison, doing the same thing over MTP (plugging in the phone and browsin
 > xattr -cr /Applications/SocketSweep.app
 > ```
 
+**Supported phones:** Android 11 (API 30) or newer, 64-bit ARM (`arm64-v8a`) only.
+The app checks the API level and ABI before pushing the daemon and refuses other
+phones with a clear message.
+
 ### 2. Enable USB Debugging on your phone
 Go to **Settings → About Phone → tap "Build Number" 7 times** to unlock Developer Options. Then go to **Settings → Developer Options → enable "USB Debugging"**.
 
@@ -147,7 +151,7 @@ flowchart TB
     end
 
     subgraph Transport["ADB"]
-        Tunnel["adb forward<br>tcp:5050 → localabstract:socketsweep-…"]
+        Tunnel["adb forward<br>tcp:free port → localabstract:socketsweep-…"]
     end
 
     subgraph Device["Android Device"]
@@ -187,7 +191,7 @@ sequenceDiagram
     %% Connect
     U->>R: connect()
     R->>D: push binary, chmod, start with a random socket name
-    R->>R: adb forward tcp:5050 → localabstract:<name>
+    R->>R: adb forward tcp:0 → localabstract:<name> (adb picks the port)
     R->>D: Ping (retry until it binds)
     D-->>R: Pong
     R-->>U: { serial, model, root }
@@ -226,18 +230,32 @@ what it will act on both matter.
 
 **It does not open a network port on the device.** The daemon binds an abstract
 unix socket and the desktop reaches it through `adb forward
-tcp:5050 localabstract:<random-name>`. Binaries under `/data/local/tmp` run in
+tcp:<free port> localabstract:<random-name>`. The host asks adb for a free port
+(`tcp:0`), so no fixed port is used on the desktop. Binaries under `/data/local/tmp` run in
 the `shell` SELinux domain, which `untrusted_app` is denied `connectto` on — so
 an installed app cannot reach it. Loopback TCP would be reachable by anything
 holding `INTERNET`. The socket name is regenerated per session. This is the
 arrangement scrcpy uses.
 
+**Every connection must authenticate.** The host generates a random 32-byte
+token per session and passes it to the daemon in the `SOCKETSWEEP_TOKEN`
+environment variable rather than on the daemon's argv. (It is briefly visible in
+the launching `sh -c` command line, which only the `shell` user can see.) Each
+connection opens with a `Hello` carrying that token and the protocol version;
+the daemon compares the token in constant time and refuses anything that does
+not match. Idle connections time out, so a silent client cannot hold the daemon.
+
 **The daemon validates deletes itself.** It canonicalises the target and
 requires it to sit strictly beneath the session root, comparing whole path
 components — so a `/sdcard/Down` root cannot authorise deleting
-`/sdcard/Downloads`. Symlinks are judged by where they resolve, not where they
-sit. The desktop deliberately does not police this: a check that lives only on
+`/sdcard/Downloads`. A symlink is unlinked, never followed: the parent is canonicalised and the
+final component is removed as it sits. `.`, `..` and empty names are refused.
+The desktop deliberately does not police this: a check that lives only on
 the host is one that anything talking to the socket directly never encounters.
+
+**The host reuses adb.** It talks to an already-running adb server (for example
+the one Android Studio started) instead of restarting it, so it does not disturb
+other tools' adb sessions.
 
 **Known limitation.** There is a window between the check and the unlink in
 which a path component could be swapped for a symlink. Closing it properly needs
@@ -245,8 +263,8 @@ an `openat`/`O_NOFOLLOW` descent; on a single-user device, where an attacker
 would already need shell-domain access, it is not the weak link.
 
 **Not yet verified on hardware.** The design above is implemented and unit
-tested, but no part of it has run against a real phone. `adb shell ss -ltn |
-grep 5050` returning nothing is the check that proves no TCP listener is
+tested, but no part of it has run against a real phone. `adb shell ss -ltn`
+showing no TCP listener from the daemon is the check that proves none is
 exposed.
 
 ---
@@ -256,7 +274,7 @@ exposed.
 ### Prerequisites
 1. **Node.js** (v18+)
 2. **Rust** (v1.70+ with Cargo)
-3. **Android NDK** (v26d or newer) — only if you want to rebuild the device daemon
+3. **Android NDK** (v26d or newer) — only if you want to rebuild the device daemon. Point `ANDROID_NDK_HOME` (or `ANDROID_NDK_LATEST_HOME` / `ANDROID_NDK_ROOT`) at it
 
 You do *not* need ADB on your `$PATH`. SocketSweep bundles its own copy, fetched
 by `npm run setup` below.
@@ -266,9 +284,11 @@ by `npm run setup` below.
 npm install
 npm run setup
 ```
-`npm run setup` downloads Google's platform-tools for your OS and places `adb`
-into `src-tauri/bin/`. That directory is deliberately not in git — it holds
-~18MB of per-platform binaries. Re-run with `npm run setup -- --force` to update.
+`npm run setup` downloads a pinned release of Google's platform-tools (r37.0.1)
+for your OS, verifies its SHA-256 against the hash pinned in the script, and
+places `adb` into `src-tauri/bin/`. That directory is deliberately not in git —
+it holds ~18MB of per-platform binaries. Re-run with `npm run setup -- --force`
+to update.
 
 ### 2. Run the App
 ```bash
@@ -277,15 +297,15 @@ npm run tauri dev
 *Ensure your Android device is plugged in via USB and **USB Debugging** is enabled.*
 
 ### Rebuilding the device daemon (optional)
-A prebuilt `src-tauri/bin/daemon` is checked in, so you only need the NDK if you
-are changing the daemon itself:
+The device daemon (`src-tauri/bin/daemon`) is not committed to git, so build it
+before running the app and again whenever you change the daemon:
 ```bash
 npm run build:daemon
 ```
 The script finds your NDK (or honours `ANDROID_NDK_HOME`), adds the Rust target
 if missing, cross-compiles for `aarch64-linux-android` and installs the result.
-One script for all three build hosts, replacing the three copies of the same
-compiler invocation that used to live in `engine/build.sh` and two CI steps.
+CI builds the daemon once and shares it with the bundle jobs, so release builds
+do not need the NDK.
 
 ### Repository layout
 ```
