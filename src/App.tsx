@@ -14,14 +14,20 @@ export default function App() {
   const { toasts, push, dismiss } = useToasts();
   const session = useScanSession(push);
 
-  const [confirming, setConfirming] = useState<Row | null>(null);
+  // `dir` is captured when the dialog opens, because the live view keeps changing under it.
+  const [confirming, setConfirming] = useState<{ row: Row; dir?: string } | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
+
+  const requestDelete = (row: Row) => setConfirming({ row, dir: row.parent ?? session.view?.path });
+
+  // Everything behind the dialog is inert so focus and clicks cannot leave it.
+  const inert = confirming !== null;
 
   return (
     <div className="h-screen flex flex-col bg-surface-0 overflow-hidden">
       <Toasts toasts={toasts} onDismiss={dismiss} />
 
-      <main className="flex-1 flex flex-col min-h-0">
+      <main className="flex-1 flex flex-col min-h-0" inert={inert}>
         {(session.phase === "setup" || session.phase === "connecting") && (
           <SetupScreen onConnect={session.connect} loading={session.phase === "connecting"} />
         )}
@@ -50,23 +56,27 @@ export default function App() {
             onOpen={session.open}
             onRescan={session.scan}
             onDisconnect={session.disconnect}
-            onDelete={setConfirming}
+            onDelete={requestDelete}
           />
         )}
       </main>
 
-      <ConsoleDrawer
-        logs={session.logs}
-        open={consoleOpen}
-        onToggle={() => setConsoleOpen((v) => !v)}
-      />
+      <div inert={inert}>
+        <ConsoleDrawer
+          logs={session.logs}
+          open={consoleOpen}
+          onToggle={() => setConsoleOpen((v) => !v)}
+        />
+      </div>
 
       {confirming && (
         <ConfirmDialog
-          target={confirming}
+          key={confirming.row.id}
+          target={confirming.row}
+          dir={confirming.dir}
           onCancel={() => setConfirming(null)}
           onConfirm={() => {
-            const target = confirming;
+            const target = confirming.row;
             setConfirming(null);
             void session.remove(target);
           }}

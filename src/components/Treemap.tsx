@@ -28,7 +28,9 @@ export interface TreemapProps {
 export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [hovered, setHovered] = useState<Tile | null>(null);
+  // Remembering which items the tile came from drops a stale tooltip after drilling in.
+  const [hover, setHover] = useState<{ tile: Tile; items: TreemapItem[] } | null>(null);
+  const hovered = hover?.items === items ? hover.tile : null;
 
   // Track the container so the layout recomputes on resize.
   useEffect(() => {
@@ -71,7 +73,7 @@ export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
           width={size.w}
           height={size.h}
           className="block"
-          role="img"
+          role="group"
           aria-label="Storage treemap"
         >
           {tiles.map((tile, i) => {
@@ -82,8 +84,8 @@ export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
             return (
               <g
                 key={`${tile.id}-${tile.depth}`}
-                onMouseEnter={() => setHovered(tile)}
-                onMouseLeave={() => setHovered((h) => (h?.id === tile.id ? null : h))}
+                onMouseEnter={() => setHover({ tile, items })}
+                onMouseLeave={() => setHover((h) => (h?.tile.id === tile.id ? null : h))}
                 onClick={(e) => {
                   e.stopPropagation();
                   onSelect?.(tile.id);
@@ -92,7 +94,18 @@ export function Treemap({ items, onOpen, onSelect, selectedId }: TreemapProps) {
                   e.stopPropagation();
                   onOpen(tile.id, tile.isDir);
                 }}
-                className="cursor-pointer"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onOpen(tile.id, tile.isDir);
+                  }
+                }}
+                onFocus={() => onSelect?.(tile.id)}
+                tabIndex={0}
+                role="button"
+                aria-label={`${tile.name}, ${formatBytes(tile.size)}`}
+                className="treemap-tile cursor-pointer"
               >
                 <rect
                   x={tile.x}
