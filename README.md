@@ -100,7 +100,7 @@ React GUI ──► src-tauri (thin shell) ──► host-core ──► transpo
 | `src/` | React features, importing only the generated bindings through `src/api/` |
 
 Until the rebuild lands, `crates/` on this branch still holds the v3 crates
-(`protocol`, `scanner`, `daemon`).
+(`protocol` and `scanner`, kept only as a benchmark baseline).
 
 ## Security
 
@@ -158,10 +158,8 @@ npm run build:daemon    # cross-compiles the phone daemon (needs the NDK)
 npm run tauri dev       # run the desktop app with a phone plugged in
 ```
 
-> [!NOTE]
-> These steps are the ones that exist today and they build the **v3** code. As the
-> v4 crates land, the daemon build will cover both phone targets and the scripts
-> may change.
+`npm run build:daemon` writes `src-tauri/bin/daemon-arm64` and
+`src-tauri/bin/daemon-x86_64`; both are bundled with the app.
 
 Checks:
 

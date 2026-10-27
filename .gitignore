@@ -38,9 +38,11 @@ src-tauri/bin/adb.exe
 src-tauri/bin/AdbWinApi.dll
 src-tauri/bin/AdbWinUsbApi.dll
 
-# Device daemon, cross-compiled by `npm run build:daemon` (needs an Android NDK).
-# A declared bundle resource, so build it before `tauri build` or clippy.
-src-tauri/bin/daemon
+# Device daemons (phone arm64, emulator x86_64), cross-compiled by
+# `npm run build:daemon` (needs an Android NDK). Declared bundle resources, so
+# build them before `tauri build` or clippy.
+src-tauri/bin/daemon-arm64
+src-tauri/bin/daemon-x86_64
 
 # Exclude local JSON test dumps
 out*.json
