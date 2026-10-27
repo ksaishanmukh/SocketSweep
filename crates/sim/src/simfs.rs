@@ -266,10 +266,30 @@ impl SimFs {
             .filter(|&d| !self.is_deleted(d))
     }
 
-    /// Delete a directory and everything below it. Returns whether it
-    /// existed.
+    /// A live node of any kind by path.
+    pub fn find(&self, path: &[u8]) -> Option<NodeId> {
+        if let Some(d) = self.lookup(path) {
+            return Some(d);
+        }
+        let slash = path.iter().rposition(|&b| b == b'/')?;
+        let (parent, name) = (&path[..slash], &path[slash + 1..]);
+        let parent = if parent.is_empty() {
+            b"/" as &[u8]
+        } else {
+            parent
+        };
+        let p = self.lookup(parent)?;
+        let kids = &self.nodes[p as usize].children;
+        kids.binary_search_by(|&c| self.nodes[c as usize].name.as_slice().cmp(name))
+            .ok()
+            .map(|i| kids[i])
+            .filter(|&c| !self.is_deleted(c))
+    }
+
+    /// Delete a file, or a directory and everything below it. Returns
+    /// whether it existed. The root is never deleted.
     pub fn delete(&self, path: &[u8]) -> bool {
-        let Some(d) = self.lookup(path) else {
+        let Some(d) = self.find(path) else {
             return false;
         };
         if d == 0 {

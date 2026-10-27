@@ -3199,8 +3199,11 @@ dependencies = [
 name = "socketsweep-daemon"
 version = "1.0.0"
 dependencies = [
- "socketsweep-protocol",
- "socketsweep-scanner",
+ "postcard",
+ "rustix",
+ "socketsweep-engine",
+ "socketsweep-transport",
+ "socketsweep-wire",
  "tempfile",
 ]
 
@@ -3257,7 +3260,9 @@ version = "1.0.0"
 dependencies = [
  "postcard",
  "proptest",
+ "socketsweep-daemon",
  "socketsweep-engine",
+ "socketsweep-transport",
  "socketsweep-wire",
 ]
 

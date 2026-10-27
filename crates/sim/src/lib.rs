@@ -12,12 +12,15 @@
 //!   on the same model, for comparison.
 //! - [`Checker`]: an event-stream checker for G1–G3.
 //! - [`SlowFs`]: wraps an `Fs` with real sleeps, for the threaded pool.
+//! - [`FakeDaemon`]: the real daemon session over an in-memory pipe, walking
+//!   a `SimFs` with the real engine, for host-side tests.
 //!
 //! `cargo run -p socketsweep-sim --example report --release` prints the
 //! comparison on the standard tree.
 
 pub mod checker;
 pub mod des;
+pub mod fake_daemon;
 pub mod latency;
 pub mod report;
 pub mod rng;
@@ -27,6 +30,7 @@ pub mod slowfs;
 
 pub use checker::{done_totals, Checker};
 pub use des::{run_baseline, run_v4, Action, BaselineRun, FocusRecord, Script, SimConfig, V4Run};
+pub use fake_daemon::{FakeDaemon, SimActions};
 pub use latency::{Latency, Storage};
 pub use report::{compare_on, compare_standard, format_report, Click, ScriptResult};
 pub use rng::Rng;
