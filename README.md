@@ -274,7 +274,7 @@ exposed.
 ## 🔧 Development Setup (Building from Source)
 
 ### Prerequisites
-1. **Node.js** (v18+)
+1. **Node.js** (v22.22+ or v24.15+)
 2. **Rust** (v1.70+ with Cargo)
 3. **Android NDK** (v26d or newer) — only if you want to rebuild the device daemon. Point `ANDROID_NDK_HOME` (or `ANDROID_NDK_LATEST_HOME` / `ANDROID_NDK_ROOT`) at it
 
