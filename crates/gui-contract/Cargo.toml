@@ -1,0 +1,20 @@
+[package]
+name = "socketsweep-gui-contract"
+description = "Commands and events between the SocketSweep GUI and the desktop host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+specta = { workspace = true }
+specta-serde = { workspace = true }
+specta-typescript = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[[bin]]
+name = "export-bindings"
+path = "src/bin/export-bindings.rs"
