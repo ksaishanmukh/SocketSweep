@@ -1,8 +1,19 @@
 [package]
 name = "socketsweep-host-core"
+description = "The SocketSweep desktop host's logic: tree index, session client, focus, delete and copy"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+socketsweep-wire = { workspace = true }
+socketsweep-gui-contract = { workspace = true }
+socketsweep-transport = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# The same major as src-tauri, so the lockfile carries one copy.
+rand = "0.9"
+
+[dev-dependencies]
+socketsweep-transport = { workspace = true, features = ["fake"] }
