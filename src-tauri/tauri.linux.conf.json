@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "resources": ["bin/daemon", "bin/adb"]
+    "resources": ["bin/daemon-arm64", "bin/daemon-x86_64", "bin/adb"]
   }
 }

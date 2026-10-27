@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================================
-// build-daemon.mjs — cross-compile the device daemon for Android aarch64
+// build-daemon.mjs — cross-compile the device daemon for Android arm64 and x86_64
 // ============================================================================
 // One invocation for every build host, local and CI alike.
 //
@@ -19,7 +19,11 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const TARGET = "aarch64-linux-android";
+/** Rust target -> file name under src-tauri/bin (host-core's DaemonBinaries). */
+const TARGETS = {
+  "aarch64-linux-android": "daemon-arm64",
+  "x86_64-linux-android": "daemon-x86_64",
+};
 const PROFILE = "release-daemon";
 /** Minimum supported Android API level. */
 const API_LEVEL = 30;
@@ -57,7 +61,7 @@ function findNdk() {
   return null;
 }
 
-function ensureRustTarget() {
+function ensureRustTarget(TARGET) {
   const installed = execFileSync("rustup", ["target", "list", "--installed"], {
     encoding: "utf8",
   });
@@ -81,38 +85,40 @@ async function main() {
   console.log(`NDK: ${ndk}`);
 
   const suffix = process.platform === "win32" ? ".cmd" : "";
-  const linker = join(
-    ndk,
-    "toolchains/llvm/prebuilt",
-    HOST_TAG,
-    "bin",
-    `${TARGET}${API_LEVEL}-clang${suffix}`,
-  );
-  if (!existsSync(linker)) {
-    console.error(`Linker not found at ${linker}`);
-    process.exit(1);
+  for (const [target, outName] of Object.entries(TARGETS)) {
+    const linker = join(
+      ndk,
+      "toolchains/llvm/prebuilt",
+      HOST_TAG,
+      "bin",
+      `${target}${API_LEVEL}-clang${suffix}`,
+    );
+    if (!existsSync(linker)) {
+      console.error(`Linker not found at ${linker}`);
+      process.exit(1);
+    }
+
+    ensureRustTarget(target);
+
+    // Cargo reads the linker for a target from this env var, which is the only
+    // Android-specific setup the daemon needs.
+    const envKey = `CARGO_TARGET_${target.toUpperCase().replace(/-/g, "_")}_LINKER`;
+
+    console.log(`Building ${target} (${PROFILE})�`);
+    execFileSync(
+      "cargo",
+      ["build", "-p", "socketsweep-daemon", "--target", target, "--profile", PROFILE],
+      { cwd: ROOT, stdio: "inherit", env: { ...process.env, [envKey]: linker } },
+    );
+
+    const built = join(ROOT, "target", target, PROFILE, "socketsweep-daemon");
+    const dest = join(ROOT, "src-tauri", "bin", outName);
+    await mkdir(dirname(dest), { recursive: true });
+    await copyFile(built, dest);
+
+    const { size } = await stat(dest);
+    console.log(`Wrote ${dest} (${(size / 1024).toFixed(0)} KB)`);
   }
-
-  ensureRustTarget();
-
-  // Cargo reads the linker for a target from this env var, which is the only
-  // Android-specific setup the daemon needs.
-  const envKey = `CARGO_TARGET_${TARGET.toUpperCase().replace(/-/g, "_")}_LINKER`;
-
-  console.log(`Building ${TARGET} (${PROFILE})…`);
-  execFileSync(
-    "cargo",
-    ["build", "-p", "socketsweep-daemon", "--target", TARGET, "--profile", PROFILE],
-    { cwd: ROOT, stdio: "inherit", env: { ...process.env, [envKey]: linker } },
-  );
-
-  const built = join(ROOT, "target", TARGET, PROFILE, "socketsweep-daemon");
-  const dest = join(ROOT, "src-tauri", "bin", "daemon");
-  await mkdir(dirname(dest), { recursive: true });
-  await copyFile(built, dest);
-
-  const { size } = await stat(dest);
-  console.log(`Wrote ${dest} (${(size / 1024).toFixed(0)} KB)`);
 }
 
 main().catch((err) => {

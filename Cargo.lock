@@ -3187,10 +3187,9 @@ dependencies = [
 name = "socketsweep"
 version = "1.0.0"
 dependencies = [
- "rand 0.9.5",
- "serde",
- "serde_json",
- "socketsweep-protocol",
+ "socketsweep-gui-contract",
+ "socketsweep-host-core",
+ "socketsweep-transport-adb",
  "tauri",
  "tauri-build",
 ]
