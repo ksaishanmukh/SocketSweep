@@ -1,6 +1,15 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri", "crates/protocol", "crates/scanner", "crates/daemon"]
+members = [
+    "src-tauri",
+    "crates/protocol",
+    "crates/scanner",
+    "crates/daemon",
+    # v4 contract crates (docs/architecture.md section 1).
+    "crates/wire",
+    "crates/gui-contract",
+    "crates/transport",
+]
 
 # crates/daemon targets aarch64-linux-android and only builds on a Linux-family
 # target (it binds an abstract unix socket). Keep it out of default-members so a
@@ -8,7 +17,14 @@ members = ["src-tauri", "crates/protocol", "crates/scanner", "crates/daemon"]
 # does not try to build it. `--workspace` ignores default-members and DOES
 # include it, so only use that on a Linux-family host. Cross-compile it with
 # `npm run build:daemon`.
-default-members = ["src-tauri", "crates/protocol", "crates/scanner"]
+default-members = [
+    "src-tauri",
+    "crates/protocol",
+    "crates/scanner",
+    "crates/wire",
+    "crates/gui-contract",
+    "crates/transport",
+]
 
 [workspace.package]
 version = "1.0.0"
@@ -23,6 +39,16 @@ postcard = { version = "1", features = ["use-std"] }
 jwalk = "0.8"
 socketsweep-protocol = { path = "crates/protocol" }
 socketsweep-scanner = { path = "crates/scanner" }
+socketsweep-wire = { path = "crates/wire" }
+socketsweep-gui-contract = { path = "crates/gui-contract" }
+socketsweep-transport = { path = "crates/transport" }
+bitflags = { version = "2.13", features = ["serde"] }
+# Pinned exactly: specta 2 is still a release candidate and its RCs break each
+# other. These are the versions tauri-specta 2.0.0-rc.26 is built against, so
+# src-tauri can adopt tauri-specta without the contract crate changing.
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+specta-serde = "=0.0.13"
+specta-typescript = "=0.0.13"
 
 # The daemon is pushed to a phone over USB on every connect, so size is a
 # user-visible cost, not just a build detail.

@@ -12,3 +12,6 @@ README.md
 LICENSE
 .github
 assets
+
+# Generated from crates/gui-contract; formatting is the generator's job.
+src/bindings.ts
