@@ -194,15 +194,24 @@ enum Task { Names(DirId) /* getdents + d_type only */,
 ```
 
 Workers are reassigned only between tasks; no task is interrupted part-way. A
-directory entry whose type comes back as `DT_UNKNOWN` is stat'ed immediately.
+directory entry whose type comes back as `DT_UNKNOWN` is stat'ed immediately
+(by the `Fs` implementation, inside the `Names` read), and never again.
+
+The engine (`crates/engine`) implements `sched`, `aggregate` and `pool`; the
+daemon supplies the rustix `Fs` and the session's `EventSink`. `ScanState` is
+the pure state machine: `pick`, `apply`, `set_focus`, `clear_focus`, `prune`,
+`cancel` and `tick` take the time as an argument and queue wire events at the
+moment the state changes. `pool::Scan` runs it on W worker threads plus a ticker
+(skeleton budget, `Progress`), and is the handle the session uses for `Focus`,
+`ClearFocus`, `Cancel` and delete prunes.
 
 ### Directory table
 
 ```rust
 struct DirRec {
-    parent: DirId, name: Box<[u8]>, depth: u8, first_child: DirId, next_sibling: DirId,
+    parent: DirId, name: Box<[u8]>, depth: u8, first_child: DirId, n_children: u32,
     state: St,            // Pending | InFlight | NamesOnly | Listed | Done | Pruned
-    stat_pending: bool,
+    stat: StatSt,         // Pending | InFlight | Done (deferred stats)
     pending_desc: u32,    // runnable tasks in this subtree, including self
     active_desc: u16,     // workers currently inside this subtree
     open_children: u32,   // child directories not yet Done
@@ -210,26 +219,51 @@ struct DirRec {
 }
 ```
 
+- **Children** get consecutive ids when their parent is listed, so they are
+  `first_child .. first_child + n_children`; no sibling links are needed.
 - **Counter upkeep:** every state change updates the counters along the chain of
   parents (at most 64 steps).
-- **When a directory is Done:** it is listed, its stats are done, and
-  `open_children == 0`.
+- **When a directory is Done:** it is listed, its stats are done,
+  `open_children == 0`, and (for G2) its parent's stats are done. A child of a
+  directory listed by `Names` can be measured before its parent's deferred
+  stats arrive; it then waits, complete, until they are applied, and applying
+  them finishes every such child before the parent itself.
 - **Completion cascade (a loop, not recursion):** finishing directory D emits
   `SubtreeDone(D)`, adds D's totals to its parent, and decrements the parent's
   `open_children`.
-- **Failures and limits:** directories that fail to open, or lie beyond
-  `max_depth`, complete immediately with an error flag.
+- **Failures and limits:** a directory that fails to open emits `DirFailed` and
+  completes with `errors: 1` and `UNREADABLE`. A subdirectory beyond
+  `max_depth` is not walked: it is listed with `id: None` (so it never gets a
+  `DirId`), counted as an entry, and its parent gets `DEPTH_LIMIT`. With
+  `one_filesystem`, a directory whose own device (from the open handle; a
+  `Names` listing has no stats) differs from the root's is listed as empty and
+  completes with `OTHER_FS`; its entries were read once and are discarded.
+- **`None` stats:** a `None` stat in a `Listing` always promises a `Stats` slot.
+  For a `Full` listing, entries whose `lstat` failed are sent straight after
+  the listing as `Stats` runs of `None`. If a `StatDir` cannot reopen its
+  directory, every owed entry is `None` and the totals get `UNREADABLE`; no
+  `DirFailed` is sent, since the listing succeeded.
+- **Hardlinks:** a non-directory with `nlink > 1` adds its size once per
+  `(dev, ino)` in the scan (the engine keeps the set; the wire `Stat` has no
+  inode). Later links still count in `files`. A prune does not forget inodes.
 
 ### Skeleton phase (breadth-first without barriers)
 
-- **Ordering:** the Back tier hands out tasks shallowest-first, using per-depth
-  buckets. No worker ever waits for a level to finish.
+- **Ordering:** the Back tier (or, with no focus, everything) hands out `Names`
+  tasks shallowest-first, using per-depth FIFO buckets. No worker ever waits
+  for a level to finish. With a focus, the Open and Near tiers use `Full`
+  tasks even during the skeleton phase.
 - **Phase end:** the skeleton phase ends when one of these holds: the frontier
   holds at least 4 × W directories **and** the depth reached is at least
   `skeleton_min_depth` (2), the 1 s budget runs out, or the depth reaches
-  `skeleton_max_depth` (4).
+  `skeleton_max_depth` (4). The _frontier_ is the directories known but not
+  yet listed (waiting or being read); the _depth reached_ is the shallowest
+  depth that still has such a directory, so every level above it is listed.
 - **After the skeleton:** remaining work is depth-first (preferring the highest
   `DirId`), using `Full` tasks. Skeleton directories still owe a `StatDir`.
+- **Big jobs:** a skeleton listing tells the size of its deferred stats. A
+  `StatDir` of at least 2,048 entries is handed out before anything else in its
+  tier, largest first, so one huge folder does not become the scan's tail.
 
 ### Proximity allocation (gradual hiring)
 
@@ -243,7 +277,8 @@ tier's pending work is O(1), from the counters:
 | `Back` | everything else              | `pending_desc(root) − pending_desc(P)` |
 
 With no focus, or with the focus at the root, everything is `Open`. The
-scheduler then behaves like a plain parallel walk.
+scheduler then behaves like a plain parallel walk, choosing anchors by the Back
+rule (fewest workers, then most work).
 
 ```rust
 struct TierCfg { weight: f32, floor: u8, cap: u8 }
@@ -262,11 +297,18 @@ if the user stays.
    `weight / (seats + 1)`, among tiers that are below their cap and still have
    work. Ties go to the nearer tier.
 3. Seats a tier cannot use go to the other tiers, so no worker sits idle while
-   any work exists.
+   any work exists. A tier "can use" its running workers plus its waiting
+   tasks. Seats left over after every tier reaches its cap go, by the same
+   quotient, to tiers that still have work beyond their cap.
+
+If the floors exceed W, they are given Back first, then Near, then Open.
 
 | W           | Steady state (open / near / back) | First 400 ms after a click | Focus fully measured |
 | ----------- | --------------------------------- | -------------------------- | -------------------- |
-| 8 (default) | 3 / 1 / 4                         | 1 / 1 / 6                  | 0 / 2 / 6            |
+| 8 (default) | 3 / 1 / 4                         | 1 / 1 / 6                  | 0 / 1 / 7            |
+
+The last column follows from the rule: once Open has no work, Near's quotient
+`1 / 2` never beats Back's `4 / 8`, so Near keeps only its floor.
 
 As the user moves closer to a folder X, X's share grows: about 0.3 → 1 → 1–2 →
 3 workers.
@@ -275,7 +317,9 @@ As the user moves closer to a folder X, X's share grows: about 0.3 → 1 → 1�
 
 1. Release the worker's seat. Wait if the queue is congested or the scan is
    cancelled.
-2. Choose the tier with the largest `target − active`. Ties go first to the
+2. If Back has work and is below its floor, choose Back. Otherwise, a tier
+   with work below its floor; otherwise the tier with the largest
+   `target − active`. Only tiers with waiting tasks count. Ties go first to the
    worker's previous tier, then to the nearer tier.
 3. **Anchor.** Keep the previous anchor if it is still in that tier and has
    work. Otherwise:
@@ -284,8 +328,12 @@ As the user moves closer to a folder X, X's share grows: about 0.3 → 1 → 1�
    - Near: among the siblings, the one with the fewest workers.
    - Back: outside P, the subtree with the fewest workers, then the **most**
      work, so the biggest jobs start first and the scan's tail stays short.
+   - A tier root whose subtree straddles tiers (F, P, or an ancestor of P) is
+     never an anchor; its own task (a `StatDir`, which gates its children's
+     completion) is taken directly, before any anchor.
 4. **Descent:** shallowest-first for skeleton work in Back, otherwise
-   depth-first.
+   depth-first: a directory's own task first, then the highest-id child with
+   work.
 
 **Focus change.** Only the focus is replaced. Each in-flight worker's tier is
 recomputed from where it currently is. Workers move one at a time as they
@@ -297,7 +345,10 @@ to in-progress exactly once, under the lock, so nothing is lost or done twice.
 - the host combines focus changes over 150 ms and sends only the last;
 - the dwell ramp;
 - workers keep their tier and anchor when they can;
-- `seq` ordering discards stale focus messages;
+- `seq` ordering discards stale focus messages (a `seq` not above the last
+  `Focus` or `ClearFocus` seen; an unknown or pruned `DirId` uses up its `seq`
+  and is ignored);
+- focusing the folder already open keeps its dwell;
 - moves happen only at task boundaries.
 
 **Worker count:** `W = clamp(2 × cores, 4, 8)`, which `ScanOpts` can override.
@@ -306,13 +357,18 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
 ### Delete during a scan
 
 - The subtree is marked `Pruned` and its counts are removed.
-- If the deleted node was finished, or is a file, its totals are subtracted
-  from each parent up to and including the first parent that is not yet
-  finished.
+- If the deleted node was finished, its totals plus its own entry are
+  subtracted from each parent up to and including the first parent that is not
+  yet finished. If it was not, only its own entry is subtracted from its
+  parent. Flags are not cleared. `Delete.hint` names directories only, so a
+  file deleted during a scan is not pruned; a later stat of it is an error.
 - If it was not finished, the parent's `open_children` goes down by one, which
   may let the parent complete.
-- Results from workers still inside the deleted subtree are discarded.
-- The daemon emits `Pruned`, then deletes the files and replies `Deleted`.
+- Results from workers still inside the deleted subtree are discarded; a
+  pruned child's slot in its parent's later `Stats` is `None` and is not
+  counted. A focus inside the subtree is cleared.
+- The daemon emits `Pruned` (`Scan::prune`, before touching the files), then
+  deletes the files and replies `Deleted`.
 
 ### Copy
 

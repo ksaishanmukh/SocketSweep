@@ -1,8 +1,10 @@
 [package]
 name = "socketsweep-engine"
+description = "The v4 scan engine: scheduler state machine, aggregation and worker pool"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+socketsweep-wire = { workspace = true }
