@@ -7,9 +7,6 @@ import { IconTrash } from "./icons";
 const TYPE_TO_CONFIRM_BYTES = 1024 ** 3;
 const TYPE_TO_CONFIRM_FILES = 100;
 
-/** A row the scanner has not read yet reports 0 bytes, which says nothing about what is there. */
-type Target = Row & { listed?: boolean };
-
 const FOCUSABLE =
   'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
@@ -31,7 +28,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
 }: {
-  target: Target;
+  target: Row;
   /** Folder containing the target, when known. */
   dir?: string;
   onCancel: () => void;
@@ -45,7 +42,8 @@ export function ConfirmDialog({
     onCancelRef.current = onCancel;
   });
 
-  const unscanned = target.listed === false;
+  // A folder the scanner never read reports 0 bytes, which says nothing about what is there.
+  const unscanned = !target.listed;
   // Lossy names cannot be retyped, so they fall back to a fixed word.
   const untypeable = target.name.includes("\uFFFD") || target.name.trim() === "";
   const phrase = untypeable ? "DELETE" : target.name;

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConsoleDrawer } from "./components/ConsoleDrawer";
+import { FailedScreen } from "./components/screens/FailedScreen";
 import { ResultScreen } from "./components/screens/ResultScreen";
 import { ScanningScreen } from "./components/screens/ScanningScreen";
 import { SetupScreen } from "./components/screens/SetupScreen";
@@ -15,10 +16,17 @@ export default function App() {
   const session = useScanSession(push);
 
   // `dir` is captured when the dialog opens, because the live view keeps changing under it.
-  const [confirming, setConfirming] = useState<{ row: Row; dir?: string } | null>(null);
+  // So is the generation: a rescan or disconnect replaces the tree, and a
+  // dialog still holding a row from the old one must not be shown, let alone
+  // confirmed.
+  const [request, setRequest] = useState<{ row: Row; dir?: string; generation: number } | null>(
+    null,
+  );
   const [consoleOpen, setConsoleOpen] = useState(false);
 
-  const requestDelete = (row: Row) => setConfirming({ row, dir: row.parent ?? session.view?.path });
+  const confirming = request?.generation === session.generation ? request : null;
+  const requestDelete = (row: Row) =>
+    setRequest({ row, dir: row.parent ?? session.view?.path, generation: session.generation });
 
   // Everything behind the dialog is inert so focus and clicks cannot leave it.
   const inert = confirming !== null;
@@ -34,6 +42,14 @@ export default function App() {
 
         {session.phase === "scanning" && (
           <ScanningScreen stats={session.stats} current={session.scanningPath} />
+        )}
+
+        {session.phase === "failed" && (
+          <FailedScreen
+            message={session.failure}
+            onRescan={session.scan}
+            onDisconnect={session.disconnect}
+          />
         )}
 
         {session.phase === "result" && session.view && session.stats && (
@@ -54,6 +70,8 @@ export default function App() {
             searchResults={session.searchResults}
             onQueryChange={session.setQuery}
             onOpen={session.open}
+            onLoadMore={session.loadMore}
+            loadingMore={session.loadingMore}
             onRescan={session.scan}
             onDisconnect={session.disconnect}
             onDelete={requestDelete}
@@ -74,10 +92,10 @@ export default function App() {
           key={confirming.row.id}
           target={confirming.row}
           dir={confirming.dir}
-          onCancel={() => setConfirming(null)}
+          onCancel={() => setRequest(null)}
           onConfirm={() => {
             const target = confirming.row;
-            setConfirming(null);
+            setRequest(null);
             void session.remove(target);
           }}
         />

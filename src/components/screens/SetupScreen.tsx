@@ -104,6 +104,7 @@ export function SetupScreen({
                 <span className="block text-[11px] font-mono text-zinc-600 truncate">
                   {d.serial}
                 </span>
+                {d.hint && <span className="block mt-0.5 text-[11px] text-zinc-500">{d.hint}</span>}
               </span>
             </button>
           ))}
@@ -141,6 +142,7 @@ export function SetupScreen({
             <li key={d.serial} className="text-amber-400/80">
               <span className="font-mono">{d.model}</span> is {d.state}
               {TROUBLE[d.state] && <span className="text-zinc-500"> — {TROUBLE[d.state]}</span>}
+              {d.hint && <p className="mt-0.5 text-[11px] text-zinc-500">{d.hint}</p>}
             </li>
           ))}
         </ul>
