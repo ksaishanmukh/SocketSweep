@@ -1,6 +1,6 @@
 //! Socket listener and request dispatch. Linux/Android only.
 
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 // Abstract-namespace sockets are a Linux kernel feature, but std files the
 // extension trait under a per-OS module and Android is not `target_os = "linux"`.
 #[cfg(target_os = "android")]
@@ -10,11 +10,25 @@ use std::os::linux::net::SocketAddrExt;
 use std::os::unix::net::{SocketAddr, UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Duration;
 
-use socketsweep_protocol::{write_msg, Frame, Request, ScanStats};
-use socketsweep_scanner::{scan, ScanConfig};
+use socketsweep_protocol::{
+    read_msg, token_from_hex, tokens_match, write_msg, Frame, ProtocolError, Request, ScanStats,
+    Token, PROTOCOL_VERSION, TOKEN_ENV, TOKEN_LEN,
+};
+use socketsweep_scanner::{scan, ScanConfig, ScanError};
 
 use crate::guard;
+
+/// How long a connection may sit without sending a request. The daemon serves
+/// one connection at a time, so a client that connects and goes quiet would
+/// otherwise lock every other client out indefinitely.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a single write may block on a host that is not reading. Generous,
+/// because a scan streams for minutes and the host may briefly stall while it
+/// folds frames into its tree; a write that does time out ends the scan.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct Args {
     socket: String,
@@ -23,7 +37,7 @@ struct Args {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: socketsweep-daemon --socket <abstract-name> [--root <path>] [--threads <n>]");
+    eprintln!("usage: {TOKEN_ENV}=<hex> socketsweep-daemon --socket <abstract-name> [--root <path>] [--threads <n>]");
     std::process::exit(2)
 }
 
@@ -54,8 +68,27 @@ fn parse_args() -> Args {
     }
 }
 
+/// The session token comes from the environment, never argv: a process's
+/// arguments are readable by anything that can list processes, its
+/// environment only by the same user.
+fn read_token() -> Result<Token, String> {
+    let raw = std::env::var_os(TOKEN_ENV).ok_or_else(|| {
+        format!("{TOKEN_ENV} is not set; the host passes the session token through it")
+    })?;
+    raw.to_str()
+        .and_then(token_from_hex)
+        .ok_or_else(|| format!("{TOKEN_ENV} must be exactly {} hex digits", TOKEN_LEN * 2))
+}
+
 pub fn main() -> ExitCode {
     let args = parse_args();
+    let token = match read_token() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[daemon] refusing to start: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     // The host supplies a fresh socket name per session, so a stale daemon
     // cannot be mistaken for the current one.
@@ -79,7 +112,7 @@ pub fn main() -> ExitCode {
     };
 
     eprintln!(
-        "[daemon] listening on abstract:{} (root {}, pid {})",
+        "[daemon] listening on abstract:{} (root {}, protocol {PROTOCOL_VERSION}, pid {})",
         args.socket,
         args.root.display(),
         std::process::id()
@@ -88,7 +121,7 @@ pub fn main() -> ExitCode {
     for conn in listener.incoming() {
         match conn {
             Ok(stream) => {
-                if handle_client(stream, &args) == Control::Shutdown {
+                if handle_client(stream, &args, &token) == Control::Shutdown {
                     break;
                 }
             }
@@ -102,11 +135,25 @@ pub fn main() -> ExitCode {
 
 #[derive(PartialEq, Eq)]
 enum Control {
+    /// Keep serving this connection.
     Continue,
+    /// Drop this connection and go back to accepting.
+    Close,
+    /// Stop the daemon.
     Shutdown,
 }
 
-fn handle_client(stream: UnixStream, args: &Args) -> Control {
+fn handle_client(stream: UnixStream, args: &Args, token: &Token) -> Control {
+    // Socket options belong to the socket, not the descriptor, so these also
+    // cover the clones below and the one a scan writes through.
+    if let Err(e) = stream
+        .set_read_timeout(Some(READ_TIMEOUT))
+        .and_then(|()| stream.set_write_timeout(Some(WRITE_TIMEOUT)))
+    {
+        eprintln!("[daemon] cannot set socket timeouts: {e}");
+        return Control::Continue;
+    }
+
     let mut reader = BufReader::new(match stream.try_clone() {
         Ok(s) => s,
         Err(e) => {
@@ -122,12 +169,17 @@ fn handle_client(stream: UnixStream, args: &Args) -> Control {
         }
     });
 
+    let accepted = handshake(&mut reader, &mut writer, token);
+    if writer.flush().is_err() || !accepted {
+        return Control::Continue;
+    }
+
     loop {
-        let request: Request = match socketsweep_protocol::read_msg(&mut reader) {
+        let request: Request = match read_msg(&mut reader) {
             Ok(Some(r)) => r,
             Ok(None) => return Control::Continue, // peer hung up between requests
             Err(e) => {
-                eprintln!("[daemon] malformed request: {e}");
+                report_read_error(&e);
                 return Control::Continue;
             }
         };
@@ -136,9 +188,66 @@ fn handle_client(stream: UnixStream, args: &Args) -> Control {
         if writer.flush().is_err() {
             return Control::Continue;
         }
-        if control == Control::Shutdown {
-            return Control::Shutdown;
+        match control {
+            Control::Continue => {}
+            Control::Close => return Control::Continue,
+            Control::Shutdown => return Control::Shutdown,
         }
+    }
+}
+
+/// Read and check the [`Request::Hello`] every connection must open with,
+/// answering `Pong` or `Error`. Returns whether to go on serving.
+fn handshake<R: Read, W: Write>(reader: &mut R, out: &mut W, token: &Token) -> bool {
+    let refusal = match read_msg::<_, Request>(reader) {
+        Ok(Some(Request::Hello {
+            token: offered,
+            protocol,
+        })) => {
+            // The token is checked first so that only a host holding it learns
+            // anything about this daemon, its version included.
+            if !tokens_match(&offered, token) {
+                "authentication failed".to_string()
+            } else if protocol != PROTOCOL_VERSION {
+                format!(
+                    "protocol mismatch: the host speaks version {protocol}, \
+                     this daemon speaks version {PROTOCOL_VERSION}"
+                )
+            } else {
+                let _ = write_msg(out, &Frame::Pong);
+                return true;
+            }
+        }
+        Ok(Some(_)) => "the first request on a connection must be Hello".to_string(),
+        Ok(None) => return false,
+        // A body that does not decode is most likely a host built against a
+        // different protocol, which deserves an answer rather than silence.
+        Err(e @ ProtocolError::Decode(_)) => format!("unreadable handshake: {e}"),
+        Err(e) => {
+            report_read_error(&e);
+            return false;
+        }
+    };
+
+    eprintln!("[daemon] refused connection: {refusal}");
+    let _ = write_msg(out, &Frame::Error { message: refusal });
+    false
+}
+
+fn report_read_error(e: &ProtocolError) {
+    match e {
+        ProtocolError::Io(io)
+            if matches!(
+                io.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            eprintln!(
+                "[daemon] client sent nothing for {}s, closing",
+                READ_TIMEOUT.as_secs()
+            );
+        }
+        _ => eprintln!("[daemon] malformed request: {e}"),
     }
 }
 
@@ -154,27 +263,33 @@ fn dispatch<W: Write>(request: Request, args: &Args, stream: &UnixStream, out: &
             Control::Shutdown
         }
 
+        Request::Hello { .. } => {
+            let _ = write_msg(
+                out,
+                &Frame::Error {
+                    message: "Hello is only valid as the first request on a connection".into(),
+                },
+            );
+            Control::Close
+        }
+
         Request::Scan { root } => {
             let requested = bytes_to_path(&root);
             match guard::resolve_at_or_under_root(&args.root, &requested) {
                 Ok(resolved) => run_scan(&resolved, args.threads, stream, out),
                 Err(e) => {
-                    let _ = write_msg(
-                        out,
-                        &Frame::Error {
-                            message: e.to_string(),
-                        },
-                    );
+                    eprintln!("[daemon] rejected scan: {e}");
+                    scan_failed(out, e.to_string());
+                    Control::Continue
                 }
             }
-            Control::Continue
         }
 
         Request::Delete { path } => {
             let requested = bytes_to_path(&path);
             match guard::resolve_under_root(&args.root, &requested) {
                 Ok(resolved) => {
-                    let frame = match remove(&resolved) {
+                    let frame = match guard::remove(&resolved) {
                         Ok(items) => Frame::Deleted { items },
                         Err(e) => Frame::Error {
                             message: format!("failed to delete {}: {e}", resolved.display()),
@@ -197,7 +312,15 @@ fn dispatch<W: Write>(request: Request, args: &Args, stream: &UnixStream, out: &
     }
 }
 
-fn run_scan<W: Write>(root: &Path, threads: usize, stream: &UnixStream, out: &mut W) {
+/// End a scan reply that produced no result. Every scan reply ends in
+/// `ScanDone`, failures included, so the host never waits on a reply that is
+/// not coming.
+fn scan_failed<W: Write>(out: &mut W, message: String) {
+    let _ = write_msg(out, &Frame::Error { message });
+    let _ = write_msg(out, &Frame::ScanDone(ScanStats::default()));
+}
+
+fn run_scan<W: Write>(root: &Path, threads: usize, stream: &UnixStream, out: &mut W) -> Control {
     let cfg = ScanConfig {
         root: root.to_path_buf(),
         threads,
@@ -219,22 +342,24 @@ fn run_scan<W: Write>(root: &Path, threads: usize, stream: &UnixStream, out: &mu
     // sink (jwalk's callback bound), hence a cloned descriptor rather than a
     // borrow of `out`. Flush first so the two writers cannot interleave.
     if out.flush().is_err() {
-        return;
+        return Control::Close; // the host is gone; there is no one to tell
     }
     let sink = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => {
-            let _ = write_msg(
-                out,
-                &Frame::Error {
-                    message: format!("cannot clone socket: {e}"),
-                },
-            );
-            return;
+            scan_failed(out, format!("cannot clone socket: {e}"));
+            return Control::Continue;
         }
     };
 
     match scan(&cfg, sink) {
+        // A frame failed to send, most likely because the host has gone. Part of
+        // one may already be on the wire, so anything written after it would be
+        // misread; the connection is dropped instead.
+        Err(e @ ScanError::Protocol(_)) => {
+            eprintln!("[daemon] scan of {} abandoned: {e}", root.display());
+            return Control::Close;
+        }
         Ok(stats) => {
             eprintln!(
                 "[daemon] scan of {} finished: {} files, {} dirs, {} bytes, {} errors, {} ms",
@@ -249,46 +374,10 @@ fn run_scan<W: Write>(root: &Path, threads: usize, stream: &UnixStream, out: &mu
         }
         Err(e) => {
             eprintln!("[daemon] scan failed: {e}");
-            let _ = write_msg(
-                out,
-                &Frame::Error {
-                    message: e.to_string(),
-                },
-            );
-            let _ = write_msg(out, &Frame::ScanDone(ScanStats::default()));
+            scan_failed(out, e.to_string());
         }
     }
-}
-
-/// Remove a validated path, returning how many entries went with it.
-fn remove(path: &Path) -> std::io::Result<u64> {
-    // Judge the path itself, not its target. The destination is already known
-    // to be inside the root, so a symlink here is unlinked rather than followed
-    // into a recursive delete.
-    let meta = std::fs::symlink_metadata(path)?;
-
-    if meta.is_symlink() || !meta.is_dir() {
-        std::fs::remove_file(path)?;
-        return Ok(1);
-    }
-
-    let count = count_entries(path);
-    std::fs::remove_dir_all(path)?;
-    Ok(count)
-}
-
-fn count_entries(path: &Path) -> u64 {
-    let mut n = 1;
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            match entry.file_type() {
-                Ok(t) if t.is_dir() => n += count_entries(&entry.path()),
-                Ok(_) => n += 1,
-                Err(_) => {}
-            }
-        }
-    }
-    n
+    Control::Continue
 }
 
 #[cfg(unix)]

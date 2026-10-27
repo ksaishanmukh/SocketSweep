@@ -15,7 +15,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use jwalk::{Parallelism, WalkDirGeneric};
 use socketsweep_protocol::{write_msg, Entry, EntryKind, Frame, ProtocolError, ScanStats};
@@ -26,7 +26,9 @@ pub struct ScanConfig {
     /// with core count, so measure on the target device before pinning a value.
     pub threads: usize,
     /// Guards against pathological nesting and symlink loops that survive the
-    /// symlink skip (bind mounts, for instance).
+    /// symlink skip (bind mounts, for instance). The root is depth 0. A
+    /// directory too deep to read still appears as an entry in its parent, gets
+    /// no frame of its own, and is counted in [`ScanStats::errors`].
     pub max_depth: usize,
 }
 
@@ -80,7 +82,9 @@ struct Counters {
 /// Walk `cfg.root`, streaming one [`Frame::Dir`] per directory into `sink`.
 ///
 /// The terminating [`Frame::ScanDone`] is the caller's to write, so it can
-/// decide what to report if the walk fails part-way through.
+/// decide what to report if the walk fails part-way through. The first failed
+/// write stops the walk descending further and is returned once it has wound
+/// down.
 ///
 /// `sink` is taken by value and must be `'static` because jwalk requires its
 /// `process_read_dir` callback to be `'static`. Callers with a borrowed stream
@@ -99,12 +103,18 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
 
     let started = Instant::now();
 
-    let out = Arc::new(Mutex::new(BufWriter::with_capacity(256 * 1024, sink)));
+    let out = Arc::new(Mutex::new(Output {
+        writer: BufWriter::with_capacity(256 * 1024, sink),
+        last_flush: Instant::now(),
+    }));
     let counters = Arc::new(Counters::default());
     counters.dirs.store(1, Ordering::Relaxed); // the root itself
-                                               // The walk closure cannot return an error, so the first write failure is
-                                               // parked here and surfaced once the walk finishes.
+
+    // The walk closure cannot return an error, so the first write failure is
+    // parked here and surfaced once the walk finishes. Its presence also tells
+    // the walk to stop: the usual cause is a host that has disconnected.
     let write_failure: Arc<Mutex<Option<ProtocolError>>> = Arc::new(Mutex::new(None));
+    let max_depth = cfg.max_depth;
 
     let parallelism = match cfg.threads {
         0 => Parallelism::RayonDefaultPool {
@@ -126,11 +136,34 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
             // jwalk opens with a synthetic read (depth None) whose only child is
             // the root entry itself. Emitting it would invent a frame for the
             // root's parent and double-count the root as a directory.
-            if depth.is_none() {
+            let Some(depth) = depth else {
+                if max_depth == 0 {
+                    // Not even the root is read, so it goes unreported.
+                    walk_counters.errors.fetch_add(1, Ordering::Relaxed);
+                }
+                return;
+            };
+
+            let (out, counters, write_failure) = (&walk_out, &walk_counters, &walk_failure);
+
+            // Once a frame has failed to send, nothing more can reach the host.
+            // Pruning every child stops jwalk descending any further, so the
+            // walk winds down instead of reading the rest of the tree.
+            if write_failure
+                .lock()
+                .expect("scan error mutex poisoned")
+                .is_some()
+            {
+                prune(children);
                 return;
             }
 
-            let (out, counters, write_failure) = (&walk_out, &walk_counters, &walk_failure);
+            // jwalk reads a directory's contents only while they sit within
+            // `max_depth`, so a subdirectory listed here at the limit is never
+            // read and never gets a frame of its own. It is counted as an error
+            // so the stats admit to the gap rather than silently under-reporting.
+            let children_are_cut_off = depth + 1 >= max_depth;
+
             let mut entries = Vec::with_capacity(children.len());
 
             for child in children.iter_mut() {
@@ -153,6 +186,10 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
 
                 if file_type.is_dir() {
                     counters.dirs.fetch_add(1, Ordering::Relaxed);
+                    if children_are_cut_off {
+                        child.read_children_path = None;
+                        counters.errors.fetch_add(1, Ordering::Relaxed);
+                    }
                     entries.push(Entry {
                         name: os_str_bytes(child.file_name()),
                         size: 0,
@@ -180,12 +217,14 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
                 path: path_bytes(dir_path),
                 entries,
             };
-            let mut guard = out.lock().expect("scan writer mutex poisoned");
-            if let Err(e) = write_msg(&mut *guard, &frame) {
+            let written = out.lock().expect("scan writer mutex poisoned").send(&frame);
+            if let Err(e) = written {
                 let mut slot = write_failure.lock().expect("scan error mutex poisoned");
                 if slot.is_none() {
                     *slot = Some(e);
                 }
+                drop(slot);
+                prune(children);
             }
         });
 
@@ -207,6 +246,7 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
 
     out.lock()
         .expect("scan writer mutex poisoned")
+        .writer
         .flush()
         .map_err(|e| ScanError::Protocol(ProtocolError::Io(e)))?;
 
@@ -217,6 +257,37 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
         errors: counters.errors.load(Ordering::Relaxed),
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
+}
+
+/// How often buffered frames are pushed to the host. Without it the buffer
+/// drains only when full, and on a slow stretch of FUSE filling it can take
+/// long enough that the host's read timeout fires on a scan that is still
+/// making progress.
+const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
+
+/// The shared sink. Batches frames into large writes, and flushes after any
+/// frame written [`FLUSH_INTERVAL`] or more since the last flush.
+struct Output<W: Write> {
+    writer: BufWriter<W>,
+    last_flush: Instant,
+}
+
+impl<W: Write> Output<W> {
+    fn send(&mut self, frame: &Frame) -> Result<(), ProtocolError> {
+        write_msg(&mut self.writer, frame)?;
+        if self.last_flush.elapsed() >= FLUSH_INTERVAL {
+            self.writer.flush()?;
+            self.last_flush = Instant::now();
+        }
+        Ok(())
+    }
+}
+
+/// Stop jwalk descending into any of `children`.
+fn prune<E>(children: &mut [Result<jwalk::DirEntry<((), ())>, E>]) {
+    for child in children.iter_mut().flatten() {
+        child.read_children_path = None;
+    }
 }
 
 // Android paths are arbitrary bytes. On a Windows or macOS test host there is no
