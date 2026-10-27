@@ -153,6 +153,41 @@ describe("delete", () => {
     expect(api.getTreemap).toHaveBeenLastCalledWith(0, 2);
   });
 
+  it("re-fetches the rows that were loaded when the host returns a capped view", async () => {
+    const many = Array.from({ length: 4 }, (_, i) => row(i + 1));
+    const { result } = await connected(view(0, many, { hidden: 6 }));
+    expect(result.current.view?.rows).toHaveLength(4);
+
+    api.deleteNode.mockResolvedValue({
+      items: 1,
+      stats: STATS,
+      view: view(0, many.slice(1, 3), { hidden: 7 }),
+    });
+    api.getView.mockResolvedValue(view(0, many.slice(1), { hidden: 6 }));
+    await act(() => result.current.remove(many[0]));
+
+    await waitFor(() => expect(result.current.view?.rows).toHaveLength(3));
+    expect(api.getView).toHaveBeenLastCalledWith(0, 4);
+  });
+
+  it("drops search hits inside a deleted folder, but not look-alike siblings", async () => {
+    const { result } = await connected();
+    api.search.mockResolvedValue([
+      row(7, { name: "a", parent: "/dir0/photos" }),
+      row(8, { name: "b", parent: "/dir0/photos/2020" }),
+      row(9, { name: "c", parent: "/dir0/photos-old" }),
+      row(10, { name: "photos", parent: "/dir0" }),
+    ]);
+    act(() => result.current.setQuery("a"));
+    await waitFor(() => expect(result.current.searchResults).toHaveLength(4));
+
+    api.deleteNode.mockResolvedValue({ items: 3, stats: STATS, view: view(0, [row(1)]) });
+    api.search.mockReturnValue(new Promise(() => {}));
+    await act(() => result.current.remove(row(10, { name: "photos", isDir: true })));
+
+    expect(result.current.searchResults?.map((r) => r.id)).toEqual([9]);
+  });
+
   it("reports a stale-generation refusal and leaves the screen alone", async () => {
     const { result, notify } = await connected();
     const before = result.current.view;

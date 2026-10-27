@@ -112,7 +112,10 @@ function FileRow({
   onReveal?: (row: Row) => void;
   showBar: boolean;
 }) {
-  const ratio = totalSize > 0 ? row.size / totalSize : 0;
+  // A folder the scanner never read has size 0 because it is unknown, not empty.
+  const unknown = row.isDir && !row.listed;
+  const sizeText = unknown ? "—" : formatBytes(row.size);
+  const ratio = totalSize > 0 && !unknown ? row.size / totalSize : 0;
 
   return (
     <div
@@ -165,10 +168,14 @@ function FileRow({
         </span>
       )}
 
-      {showBar && <SizeBar ratio={ratio} />}
+      {showBar && (unknown ? <span className="w-24 flex-shrink-0" /> : <SizeBar ratio={ratio} />)}
 
-      <span className="w-20 text-right text-xs font-mono text-zinc-500 flex-shrink-0 tabular-nums">
-        {formatBytes(row.size)}
+      <span
+        className="w-20 text-right text-xs font-mono text-zinc-500 flex-shrink-0 tabular-nums"
+        title={unknown ? "Not scanned" : undefined}
+        aria-label={unknown ? "Size unknown, not scanned" : undefined}
+      >
+        {sizeText}
       </span>
 
       {/* Reachable on focus as well as hover, so it exists for keyboard users. */}
@@ -178,7 +185,7 @@ function FileRow({
           hover:bg-danger-500/30 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1
           cursor-pointer focus-visible:outline-2 focus-visible:outline-danger-500"
         onClick={() => onDelete(row)}
-        aria-label={`Delete ${row.name}, ${formatBytes(row.size)}${
+        aria-label={`Delete ${row.name}, ${unknown ? "size unknown" : formatBytes(row.size)}${
           row.isDir ? `, ${formatNumber(row.files)} files` : ""
         }`}
       >
