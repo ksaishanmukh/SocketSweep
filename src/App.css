@@ -185,3 +185,11 @@ body {
   box-shadow: 0 0 16px oklch(0.6 0.22 15 / 0.4);
   transform: scale(1.05);
 }
+
+.treemap-tile:focus {
+  outline: none;
+}
+.treemap-tile:focus-visible > rect {
+  stroke: #fff;
+  stroke-width: 3;
+}

@@ -48,6 +48,7 @@ export function FileList({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => (rows[i]?.parent ? ROW_HEIGHT_WITH_PARENT : ROW_HEIGHT),
+    getItemKey: (i) => rows[i]?.id ?? i,
     overscan: 12,
   });
 

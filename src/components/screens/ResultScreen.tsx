@@ -205,6 +205,7 @@ export function ResultScreen({
             context you are searching within.
           */}
           <FileList
+            key={searching ? "search" : view.id}
             rows={rows}
             totalSize={searching ? (rows[0]?.size ?? 0) : view.size}
             onOpen={(row) => onOpen(row.id)}

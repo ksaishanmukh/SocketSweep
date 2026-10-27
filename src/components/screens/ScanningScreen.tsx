@@ -39,15 +39,24 @@ export function ScanningScreen({ stats, current }: { stats: Stats | null; curren
         </div>
       </div>
 
-      <div className="text-center" role="status" aria-live="polite">
-        <h2 className="text-lg font-semibold text-zinc-200">Scanning storage</h2>
-        <p className="mt-2 text-3xl font-mono font-bold text-accent-400 tabular-nums">
-          {stats ? formatBytes(stats.size) : "—"}
-        </p>
-        <p className="mt-1 text-sm text-zinc-500 font-mono tabular-nums">
-          {stats ? `${formatNumber(stats.files)} files · ${formatNumber(stats.dirs)} folders` : " "}
-        </p>
-        <p className="mt-3 text-xs text-zinc-600 font-mono truncate max-w-md mx-auto">{current}</p>
+      <div className="text-center">
+        <h2 className="text-lg font-semibold text-zinc-200" role="status" aria-live="polite">
+          Scanning storage
+        </h2>
+        {/* Counters change ~10 times a second, which would flood a screen reader. */}
+        <div aria-live="off">
+          <p className="mt-2 text-3xl font-mono font-bold text-accent-400 tabular-nums">
+            {stats ? formatBytes(stats.size) : "—"}
+          </p>
+          <p className="mt-1 text-sm text-zinc-500 font-mono tabular-nums">
+            {stats
+              ? `${formatNumber(stats.files)} files · ${formatNumber(stats.dirs)} folders`
+              : " "}
+          </p>
+          <p className="mt-3 text-xs text-zinc-600 font-mono truncate max-w-md mx-auto">
+            {current}
+          </p>
+        </div>
       </div>
     </div>
   );
