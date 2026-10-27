@@ -96,9 +96,11 @@ commands! {
 
     /// The user opened folder `node` (by click, breadcrumb, treemap or "go
     /// to"); a file means its folder. The phone measures it first, and
-    /// `scan-progress` carries this folder's view. `null` means the root.
+    /// `scan-progress` carries this folder's view, sorted by `by` (default
+    /// disk) and capped at `limit` rows (default 500). Call it again for the
+    /// same folder to change those; `getView` does not. `null` means the root.
     /// Hover and scrolling are not focus.
-    fn focus(node: Option<NodeRef>) -> ();
+    fn focus(node: Option<NodeRef>, limit: Option<u32>, by: Option<SizeMetric>) -> ();
 
     /// A folder's rows, largest first by `by` (default disk). `node`
     /// defaults to the root, `limit` to 500.
@@ -121,8 +123,8 @@ commands! {
     fn app_breakdown(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<AppUsage>;
 
     /// Files and folders whose name contains `query`, case-insensitively
-    /// (default 200 results).
-    fn search(query: String, limit: Option<u32>) -> Vec<Row>;
+    /// (default 200 results), largest first by `by` (default disk).
+    fn search(query: String, limit: Option<u32>, by: Option<SizeMetric>) -> Vec<Row>;
 
     /// Delete `node` and everything below it from the phone. Refused for a
     /// stale node and for the scan root. Allowed during a scan, which skips

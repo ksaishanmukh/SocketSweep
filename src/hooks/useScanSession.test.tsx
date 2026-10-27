@@ -77,7 +77,7 @@ describe("connecting and scanning", () => {
   it("opens the root with focus, so the phone measures it first", async () => {
     await browse();
 
-    expect(api.focus).toHaveBeenCalledWith({ session: SESSION, id: 0 });
+    expect(api.focus).toHaveBeenCalledWith({ session: SESSION, id: 0 }, undefined, "disk");
     expect(api.getView).toHaveBeenCalledWith({ session: SESSION, id: 0 }, undefined, "disk");
   });
 
@@ -231,11 +231,41 @@ describe("navigation", () => {
       await result.current.open(node(9));
     });
 
-    expect(api.focus).toHaveBeenCalledWith(node(9));
+    expect(api.focus).toHaveBeenCalledWith(node(9), undefined, "disk");
     expect(api.getView).toHaveBeenLastCalledWith(node(9), undefined, "disk");
     expect(api.getBreadcrumbs).toHaveBeenLastCalledWith(node(9));
     await waitFor(() => expect(api.getTreemap).toHaveBeenLastCalledWith(node(9), 2, "disk"));
     expect(result.current.view?.node).toEqual(node(9));
+  });
+
+  it("re-focuses with the new row count when it loads more, so live views keep them", async () => {
+    const rows = Array.from({ length: 3 }, (_, i) => row(i + 1));
+    const { result } = await browse(view(0, rows, { hidden: 4 }));
+    api.focus.mockClear();
+    api.getView.mockClear();
+    api.getView.mockResolvedValue(view(0, rows, { hidden: 0 }));
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    expect(api.focus).toHaveBeenCalledWith(node(0), 503, "disk");
+    expect(api.getView).toHaveBeenCalledWith(node(0), 503, "disk");
+  });
+
+  it("searches by the chosen metric", async () => {
+    const { result } = await browse();
+    api.search.mockResolvedValue([]);
+
+    act(() => result.current.setQuery("pic"));
+
+    await waitFor(() => expect(api.search).toHaveBeenCalledWith("pic", undefined, "disk"));
+  });
+
+  it("keeps what Connect reported about the copy destination", async () => {
+    const { result } = await browse();
+
+    expect(result.current.copyDestination).toBe("C:\\Users\\me\\Desktop");
   });
 
   it("focuses the destination of a search reveal", async () => {
@@ -247,7 +277,7 @@ describe("navigation", () => {
       await result.current.reveal(row(8, { parent: "/dir5", parentNode: node(5) }));
     });
 
-    expect(api.focus).toHaveBeenCalledWith(node(5));
+    expect(api.focus).toHaveBeenCalledWith(node(5), undefined, "disk");
     expect(result.current.mode).toBe("treemap");
   });
 

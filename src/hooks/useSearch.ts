@@ -20,8 +20,9 @@ interface Hits {
  */
 export function useSearch({
   sessionRef,
+  metricRef,
   sessionId,
-}: Pick<SessionDeps, "sessionRef"> & { sessionId: number | null }) {
+}: Pick<SessionDeps, "sessionRef" | "metricRef"> & { sessionId: number | null }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Hits | null>(null);
   /** Bumped to re-run the current search, e.g. after a delete or when the scan finishes. */
@@ -60,7 +61,7 @@ export function useSearch({
       // already superseded.
       const current = () => seq === seqRef.current && sessionId === sessionRef.current;
       try {
-        const rows = await commands.search(trimmed);
+        const rows = await commands.search(trimmed, undefined, metricRef.current);
         if (current()) setHits({ query: trimmed, session: sessionId, rows });
       } catch {
         if (current()) setHits({ query: trimmed, session: sessionId, rows: [] });
@@ -68,7 +69,7 @@ export function useSearch({
     }, SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [trimmed, nonce, sessionId, sessionRef]);
+  }, [trimmed, nonce, sessionId, sessionRef, metricRef]);
 
   return { query, setQuery: updateQuery, results, rerun, clear, dropHits };
 }

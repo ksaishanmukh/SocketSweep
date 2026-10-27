@@ -265,6 +265,13 @@ fn connect_scan_focus_delete_copy_and_disconnect() {
     assert_eq!(connected.serial, "P1");
     assert_eq!(connected.root, "/sdcard");
     assert!(connected.previous.is_none());
+    assert!(
+        connected
+            .copy_destination
+            .as_deref()
+            .is_some_and(|d| d.ends_with("Desktop")),
+        "{connected:?}"
+    );
     let log = rig.transport.shell_log("P1");
     assert!(
         log.iter().any(|c| c.contains("--root '/sdcard'")),
@@ -293,8 +300,8 @@ fn connect_scan_focus_delete_copy_and_disconnect() {
 
     // Focusing a file means its folder: the root, which the scan starts in,
     // so nothing is sent. The folder itself is sent at once.
-    app.focus(Some(a)).unwrap();
-    app.focus(Some(dcim)).unwrap();
+    app.focus(Some(a), None, None).unwrap();
+    app.focus(Some(dcim), None, None).unwrap();
     let progress = rig.wait_finished();
     assert_eq!(progress.finished.unwrap().outcome, ScanOutcome::Complete);
     assert_eq!(progress.totals.size.apparent, 1100);
@@ -324,7 +331,7 @@ fn connect_scan_focus_delete_copy_and_disconnect() {
     let crumbs = app.get_breadcrumbs(dcim).unwrap();
     assert_eq!(crumbs.len(), 2);
     assert_eq!(app.largest_files(None, None).unwrap()[0].name, "pic.jpg");
-    assert_eq!(app.search("PIC".into(), None).unwrap().len(), 1);
+    assert_eq!(app.search("PIC".into(), None, None).unwrap().len(), 1);
     assert_eq!(app.get_treemap(None, None, None).unwrap().children.len(), 2);
     assert_eq!(app.type_breakdown(None).unwrap()[0].label, "Photos");
     assert!(app.app_breakdown(None, None).unwrap().is_empty());
@@ -476,4 +483,62 @@ fn a_refusing_daemon_fails_the_connect_and_cleans_up() {
     assert_eq!(e.code, ErrorCode::Daemon);
     let log = rig.transport.shell_log("P1");
     assert!(log.last().unwrap().starts_with("rm -f"), "{log:?}");
+}
+
+#[test]
+fn progress_shows_the_view_asked_for_by_focus_and_get_view_does_not_change_it() {
+    let rig = Rig::new(phone());
+    let app = &rig.app;
+    app.connect(None, None).unwrap();
+    app.start_scan(None).unwrap();
+    let dcim = row(&app.get_view(None, None, None).unwrap(), "DCIM");
+
+    // The row cap comes from `focus`.
+    app.focus(Some(dcim), Some(0), None).unwrap();
+    let progress = rig.wait_finished();
+    let view = progress.view.unwrap();
+    assert_eq!(view.node, dcim);
+    assert!(view.rows.is_empty(), "{view:?}");
+
+    // Reading a view, whatever its cap, leaves that alone: `delete` answers
+    // with the focused folder under the same cap.
+    let full = app.get_view(Some(dcim), Some(10), None).unwrap();
+    assert_eq!(full.rows.len(), 1);
+    let a = row(&app.get_view(None, None, None).unwrap(), "a.txt");
+    let deleted = app.delete(a).unwrap();
+    assert_eq!(deleted.view.node, dcim);
+    assert!(deleted.view.rows.is_empty(), "{:?}", deleted.view);
+}
+
+#[test]
+fn a_transport_that_cannot_start_fails_the_command_and_is_retried() {
+    use std::sync::atomic::AtomicUsize;
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&attempts);
+    let app = App::lazy(
+        move || {
+            if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(TransportError::Refused("adb will not start".into()))
+            } else {
+                Ok(FakeTransport::new().with_device(FakeDevice::ready("P1")))
+            }
+        },
+        AppConfig::default(),
+        |_| {},
+    );
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        0,
+        "nothing starts up front"
+    );
+
+    let e = app.list_devices().unwrap_err();
+    assert_eq!(e.code, ErrorCode::Device);
+    assert!(e.message.contains("adb will not start"), "{e}");
+
+    assert_eq!(app.list_devices().unwrap().len(), 1);
+    assert_eq!(app.list_devices().unwrap().len(), 1);
+    assert_eq!(attempts.load(Ordering::SeqCst), 2, "built once it worked");
+    app.shutdown();
 }

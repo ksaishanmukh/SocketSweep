@@ -79,6 +79,7 @@ export function useSessionLifecycle({
   const [scanInfo, setScanInfo] = useState<ScanInfo | null>(null);
   const [previous, setPrevious] = useState<ScanRecord | null>(null);
   const [model, setModel] = useState<string | null>(null);
+  const [copyDestination, setCopyDestination] = useState<string | null>(null);
 
   const phaseRef = useRef<Phase>("setup");
   const setPhase = useCallback((next: Phase) => {
@@ -251,6 +252,7 @@ export function useSessionLifecycle({
         // previous session rather than against the scan a moment ago.
         setPrevious(info.previous);
         setModel(info.model);
+        setCopyDestination(info.copyDestination);
         log(`[ADB] ${info.model} (${info.serial}).`);
         await scan();
       } catch (err) {
@@ -280,6 +282,7 @@ export function useSessionLifecycle({
     setFailure(null);
     setPrevious(null);
     setModel(null);
+    setCopyDestination(null);
     setPhase("setup");
   }, [invalidate, log, notify, setPhase]);
 
@@ -296,6 +299,7 @@ export function useSessionLifecycle({
       setFailure(null);
       setPrevious(null);
       setModel(null);
+      setCopyDestination(null);
       setPhase("setup");
       notify(`Lost the connection to the phone. ${lost.message}`.trim(), "error");
       log(`[SOCKET] Connection to ${lost.serial} lost: ${lost.message}`);
@@ -317,6 +321,7 @@ export function useSessionLifecycle({
     scanInfo,
     previous,
     model,
+    copyDestination,
     connect,
     disconnect,
     scan,

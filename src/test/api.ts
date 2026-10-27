@@ -172,7 +172,14 @@ export function treemapNode(id: number, over: Partial<TreemapNode> = {}): Treema
 }
 
 export function connected(over: Partial<Connected> = {}): Connected {
-  return { serial: "s", model: "Pixel", root: "/sdcard", previous: null, ...over };
+  return {
+    serial: "s",
+    model: "Pixel",
+    root: "/sdcard",
+    copyDestination: "C:\\Users\\me\\Desktop",
+    previous: null,
+    ...over,
+  };
 }
 
 export function started(session = SESSION): ScanStarted {

@@ -219,7 +219,9 @@ struct ScanMeta {
     /// The daemon's latest `FocusState`: its seq, folder and whether settled.
     daemon_focus: Option<(u32, Option<NodeId>, bool)>,
     finished: Option<ScanFinished>,
-    /// How the GUI last asked for a view, used for the one in progress events.
+    /// How the GUI last asked, with `focus`, for the open folder to be
+    /// shown: the size and row cap of the `view` in progress events and in
+    /// the answer to `delete`. `get_view` never changes them.
     view_limit: u32,
     view_by: SizeMetric,
 }
@@ -364,8 +366,14 @@ impl Scan {
     }
 }
 
+/// Builds the transport on first use. See [`App::lazy`].
+type TransportFactory = Box<dyn Fn() -> Result<Arc<dyn Transport>, TransportError> + Send + Sync>;
+
 struct Inner {
-    transport: Arc<dyn Transport>,
+    /// The transport, once built. Held only to build it (starting adb can take
+    /// a moment), never while talking to a phone.
+    transport: Mutex<Option<Arc<dyn Transport>>>,
+    factory: Option<TransportFactory>,
     config: AppConfig,
     sink: EventSink,
     history: Option<History>,
@@ -378,6 +386,27 @@ struct Inner {
 impl Inner {
     fn emit(&self, event: HostEvent) {
         (self.sink)(event);
+    }
+
+    /// The transport, built on the first call. A failure is not remembered:
+    /// the next command tries again.
+    fn transport(&self) -> CmdResult<Arc<dyn Transport>> {
+        let mut slot = lock(&self.transport);
+        if let Some(t) = slot.as_ref() {
+            return Ok(Arc::clone(t));
+        }
+        let Some(factory) = &self.factory else {
+            return Err(err(ErrorCode::Device, "No device transport is available."));
+        };
+        let t = factory().map_err(transport_err)?;
+        *slot = Some(Arc::clone(&t));
+        Ok(t)
+    }
+
+    /// The transport if it has been built. A connection or a copy exists only
+    /// after it was, so cleanup uses this and never starts anything.
+    fn built_transport(&self) -> Option<Arc<dyn Transport>> {
+        lock(&self.transport).clone()
     }
 
     fn claim(&self, next: Busy) -> CmdResult<BusyGuard<'_>> {
@@ -413,8 +442,8 @@ impl Inner {
             scan.cancel();
         }
         let conn = lock(&self.conn).take();
-        if let Some(conn) = conn {
-            conn.daemon.stop(self.transport.as_ref());
+        if let (Some(conn), Some(transport)) = (conn, self.built_transport()) {
+            conn.daemon.stop(transport.as_ref());
         }
         if let Some(scan) = scan {
             scan.wait_done(self.config.scan_release_timeout);
@@ -440,7 +469,9 @@ impl Inner {
             message: why,
         }));
         // Best effort, and the phone may be gone: not on the reader thread.
-        let transport = Arc::clone(&self.transport);
+        let Some(transport) = self.built_transport() else {
+            return;
+        };
         let _ = std::thread::Builder::new()
             .name("socketsweep-teardown".into())
             .spawn(move || tear_down(transport.as_ref(), &conn.daemon.serial));
@@ -459,10 +490,35 @@ impl App {
         config: AppConfig,
         sink: impl Fn(HostEvent) + Send + Sync + 'static,
     ) -> Self {
+        Self::build(Some(transport), None, config, sink)
+    }
+
+    /// A host that builds its transport with `factory` the first time a
+    /// command needs a phone (`list_devices`, `connect`), so a transport that
+    /// cannot start, such as adb, fails that command with a
+    /// [`ErrorCode::Device`] error instead of stopping the app from opening.
+    /// A failed attempt is retried by the next command.
+    pub fn lazy<T: Transport + 'static>(
+        factory: impl Fn() -> Result<T, TransportError> + Send + Sync + 'static,
+        config: AppConfig,
+        sink: impl Fn(HostEvent) + Send + Sync + 'static,
+    ) -> Self {
+        let factory: TransportFactory =
+            Box::new(move || factory().map(|t| Arc::new(t) as Arc<dyn Transport>));
+        Self::build(None, Some(factory), config, sink)
+    }
+
+    fn build(
+        transport: Option<Arc<dyn Transport>>,
+        factory: Option<TransportFactory>,
+        config: AppConfig,
+        sink: impl Fn(HostEvent) + Send + Sync + 'static,
+    ) -> Self {
         let history = config.history_file.clone().map(History::new);
         App {
             inner: Arc::new(Inner {
-                transport,
+                transport: Mutex::new(transport),
+                factory,
                 config,
                 sink: Arc::new(sink),
                 history,
@@ -480,7 +536,7 @@ impl App {
     }
 
     fn resolve_serial(&self, serial: Option<String>) -> CmdResult<transport::Device> {
-        let devices = self.inner.transport.devices().map_err(transport_err)?;
+        let devices = self.inner.transport()?.devices().map_err(transport_err)?;
         let device = match serial {
             Some(serial) => devices
                 .into_iter()
@@ -602,7 +658,7 @@ fn device_state(state: &transport::DeviceState) -> DeviceState {
 
 impl Commands for App {
     fn list_devices(&self) -> CmdResult<Vec<Device>> {
-        let devices = self.inner.transport.devices().map_err(transport_err)?;
+        let devices = self.inner.transport()?.devices().map_err(transport_err)?;
         Ok(devices
             .into_iter()
             .map(|d| Device {
@@ -630,6 +686,7 @@ impl Commands for App {
         let root = root.unwrap_or_else(|| DEFAULT_ROOT.into());
         check_root(&root).map_err(launch_err)?;
         let device = self.resolve_serial(serial)?;
+        let transport = inner.transport()?;
 
         // The old phone's session goes first, so a failed reconnect is not
         // left serving it.
@@ -637,7 +694,7 @@ impl Commands for App {
         let epoch = inner.epoch.load(Ordering::SeqCst);
 
         let daemon = Daemon::start(
-            inner.transport.as_ref(),
+            transport.as_ref(),
             &device.serial,
             &root,
             &inner.config.daemon,
@@ -656,7 +713,7 @@ impl Commands for App {
             let mut slot = lock(&inner.conn);
             if inner.epoch.load(Ordering::SeqCst) != epoch {
                 drop(slot);
-                daemon.stop(inner.transport.as_ref());
+                daemon.stop(transport.as_ref());
                 return Err(err(ErrorCode::Cancelled, "Disconnected while connecting."));
             }
             let model = if daemon.info.model.is_empty() {
@@ -683,6 +740,11 @@ impl Commands for App {
             serial: device.serial,
             model: conn.model.clone(),
             root,
+            copy_destination: inner
+                .config
+                .default_destination
+                .as_ref()
+                .map(|d| d.display().to_string()),
             previous,
         })
     }
@@ -805,7 +867,12 @@ impl Commands for App {
         Ok(())
     }
 
-    fn focus(&self, node: Option<NodeRef>) -> CmdResult<()> {
+    fn focus(
+        &self,
+        node: Option<NodeRef>,
+        limit: Option<u32>,
+        by: Option<SizeMetric>,
+    ) -> CmdResult<()> {
         let scan = self.inner.scan()?;
         let (folder, dir) = {
             let tree = lock(&scan.tree);
@@ -818,6 +885,8 @@ impl Commands for App {
         let running = {
             let mut meta = lock(&scan.meta);
             meta.focus = Some(folder);
+            meta.view_limit = limit.unwrap_or(DEFAULT_VIEW_LIMIT);
+            meta.view_by = by.unwrap_or_default();
             meta.finished.is_none()
         };
         if running {
@@ -840,18 +909,12 @@ impl Commands for App {
         let scan = self.inner.scan()?;
         let limit = limit.unwrap_or(DEFAULT_VIEW_LIMIT);
         let by = by.unwrap_or_default();
-        let view = {
-            let tree = lock(&scan.tree);
-            let id = match node {
-                Some(node) => tree.resolve(node).map_err(tree_err)?,
-                None => ROOT,
-            };
-            tree.view(id, limit, by).map_err(tree_err)?
+        let tree = lock(&scan.tree);
+        let id = match node {
+            Some(node) => tree.resolve(node).map_err(tree_err)?,
+            None => ROOT,
         };
-        let mut meta = lock(&scan.meta);
-        meta.view_limit = limit;
-        meta.view_by = by;
-        Ok(view)
+        tree.view(id, limit, by).map_err(tree_err)
     }
 
     fn get_breadcrumbs(&self, node: NodeRef) -> CmdResult<Vec<Crumb>> {
@@ -906,11 +969,19 @@ impl Commands for App {
         Ok(tree.app_breakdown(limit.unwrap_or(DEFAULT_APPS_LIMIT), by.unwrap_or_default()))
     }
 
-    fn search(&self, query: String, limit: Option<u32>) -> CmdResult<Vec<Row>> {
+    fn search(
+        &self,
+        query: String,
+        limit: Option<u32>,
+        by: Option<SizeMetric>,
+    ) -> CmdResult<Vec<Row>> {
         let scan = self.inner.scan()?;
         let tree = lock(&scan.tree);
-        let by = lock(&scan.meta).view_by;
-        Ok(tree.search(&query, limit.unwrap_or(DEFAULT_SEARCH_LIMIT), by))
+        Ok(tree.search(
+            &query,
+            limit.unwrap_or(DEFAULT_SEARCH_LIMIT),
+            by.unwrap_or_default(),
+        ))
     }
 
     fn delete(&self, node: NodeRef) -> CmdResult<Deleted> {
@@ -962,6 +1033,7 @@ impl Commands for App {
         let _busy = inner.claim(Busy::Copying(Arc::clone(&ctl)))?;
         let conn = inner.conn()?;
         let scan = inner.scan()?;
+        let transport = inner.transport()?;
         let path = {
             let tree = lock(&scan.tree);
             let id = tree.resolve(node).map_err(tree_err)?;
@@ -1072,7 +1144,7 @@ impl Commands for App {
         let last_emit = Mutex::new(Instant::now());
         let interval = inner.config.progress_interval;
         let done = copy::execute(
-            inner.transport.as_ref(),
+            transport.as_ref(),
             &conn.daemon.serial,
             &plan,
             &ctl.cancel,

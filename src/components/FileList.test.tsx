@@ -99,6 +99,12 @@ describe("FileList actions", () => {
     expect(screen.getAllByRole("button", { name: /^Delete / })).toHaveLength(2);
   });
 
+  it("names the destination in the Copy label when the host reported one", () => {
+    list([makeRow(1, { name: "a.mp4" })], { onCopy: vi.fn(), copyTarget: "Desktop" });
+
+    expect(screen.getByRole("button", { name: "Copy a.mp4 to Desktop" })).toBeTruthy();
+  });
+
   it("disables Copy while another copy runs", () => {
     list([makeRow(1, { name: "a.mp4" })], { onCopy: vi.fn(), copyDisabled: true });
 

@@ -25,6 +25,7 @@ export function FileList({
   onDelete,
   onCopy,
   copyDisabled = false,
+  copyTarget = "computer",
   onReveal,
   showBar = true,
   emptyMessage = "This folder is empty.",
@@ -39,6 +40,8 @@ export function FileList({
   onCopy?: (row: Row) => void;
   /** A copy is already running; the host runs one at a time. */
   copyDisabled?: boolean;
+  /** Where Copy puts things, as a short name for the label ("Desktop"). */
+  copyTarget?: string;
   /** Navigate to a row's containing folder. Only meaningful for cross-tree results. */
   onReveal?: (row: Row) => void;
   /**
@@ -100,6 +103,7 @@ export function FileList({
                 onDelete={onDelete}
                 onCopy={onCopy}
                 copyDisabled={copyDisabled}
+                copyTarget={copyTarget}
                 onReveal={onReveal}
                 showBar={showBar}
               />
@@ -119,6 +123,7 @@ function FileRow({
   onDelete,
   onCopy,
   copyDisabled,
+  copyTarget,
   onReveal,
   showBar,
 }: {
@@ -129,6 +134,7 @@ function FileRow({
   onDelete: (row: Row) => void;
   onCopy?: (row: Row) => void;
   copyDisabled: boolean;
+  copyTarget: string;
   onReveal?: (row: Row) => void;
   showBar: boolean;
 }) {
@@ -208,8 +214,8 @@ function FileRow({
             cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-accent-500"
           onClick={() => onCopy(row)}
           disabled={copyDisabled}
-          title={copyDisabled ? "A copy is already running" : "Copy to computer"}
-          aria-label={`Copy ${row.name} to computer`}
+          title={copyDisabled ? "A copy is already running" : `Copy to ${copyTarget}`}
+          aria-label={`Copy ${row.name} to ${copyTarget}`}
         >
           <IconDownload />
           <span className="hidden sm:inline">Copy</span>
