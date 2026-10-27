@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use socketsweep_protocol::{read_msg, Entry, EntryKind, Frame, ScanStats};
-use socketsweep_scanner::{scan, ScanConfig, ScanError};
+use socketsweep_scanner::{scan, ScanConfig, ScanError, KEEPALIVE_CHECK_EVERY};
 
 /// `scan` takes an owned `'static` sink, so tests pass a handle to a shared
 /// buffer they can read back once the walk finishes.
@@ -52,9 +52,8 @@ fn scan_with(cfg: &ScanConfig) -> (ScanStats, Vec<Frame>) {
 /// Run a scan and decode every frame it produced.
 fn run(root: &Path, threads: usize) -> (ScanStats, Vec<Frame>) {
     scan_with(&ScanConfig {
-        root: root.to_path_buf(),
         threads,
-        max_depth: 64,
+        ..ScanConfig::new(root)
     })
 }
 
@@ -260,9 +259,9 @@ fn max_depth_is_respected() {
     fs::write(tmp.path().join("a/b/c/d/e/deep.txt"), b"x").unwrap();
 
     let cfg = ScanConfig {
-        root: tmp.path().to_path_buf(),
         threads: 1,
         max_depth: 2,
+        ..ScanConfig::new(tmp.path())
     };
     let (stats, frames) = scan_with(&cfg);
 
@@ -342,9 +341,8 @@ fn a_failed_write_stops_the_walk() {
         received: SharedSink::new(),
     };
     let cfg = ScanConfig {
-        root: tmp.path().to_path_buf(),
         threads: 1,
-        max_depth: 64,
+        ..ScanConfig::new(tmp.path())
     };
     let err = scan(&cfg, sink.clone()).unwrap_err();
 
@@ -417,4 +415,31 @@ fn a_wide_directory_is_handled_in_one_frame() {
         panic!()
     };
     assert_eq!(entries.len(), 5_000);
+}
+
+/// A directory too big to stat within the host's read timeout still keeps the
+/// connection alive, without being split across frames. A zero interval makes
+/// every check send one, so the count is exact.
+#[test]
+fn a_huge_directory_sends_keepalives_before_its_one_frame() {
+    let tmp = tempfile::tempdir().unwrap();
+    let files = 2 * KEEPALIVE_CHECK_EVERY + 100;
+    for i in 0..files {
+        fs::write(tmp.path().join(format!("f{i:05}.bin")), b"x").unwrap();
+    }
+
+    let (stats, frames) = scan_with(&ScanConfig {
+        threads: 1,
+        keepalive: std::time::Duration::ZERO,
+        ..ScanConfig::new(tmp.path())
+    });
+    assert_eq!(stats.files, files as u64);
+
+    assert_eq!(frames.len(), 3, "two keepalives, then the directory");
+    assert_eq!(frames[0], Frame::Keepalive);
+    assert_eq!(frames[1], Frame::Keepalive);
+    let Frame::Dir { entries, .. } = &frames[2] else {
+        panic!("expected the directory's frame, got {:?}", frames[2])
+    };
+    assert_eq!(entries.len(), files);
 }

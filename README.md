@@ -204,6 +204,7 @@ sequenceDiagram
         R->>R: fold into the arena, aggregate up the ancestry
         R-->>U: scan-progress (stats + the watched view only, ~10/s)
     end
+    Note over R,D: Frame::Keepalive whenever the daemon has sent nothing for ~5s<br/>(a huge directory), so the 60s host timeout catches a stopped daemon, not a slow one
     D-->>R: Frame::ScanDone(stats)
     R-->>U: scan-complete
 
@@ -216,6 +217,7 @@ sequenceDiagram
     R->>R: resolve id to a byte-exact path
     R->>D: Request::Delete
     Note over D: canonicalise, require strictly under root, else refuse
+    D-->>R: Frame::Keepalive every ~5s while a large delete runs
     D-->>R: Frame::Deleted { items }
     R->>R: discount the subtree from every ancestor
     R-->>U: updated stats + view

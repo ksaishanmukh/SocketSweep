@@ -18,7 +18,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use jwalk::{Parallelism, WalkDirGeneric};
-use socketsweep_protocol::{write_msg, Entry, EntryKind, Frame, ProtocolError, ScanStats};
+use socketsweep_protocol::{
+    write_msg, Entry, EntryKind, Frame, ProtocolError, ScanStats, KEEPALIVE_INTERVAL,
+};
 
 pub struct ScanConfig {
     pub root: PathBuf,
@@ -30,6 +32,13 @@ pub struct ScanConfig {
     /// directory too deep to read still appears as an entry in its parent, gets
     /// no frame of its own, and is counted in [`ScanStats::errors`].
     pub max_depth: usize,
+    /// How long the scan may go without sending anything before it sends a
+    /// [`Frame::Keepalive`]. Checked every [`KEEPALIVE_CHECK_EVERY`] entries
+    /// while a directory is being read, so a single huge directory, whose frame
+    /// cannot go out until every file in it has been stat'ed, does not look to
+    /// the host like a daemon that has died. Defaults to the protocol's
+    /// [`KEEPALIVE_INTERVAL`].
+    pub keepalive: Duration,
 }
 
 impl ScanConfig {
@@ -38,9 +47,16 @@ impl ScanConfig {
             root: root.into(),
             threads: 0,
             max_depth: 64,
+            keepalive: KEEPALIVE_INTERVAL,
         }
     }
 }
+
+/// How many entries of a directory are processed between checks on whether a
+/// keepalive is due. Large enough that the check costs nothing next to the
+/// stats in between, small enough that even at FUSE speeds it comes round every
+/// second or so.
+pub const KEEPALIVE_CHECK_EVERY: usize = 1024;
 
 #[derive(Debug)]
 pub enum ScanError {
@@ -103,9 +119,10 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
 
     let started = Instant::now();
 
+    let clock = Arc::new(FlushClock::new());
     let out = Arc::new(Mutex::new(Output {
         writer: BufWriter::with_capacity(256 * 1024, sink),
-        last_flush: Instant::now(),
+        clock: Arc::clone(&clock),
     }));
     let counters = Arc::new(Counters::default());
     counters.dirs.store(1, Ordering::Relaxed); // the root itself
@@ -115,6 +132,7 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
     // the walk to stop: the usual cause is a host that has disconnected.
     let write_failure: Arc<Mutex<Option<ProtocolError>>> = Arc::new(Mutex::new(None));
     let max_depth = cfg.max_depth;
+    let keepalive = cfg.keepalive;
 
     let parallelism = match cfg.threads {
         0 => Parallelism::RayonDefaultPool {
@@ -146,6 +164,16 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
 
             let (out, counters, write_failure) = (&walk_out, &walk_counters, &walk_failure);
 
+            // Record the first failed write, and stop jwalk descending further.
+            let fail = |e: ProtocolError, children: &mut Vec<_>| {
+                let mut slot = write_failure.lock().expect("scan error mutex poisoned");
+                if slot.is_none() {
+                    *slot = Some(e);
+                }
+                drop(slot);
+                prune(children);
+            };
+
             // Once a frame has failed to send, nothing more can reach the host.
             // Pruning every child stops jwalk descending any further, so the
             // walk winds down instead of reading the rest of the tree.
@@ -165,8 +193,25 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
             let children_are_cut_off = depth + 1 >= max_depth;
 
             let mut entries = Vec::with_capacity(children.len());
+            let mut keepalive_failed = None;
 
-            for child in children.iter_mut() {
+            for (i, child) in children.iter_mut().enumerate() {
+                // The clock is read without the lock; the lock is taken only
+                // when a keepalive looks due, and `keepalive` re-checks under
+                // it in case another thread has sent something meanwhile.
+                if i % KEEPALIVE_CHECK_EVERY == KEEPALIVE_CHECK_EVERY - 1
+                    && clock.quiet_for() >= keepalive
+                {
+                    let sent = out
+                        .lock()
+                        .expect("scan writer mutex poisoned")
+                        .keepalive(keepalive);
+                    if let Err(e) = sent {
+                        keepalive_failed = Some(e);
+                        break;
+                    }
+                }
+
                 let child = match child {
                     Ok(c) => c,
                     Err(_) => {
@@ -213,18 +258,18 @@ pub fn scan<W: Write + Send + 'static>(cfg: &ScanConfig, sink: W) -> Result<Scan
                 }
             }
 
+            if let Some(e) = keepalive_failed {
+                fail(e, children);
+                return;
+            }
+
             let frame = Frame::Dir {
                 path: path_bytes(dir_path),
                 entries,
             };
             let written = out.lock().expect("scan writer mutex poisoned").send(&frame);
             if let Err(e) = written {
-                let mut slot = write_failure.lock().expect("scan error mutex poisoned");
-                if slot.is_none() {
-                    *slot = Some(e);
-                }
-                drop(slot);
-                prune(children);
+                fail(e, children);
             }
         });
 
@@ -269,17 +314,66 @@ const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 /// frame written [`FLUSH_INTERVAL`] or more since the last flush.
 struct Output<W: Write> {
     writer: BufWriter<W>,
-    last_flush: Instant,
+    clock: Arc<FlushClock>,
 }
 
 impl<W: Write> Output<W> {
     fn send(&mut self, frame: &Frame) -> Result<(), ProtocolError> {
         write_msg(&mut self.writer, frame)?;
-        if self.last_flush.elapsed() >= FLUSH_INTERVAL {
-            self.writer.flush()?;
-            self.last_flush = Instant::now();
+        if self.clock.quiet_for() >= FLUSH_INTERVAL {
+            self.flush()?;
         }
         Ok(())
+    }
+
+    /// Send a [`Frame::Keepalive`] if nothing has been flushed for `after`.
+    ///
+    /// Measured from the last flush rather than the last write, because a frame
+    /// still sitting in the buffer has not reached the host either; the flush
+    /// here pushes it out along with the keepalive.
+    fn keepalive(&mut self, after: Duration) -> Result<(), ProtocolError> {
+        if self.clock.quiet_for() < after {
+            return Ok(());
+        }
+        write_msg(&mut self.writer, &Frame::Keepalive)?;
+        self.flush()
+    }
+
+    fn flush(&mut self) -> Result<(), ProtocolError> {
+        self.writer.flush()?;
+        self.clock.mark();
+        Ok(())
+    }
+}
+
+/// When [`Output`] last flushed, readable without its lock, so the walk threads
+/// can check whether a keepalive is due without contending for the writer.
+struct FlushClock {
+    origin: Instant,
+    /// Milliseconds after `origin`.
+    last_flush_ms: AtomicU64,
+}
+
+impl FlushClock {
+    fn new() -> Self {
+        FlushClock {
+            origin: Instant::now(),
+            last_flush_ms: AtomicU64::new(0),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.origin.elapsed().as_millis() as u64
+    }
+
+    fn mark(&self) {
+        self.last_flush_ms.store(self.now_ms(), Ordering::Relaxed);
+    }
+
+    /// How long since the last flush, to the millisecond.
+    fn quiet_for(&self) -> Duration {
+        let last = self.last_flush_ms.load(Ordering::Relaxed);
+        Duration::from_millis(self.now_ms().saturating_sub(last))
     }
 }
 
