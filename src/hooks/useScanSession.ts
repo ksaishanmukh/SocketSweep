@@ -23,6 +23,11 @@ const SEARCH_DEBOUNCE_MS = 150;
 /** How many more rows "Load more" asks the host for each time. */
 export const VIEW_PAGE_SIZE = 500;
 
+/** Joins a directory and a name without doubling the separator. */
+function joinPath(dir: string, name: string): string {
+  return dir.endsWith("/") ? `${dir}${name}` : `${dir}/${name}`;
+}
+
 /** Search results, tagged with the query they answered. */
 interface Hits {
   query: string;
@@ -47,6 +52,8 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
   const [failure, setFailure] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [view, setView] = useState<View | null>(null);
+  /** Mirrors `view` for async code that must not read a stale closure. */
+  const viewRef = useRef<View | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
   const [treemap, setTreemap] = useState<TreemapNode | null>(null);
@@ -69,6 +76,9 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
   // Exposed so the owner of any id-bearing state (the delete dialog) can tell
   // that its ids went stale. The ref is what async code compares against.
   const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
   const generationRef = useRef(0);
   const navSeq = useRef(0);
   /** Progress events that arrive outside a scan are leftovers and must not repaint. */
@@ -339,11 +349,40 @@ export function useScanSession(notify: (msg: string, type?: "error" | "success" 
         setStats(result.stats);
         // Never null: if the open folder went away, this is its nearest
         // surviving ancestor, so the screen never points at a deleted node.
+        const before = viewRef.current;
         showView(result.view);
+        // The host caps the returned view at one page. If the same folder had
+        // more rows loaded, fetch them again so the list does not collapse.
+        const wanted = before && before.id === result.view.id ? before.rows.length : 0;
+        if (wanted > result.view.rows.length && result.view.hidden > 0) {
+          const seq = navSeq.current;
+          try {
+            const full = await ipc.getView(result.view.id, wanted);
+            if (seq === navSeq.current && gen === generationRef.current) setView(full);
+          } catch {
+            // The capped view is already showing; "Load more" still works.
+          }
+        }
         // A deleted node may still be sitting in the results list, along with
-        // anything that lived inside it.
+        // anything that lived inside it: drop the node itself and every hit
+        // whose containing folder is the deleted folder or below it.
+        const base = row.parent ?? before?.path;
+        const deleted = row.isDir && base !== undefined ? joinPath(base, row.name) : null;
         setSearchHits((hits) =>
-          hits ? { ...hits, rows: hits.rows.filter((h) => h.id !== row.id) } : hits,
+          hits
+            ? {
+                ...hits,
+                rows: hits.rows.filter(
+                  (h) =>
+                    h.id !== row.id &&
+                    !(
+                      deleted !== null &&
+                      h.parent !== undefined &&
+                      (h.parent === deleted || h.parent.startsWith(deleted + "/"))
+                    ),
+                ),
+              }
+            : hits,
         );
         setSearchNonce((n) => n + 1);
         void refreshAnalyses();
