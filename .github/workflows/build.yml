@@ -45,24 +45,55 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
-      # Everything below touches the Rust crate, and tauri-build validates both
-      # frontendDist and every declared bundle resource at build-script time.
-      # src-tauri/bin is gitignored, so without these three steps clippy fails
-      # with "resource path bin/daemon doesn't exist" before linting anything.
+      # Everything below touches the Rust crate, and tauri-build validates
+      # frontendDist and every declared bundle resource at build-script time. The
+      # base config declares bin/daemon and tauri.linux.conf.json adds bin/adb.
+      # src-tauri/bin is gitignored, and these checks only compile and lint, so
+      # empty placeholders satisfy the existence check without a download or an
+      # NDK. The real files come from the daemon job and `npm run setup`.
       - name: Build frontend (tauri-build reads frontendDist)
         run: npm run build
-      - name: Fetch ADB (a declared bundle resource)
-        run: npm run setup
-      # Doubles as the cross-compile check: crates/daemon is outside
-      # default-members, so nothing else would catch a break in it.
-      - name: Build device daemon (cross-compile check, and a bundle resource)
-        run: npm run build:daemon
+      - name: Create placeholder bundle resources
+        run: |
+          mkdir -p src-tauri/bin
+          touch src-tauri/bin/daemon src-tauri/bin/adb
 
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # --workspace includes crates/daemon (outside default-members), compiled
+      # and tested for the Linux host.
+      - run: cargo test --workspace
+
+  # ── Device daemon, built once ─────────────────────────────────────────────
+  # The Android binary is identical whatever OS bundles it, so cross-compile it
+  # here with the preinstalled runner NDK (ANDROID_NDK_HOME) and share it with
+  # the bundle jobs instead of rebuilding three times. The execute bit is not
+  # needed on the host: session.rs chmods the file after pushing it to the phone.
+  daemon:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Build device daemon
+        run: npm run build:daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: daemon
+          path: src-tauri/bin/daemon
+          if-no-files-found: error
 
   build:
-    needs: check
+    needs: [check, daemon]
     strategy:
       fail-fast: false
       matrix:
@@ -112,11 +143,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # ── Cross-compile the device daemon for Android aarch64 ───────────────
-      # One script on all three hosts, replacing the two per-OS clang steps
-      # that used to live here.
-      - name: Build device daemon
-        run: npm run build:daemon
+      # ── Device daemon (built once in the daemon job) ──────────────────────
+      - name: Download device daemon
+        uses: actions/download-artifact@v4
+        with:
+          name: daemon
+          path: src-tauri/bin
 
       # ── Fetch platform-specific ADB from Google ───────────────────────────
       # Same script contributors run locally, so CI and dev can't drift apart.
