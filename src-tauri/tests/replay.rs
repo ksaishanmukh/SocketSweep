@@ -1,7 +1,11 @@
-//! Replays a recorded device frame stream through the arena.
+//! Replays frame streams through the host's scan loop and the arena.
 //!
-//! Ignored by default because it needs a capture from a real phone, which CI
-//! does not have. It exists because the unit tests cannot model the thing that
+//! The synthetic streams check how a scan reply ends: only `ScanDone` with no
+//! `Error` before it counts as a finished walk.
+//!
+//! The recorded-stream test is ignored by default because it needs a capture
+//! from a real phone, which CI does not have. It exists because the unit tests
+//! cannot model the thing that
 //! actually broke: on a device `/sdcard` is a symlink chain to
 //! `/storage/emulated/0`, the daemon canonicalises before walking, and every
 //! frame arrives keyed on the resolved path. A host that built its index from
@@ -16,7 +20,105 @@ use std::io::BufReader;
 use std::time::Instant;
 
 use socketsweep_lib::arena::{Arena, ROOT};
-use socketsweep_protocol::{read_msg, Frame};
+use socketsweep_lib::session::{read_scan, ScanCancel, SCAN_CANCELLED, SCAN_CUT_OFF};
+use socketsweep_protocol::{read_msg, write_msg, Entry, EntryKind, Frame, ScanStats};
+
+/// A scan reply as the daemon would write it.
+fn stream(frames: &[Frame]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    for frame in frames {
+        write_msg(&mut buf, frame).unwrap();
+    }
+    buf
+}
+
+fn started() -> Frame {
+    Frame::ScanStarted {
+        root: b"/storage/emulated/0".to_vec(),
+    }
+}
+
+fn dir() -> Frame {
+    Frame::Dir {
+        path: b"/storage/emulated/0".to_vec(),
+        entries: vec![Entry {
+            name: b"a.jpg".to_vec(),
+            size: 10,
+            kind: EntryKind::File,
+        }],
+    }
+}
+
+fn done() -> Frame {
+    Frame::ScanDone(ScanStats::default())
+}
+
+/// Run the host's scan loop over `frames`, returning its result and the frames
+/// it passed on.
+fn replay(frames: &[Frame]) -> (Result<(), String>, Vec<Frame>) {
+    let bytes = stream(frames);
+    let mut seen = Vec::new();
+    let result = read_scan(&mut bytes.as_slice(), &ScanCancel::default(), |f| {
+        seen.push(f)
+    });
+    (result, seen)
+}
+
+#[test]
+fn a_stream_ending_in_scan_done_succeeds() {
+    let (result, seen) = replay(&[started(), dir(), done()]);
+    assert_eq!(result, Ok(()));
+    assert_eq!(seen, [started(), dir(), done()]);
+}
+
+#[test]
+fn an_error_before_scan_done_fails_the_scan() {
+    let error = Frame::Error {
+        message: "cannot read /storage/emulated/0: permission denied".into(),
+    };
+    let (result, seen) = replay(&[started(), dir(), error, done()]);
+    assert_eq!(
+        result,
+        Err("cannot read /storage/emulated/0: permission denied".into())
+    );
+    assert!(
+        !seen.iter().any(|f| matches!(f, Frame::ScanDone(_))),
+        "a failed walk must not be marked finished"
+    );
+}
+
+#[test]
+fn a_rejected_root_reports_the_daemons_reason() {
+    // What the daemon sends for a root it refuses: no ScanStarted at all.
+    let error = Frame::Error {
+        message: "root is outside shared storage".into(),
+    };
+    let (result, seen) = replay(&[error, done()]);
+    assert_eq!(result, Err("root is outside shared storage".into()));
+    assert!(seen.is_empty());
+}
+
+#[test]
+fn a_stream_that_ends_without_scan_done_fails() {
+    let (result, _) = replay(&[started(), dir()]);
+    assert_eq!(result, Err(SCAN_CUT_OFF.into()));
+
+    let (result, _) = replay(&[]);
+    assert_eq!(result, Err(SCAN_CUT_OFF.into()), "nothing at all");
+}
+
+#[test]
+fn a_cancelled_scan_stops_passing_frames_on() {
+    let bytes = stream(&[started(), dir(), done()]);
+    let cancel = ScanCancel::default();
+    let mut seen = 0;
+    let result = read_scan(&mut bytes.as_slice(), &cancel, |_| {
+        seen += 1;
+        cancel.cancel();
+    });
+    assert_eq!(result, Err(SCAN_CANCELLED.into()));
+    assert_eq!(seen, 1, "frames already buffered are dropped");
+}
 
 #[test]
 #[ignore = "needs a frame capture from a real device; set SOCKETSWEEP_FRAMES"]

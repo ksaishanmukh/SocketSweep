@@ -12,14 +12,34 @@
 //!
 //! Nodes are addressed by id rather than path for a second reason: Android
 //! filenames are arbitrary bytes, and a path round-tripped through a JavaScript
-//! string can come back subtly different — as a delete target.
+//! string can come back subtly different — as a delete target. Every id travels
+//! with the generation of the tree it came from, so one held across a rescan
+//! cannot name a different file.
+//!
+//! # Threads and locks
+//!
+//! Commands that talk to the phone (`list_devices`, `connect`, `disconnect`,
+//! `scan`, `delete`) run on a blocking worker thread, so the window stays
+//! responsive however long the phone takes. Tree queries answer from memory and
+//! run synchronously.
+//!
+//! No lock is held across a call to adb or the daemon. The session lives in an
+//! `Arc` that a command clones out of its lock before using it, and only one of
+//! connect, scan or delete runs at a time (see [`Busy`]). `disconnect` and app
+//! exit are deliberately outside that rule: they cancel a running scan rather
+//! than wait for it.
+//!
+//! Where several locks are taken together the order is `busy`, `session`,
+//! `tree`.
 
 pub mod adb;
 pub mod arena;
 pub mod history;
 pub mod session;
 
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use socketsweep_protocol::Frame;
@@ -28,7 +48,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use adb::{Adb, Device};
 use arena::{AppUsage, Arena, Crumb, NodeId, Row, Stats, TreemapNode, TypeGroup, View};
 use history::ScanRecord;
-use session::Session;
+use session::{ScanCancel, Session};
 
 /// Rows per view response. Enough to fill any screen; the frontend virtualises
 /// and asks for more if it needs them.
@@ -37,19 +57,133 @@ const DEFAULT_VIEW_LIMIT: usize = 500;
 /// How often the host pushes an updated view during a scan. 10Hz is fast enough
 /// that numbers look live and slow enough that React is not re-rendering on
 /// every one of several thousand frames.
-const VIEW_PUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+const VIEW_PUSH_INTERVAL: Duration = Duration::from_millis(100);
+
+const NOT_CONNECTED: &str = "not connected to a device yet";
+const NO_SCAN: &str = "no scan has been run yet";
+
+/// Lock a mutex, recovering the data if a thread panicked while holding it.
+///
+/// Every value behind these locks is left consistent between statements, and a
+/// poisoned lock would otherwise turn one bug into every later command failing.
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The scanned tree and which directory of it the frontend is showing.
+///
+/// Kept under one lock so the directory being watched always belongs to the
+/// tree it is read from: a new tree starts out watching its root.
+struct Tree {
+    arena: Arena,
+    /// Only this view is pushed during a scan, so the payload does not grow
+    /// with the tree.
+    watching: NodeId,
+}
+
+impl Tree {
+    fn new(arena: Arena) -> Self {
+        Tree {
+            arena,
+            watching: arena::ROOT,
+        }
+    }
+}
+
+/// The long-running operation in progress, if any. Only one runs at a time.
+enum Busy {
+    Connecting,
+    Scanning(Arc<ScanCancel>),
+    Deleting,
+}
+
+impl Busy {
+    /// Why `next` cannot start while `self` is running.
+    fn refuse(&self, next: &Busy) -> String {
+        match (self, next) {
+            (Busy::Scanning(_), Busy::Deleting) => "Wait for the scan to finish before deleting.",
+            (Busy::Scanning(_), _) => "a scan is already running",
+            (Busy::Connecting, _) => "already connecting to a device",
+            (Busy::Deleting, _) => "a delete is still in progress",
+        }
+        .into()
+    }
+}
+
+/// Marks an operation as running for as long as it is held.
+struct BusyGuard<'a>(&'a AppState);
+
+impl Drop for BusyGuard<'_> {
+    fn drop(&mut self) {
+        *lock(&self.0.busy) = None;
+    }
+}
 
 #[derive(Default)]
 pub struct AppState {
-    adb: Mutex<Option<Adb>>,
-    session: Mutex<Option<Session>>,
-    tree: Mutex<Option<Arena>>,
-    /// The directory the frontend is currently showing. Only this view is
-    /// pushed during a scan, so the payload does not grow with the tree.
-    watching: Mutex<NodeId>,
+    adb: Mutex<Option<Arc<Adb>>>,
+    session: Mutex<Option<Arc<Session>>>,
+    tree: Mutex<Option<Tree>>,
+    busy: Mutex<Option<Busy>>,
+    /// Bumped by every disconnect, so a connect that was already under way
+    /// when the user disconnected does not install its session afterwards.
+    disconnects: AtomicU64,
+}
+
+impl AppState {
+    fn claim(&self, next: Busy) -> CmdResult<BusyGuard<'_>> {
+        let mut busy = lock(&self.busy);
+        if let Some(current) = busy.as_ref() {
+            return Err(current.refuse(&next));
+        }
+        *busy = Some(next);
+        Ok(BusyGuard(self))
+    }
+
+    /// Stop a running scan, if there is one.
+    fn cancel_scan(&self) {
+        if let Some(Busy::Scanning(cancel)) = lock(&self.busy).as_ref() {
+            cancel.cancel();
+        }
+    }
+
+    fn session(&self) -> CmdResult<Arc<Session>> {
+        lock(&self.session)
+            .clone()
+            .ok_or_else(|| NOT_CONNECTED.into())
+    }
+
+    /// Cancel any scan, forget the tree and stop the daemon.
+    fn end_session(&self) {
+        self.disconnects.fetch_add(1, Ordering::SeqCst);
+        // Before anything else: the daemon serves one connection at a time, so
+        // the shutdown request below would otherwise queue behind the scan.
+        self.cancel_scan();
+        let session = lock(&self.session).take();
+        *lock(&self.tree) = None;
+
+        let adb = lock(&self.adb).clone();
+        if let (Some(session), Some(adb)) = (session, adb) {
+            session.stop(&adb);
+        }
+    }
 }
 
 type CmdResult<T> = Result<T, String>;
+
+/// Run `f` on a blocking worker thread, off the thread that drives the window.
+async fn off_main<T, F>(app: AppHandle, f: F) -> CmdResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&AppHandle, &AppState) -> CmdResult<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        f(&app, &state)
+    })
+    .await
+    .map_err(|e| format!("background task failed: {e}"))?
+}
 
 // ── Resource resolution ─────────────────────────────────────────────────────
 
@@ -85,15 +219,28 @@ fn device_payload(app: &AppHandle, name: &str) -> CmdResult<std::path::PathBuf> 
     bundled(app, name)
 }
 
+/// The adb connection, made on first use.
+///
+/// The lock is held while connecting so two callers cannot both start an adb
+/// server; nothing else needs it in the meantime.
+fn adb(app: &AppHandle, state: &AppState) -> CmdResult<Arc<Adb>> {
+    let mut guard = lock(&state.adb);
+    if let Some(adb) = guard.as_ref() {
+        return Ok(adb.clone());
+    }
+    let adb = Arc::new(Adb::connect(&host_binary(app, "adb")?).map_err(|e| e.to_string())?);
+    *guard = Some(adb.clone());
+    Ok(adb)
+}
+
 // ── Commands: connection ────────────────────────────────────────────────────
 
 #[tauri::command]
-fn list_devices(app: AppHandle, state: State<'_, AppState>) -> CmdResult<Vec<Device>> {
-    let mut guard = state.adb.lock().unwrap();
-    if guard.is_none() {
-        *guard = Some(Adb::connect(&host_binary(&app, "adb")?).map_err(|e| e.to_string())?);
-    }
-    guard.as_mut().unwrap().devices().map_err(|e| e.to_string())
+async fn list_devices(app: AppHandle) -> CmdResult<Vec<Device>> {
+    off_main(app, |app, state| {
+        adb(app, state)?.devices().map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[derive(Serialize)]
@@ -102,26 +249,41 @@ pub struct Connected {
     pub serial: String,
     pub model: String,
     pub root: String,
-    /// The last scan of this device, if we have seen it before. Captured at
-    /// connect so a rescan still compares against the previous session rather
-    /// than against the scan a moment ago.
+    /// The last finished scan of this device and root, if we have seen it
+    /// before. Captured at connect so a rescan still compares against the
+    /// previous session rather than against the scan a moment ago.
     pub previous: Option<ScanRecord>,
 }
 
+/// Start a session on a device, replacing any current one.
+///
+/// `root` must be one of the roots [`session::check_root`] accepts; it defaults
+/// to `/sdcard`.
 #[tauri::command]
-fn connect(
+async fn connect(
     app: AppHandle,
-    state: State<'_, AppState>,
     serial: Option<String>,
     root: Option<String>,
 ) -> CmdResult<Connected> {
-    let root = root.unwrap_or_else(|| "/sdcard".into());
+    off_main(app, move |app, state| {
+        connect_blocking(app, state, serial, root)
+    })
+    .await
+}
 
-    let mut adb_guard = state.adb.lock().unwrap();
-    if adb_guard.is_none() {
-        *adb_guard = Some(Adb::connect(&host_binary(&app, "adb")?).map_err(|e| e.to_string())?);
-    }
-    let adb = adb_guard.as_mut().unwrap();
+fn connect_blocking(
+    app: &AppHandle,
+    state: &AppState,
+    serial: Option<String>,
+    root: Option<String>,
+) -> CmdResult<Connected> {
+    let _busy = state.claim(Busy::Connecting)?;
+    let disconnects = state.disconnects.load(Ordering::SeqCst);
+
+    let root = root.unwrap_or_else(|| session::DEFAULT_ROOT.into());
+    session::check_root(&root)?;
+    let daemon = device_payload(app, "daemon")?;
+    let adb = adb(app, state)?;
 
     let serial = adb.resolve(serial.as_deref()).map_err(|e| e.to_string())?;
     let model = adb
@@ -132,19 +294,27 @@ fn connect(
         .map(|d| d.model)
         .unwrap_or_else(|| serial.clone());
 
-    // Replace any previous session before starting a new one.
-    if let Some(old) = state.session.lock().unwrap().take() {
-        old.stop(adb);
+    // The old phone's tree goes first, so a reconnect that fails is not left
+    // serving it.
+    *lock(&state.tree) = None;
+    let old = lock(&state.session).take();
+    if let Some(old) = old {
+        old.stop(&adb);
     }
 
-    let daemon = device_payload(&app, "daemon")?;
-    let session =
-        Session::start(adb, &serial, &daemon, root.as_bytes()).map_err(|e| e.to_string())?;
+    let session = Session::start(&adb, &serial, &daemon, &root).map_err(|e| e.to_string())?;
 
-    *state.session.lock().unwrap() = Some(session);
-    *state.tree.lock().unwrap() = None;
+    {
+        let mut slot = lock(&state.session);
+        if state.disconnects.load(Ordering::SeqCst) != disconnects {
+            drop(slot);
+            session.stop(&adb);
+            return Err("disconnected while connecting".into());
+        }
+        *slot = Some(Arc::new(session));
+    }
 
-    let previous = history::previous(&app, &serial);
+    let previous = history::previous(app, &serial, &root);
 
     Ok(Connected {
         serial,
@@ -154,17 +324,15 @@ fn connect(
     })
 }
 
+/// Stop the daemon and forget the tree. Cancels a running scan, whose `scan`
+/// call then fails with "the scan was cancelled".
 #[tauri::command]
-fn disconnect(state: State<'_, AppState>) -> CmdResult<()> {
-    let session = state.session.lock().unwrap().take();
-    let mut adb_guard = state.adb.lock().unwrap();
-
-    if let (Some(session), Some(adb)) = (session, adb_guard.as_mut()) {
-        session.stop(adb);
-    }
-    *state.tree.lock().unwrap() = None;
-    *state.watching.lock().unwrap() = arena::ROOT;
-    Ok(())
+async fn disconnect(app: AppHandle) -> CmdResult<()> {
+    off_main(app, |_, state| {
+        state.end_session();
+        Ok(())
+    })
+    .await
 }
 
 // ── Commands: scanning ──────────────────────────────────────────────────────
@@ -181,109 +349,108 @@ struct ScanProgress {
 /// Walk the device and stream the tree into the arena.
 ///
 /// Emits `scan-progress` roughly ten times a second while running, and returns
-/// the final totals once the walk completes.
+/// the final totals once the walk completes. The previous tree stays queryable
+/// until the daemon confirms the new walk has started.
 #[tauri::command]
-fn scan(app: AppHandle, state: State<'_, AppState>, root: Option<String>) -> CmdResult<Stats> {
-    let session_guard = state.session.lock().unwrap();
-    let session = session_guard
-        .as_ref()
-        .ok_or("not connected to a device yet")?;
+async fn scan(app: AppHandle, root: Option<String>) -> CmdResult<Stats> {
+    off_main(app, move |app, state| scan_blocking(app, state, root)).await
+}
 
-    let root_bytes = root
-        .map(|r| r.into_bytes())
-        .unwrap_or_else(|| session.root.clone());
-
-    // The arena is created from Frame::ScanStarted, not from root_bytes: the
-    // daemon canonicalises, so the root it walks is /storage/emulated/0 where we
-    // asked for /sdcard, and every frame is keyed on the resolved path.
-    *state.tree.lock().unwrap() = None;
-    *state.watching.lock().unwrap() = arena::ROOT;
+fn scan_blocking(app: &AppHandle, state: &AppState, root: Option<String>) -> CmdResult<Stats> {
+    let cancel = Arc::new(ScanCancel::default());
+    let _busy = state.claim(Busy::Scanning(cancel.clone()))?;
+    let session = state.session()?;
 
     // The label the user recognises, kept separate from the resolved path the
     // daemon reports.
-    let requested_root = root_bytes.clone();
+    let root = match root {
+        Some(root) => {
+            session::check_root(&root)?;
+            root
+        }
+        None => session.root.clone(),
+    };
 
-    let mut last_push = std::time::Instant::now();
-    let mut scan_error: Option<String> = None;
+    let mut started = false;
+    let mut last_push = Instant::now();
+    let mut place_error: Option<String> = None;
 
-    let result = session.scan(&root_bytes, |frame| {
-        match frame {
-            Frame::ScanStarted { root } => {
-                *state.tree.lock().unwrap() = Some(Arena::new_labelled(&root, &requested_root));
+    // Each frame is applied under the tree lock and only if the scan has not
+    // been cancelled, checked under that same lock: a disconnect cancels before
+    // it clears the tree, so a frame can never land after the clear.
+    let result = session.scan(root.as_bytes(), &cancel, |frame| match frame {
+        Frame::ScanStarted { root: resolved } => {
+            // The arena is keyed on the resolved root, not the requested one:
+            // the daemon canonicalises, so it walks /storage/emulated/0 where
+            // we asked for /sdcard, and every frame is keyed on that.
+            let mut tree = lock(&state.tree);
+            if !cancel.is_cancelled() {
+                *tree = Some(Tree::new(Arena::new_labelled(&resolved, root.as_bytes())));
+                started = true;
             }
-            Frame::Dir { path, entries } => {
-                {
-                    let mut guard = state.tree.lock().unwrap();
-                    if let Some(tree) = guard.as_mut() {
-                        if let Err(e) = tree.apply_dir(&path, &entries) {
-                            // A frame we cannot place means the tree is already
-                            // inconsistent; surface it rather than drawing a lie.
-                            scan_error.get_or_insert_with(|| e.to_string());
-                        }
+        }
+        Frame::Dir { path, entries } if started => {
+            {
+                let mut tree = lock(&state.tree);
+                if cancel.is_cancelled() {
+                    return;
+                }
+                if let Some(tree) = tree.as_mut() {
+                    if let Err(e) = tree.arena.apply_dir(&path, &entries) {
+                        // A frame we cannot place means the tree is already
+                        // inconsistent; surface it rather than drawing a lie.
+                        place_error.get_or_insert_with(|| e.to_string());
                     }
                 }
+            }
 
-                if last_push.elapsed() >= VIEW_PUSH_INTERVAL {
-                    last_push = std::time::Instant::now();
-                    emit_progress(&app, &state);
-                }
+            if last_push.elapsed() >= VIEW_PUSH_INTERVAL {
+                last_push = Instant::now();
+                emit_progress(app, state);
             }
-            Frame::ScanDone(_) => {
-                // Authoritative end of walk; the arena cannot infer it.
-                if let Some(tree) = state.tree.lock().unwrap().as_mut() {
-                    tree.finish();
-                }
-            }
-            Frame::Error { message } => {
-                scan_error.get_or_insert(message);
-            }
-            _ => {}
         }
+        Frame::ScanDone(_) if started => {
+            // Authoritative end of walk; the arena cannot infer it.
+            let mut tree = lock(&state.tree);
+            if let (false, Some(tree)) = (cancel.is_cancelled(), tree.as_mut()) {
+                tree.arena.finish();
+            }
+        }
+        _ => {}
     });
 
     result?;
-    if let Some(e) = scan_error {
+    if let Some(e) = place_error {
         return Err(e);
     }
+    if !started {
+        return Err(session::SCAN_CUT_OFF.into());
+    }
 
-    let stats = current_stats(&state)?;
-    // Read the serial off the guard already held above. Locking state.session
-    // again here would deadlock: std::sync::Mutex is not reentrant.
-    history::record(&app, &session.serial, &stats);
-    emit_progress(&app, &state);
+    let stats = with_tree(state, |t| t.arena.stats())?;
+    history::record(app, &session.serial, &root, &stats);
+    emit_progress(app, state);
     Ok(stats)
 }
 
-fn emit_progress(app: &AppHandle, state: &State<'_, AppState>) {
-    let watching = *state.watching.lock().unwrap();
-
+fn emit_progress(app: &AppHandle, state: &AppState) {
     let payload = {
-        let guard = state.tree.lock().unwrap();
+        let guard = lock(&state.tree);
         let Some(tree) = guard.as_ref() else { return };
         ScanProgress {
-            stats: tree.stats(),
-            view: tree.view(watching, DEFAULT_VIEW_LIMIT).ok(),
+            stats: tree.arena.stats(),
+            view: tree.arena.view(tree.watching, DEFAULT_VIEW_LIMIT).ok(),
         }
     };
 
     let _ = app.emit("scan-progress", payload);
 }
 
-fn current_stats(state: &State<'_, AppState>) -> CmdResult<Stats> {
-    state
-        .tree
-        .lock()
-        .unwrap()
-        .as_ref()
-        .map(|t| t.stats())
-        .ok_or_else(|| "no scan has been run yet".to_string())
-}
-
 // ── Commands: queries ───────────────────────────────────────────────────────
 
-fn with_tree<T>(state: &State<'_, AppState>, f: impl FnOnce(&Arena) -> T) -> CmdResult<T> {
-    let guard = state.tree.lock().unwrap();
-    let tree = guard.as_ref().ok_or("no scan has been run yet")?;
+fn with_tree<T>(state: &AppState, f: impl FnOnce(&mut Tree) -> T) -> CmdResult<T> {
+    let mut guard = lock(&state.tree);
+    let tree = guard.as_mut().ok_or(NO_SCAN)?;
     Ok(f(tree))
 }
 
@@ -298,14 +465,17 @@ fn get_view(
     limit: Option<usize>,
 ) -> CmdResult<View> {
     let id = id.unwrap_or(arena::ROOT);
-    *state.watching.lock().unwrap() = id;
-    with_tree(&state, |t| t.view(id, limit.unwrap_or(DEFAULT_VIEW_LIMIT)))?
-        .map_err(|e| e.to_string())
+    with_tree(&state, |t| {
+        let view = t.arena.view(id, limit.unwrap_or(DEFAULT_VIEW_LIMIT))?;
+        t.watching = id;
+        Ok(view)
+    })?
+    .map_err(|e: arena::ArenaError| e.to_string())
 }
 
 #[tauri::command]
 fn get_breadcrumbs(state: State<'_, AppState>, id: NodeId) -> CmdResult<Vec<Crumb>> {
-    with_tree(&state, |t| t.breadcrumbs(id))?.map_err(|e| e.to_string())
+    with_tree(&state, |t| t.arena.breadcrumbs(id))?.map_err(|e| e.to_string())
 }
 
 /// A depth-limited slice of the tree, so the treemap can draw children nested
@@ -317,20 +487,20 @@ fn get_treemap(
     depth: Option<usize>,
 ) -> CmdResult<TreemapNode> {
     let id = id.unwrap_or(arena::ROOT);
-    with_tree(&state, |t| t.treemap(id, depth.unwrap_or(2)))?.map_err(|e| e.to_string())
+    with_tree(&state, |t| t.arena.treemap(id, depth.unwrap_or(2)))?.map_err(|e| e.to_string())
 }
 
 /// The largest files anywhere in the tree, regardless of depth.
 #[tauri::command]
 fn largest_files(state: State<'_, AppState>, limit: Option<usize>) -> CmdResult<Vec<Row>> {
-    with_tree(&state, |t| t.largest_files(limit.unwrap_or(100)))
+    with_tree(&state, |t| t.arena.largest_files(limit.unwrap_or(100)))
 }
 
 /// Total bytes per broad file category. Answers "what kind of thing is eating
 /// the space", which no amount of folder-by-folder browsing makes obvious.
 #[tauri::command]
 fn type_breakdown(state: State<'_, AppState>) -> CmdResult<Vec<TypeGroup>> {
-    with_tree(&state, |t| t.type_breakdown())
+    with_tree(&state, |t| t.arena.type_breakdown())
 }
 
 /// Storage attributed to the app that owns it.
@@ -339,12 +509,12 @@ fn type_breakdown(state: State<'_, AppState>) -> CmdResult<Vec<TypeGroup>> {
 /// of a device is game assets whose extensions no category list recognises.
 #[tauri::command]
 fn app_breakdown(state: State<'_, AppState>, limit: Option<usize>) -> CmdResult<Vec<AppUsage>> {
-    with_tree(&state, |t| t.app_breakdown(limit.unwrap_or(50)))
+    with_tree(&state, |t| t.arena.app_breakdown(limit.unwrap_or(50)))
 }
 
 #[tauri::command]
 fn search(state: State<'_, AppState>, query: String, limit: Option<usize>) -> CmdResult<Vec<Row>> {
-    with_tree(&state, |t| t.search(&query, limit.unwrap_or(200)))
+    with_tree(&state, |t| t.arena.search(&query, limit.unwrap_or(200)))
 }
 
 // ── Commands: delete ────────────────────────────────────────────────────────
@@ -354,41 +524,45 @@ fn search(state: State<'_, AppState>, query: String, limit: Option<usize>) -> Cm
 pub struct Deleted {
     pub items: u64,
     pub stats: Stats,
-    pub view: Option<View>,
+    /// The directory the frontend was showing, refreshed. If that directory
+    /// was inside what was deleted, this is its nearest surviving ancestor
+    /// instead, and later scan progress follows it there.
+    pub view: View,
 }
 
 /// Delete a node by id.
+///
+/// `gen` is the generation the id was handed out with; an id from a tree that
+/// a rescan has since replaced is refused rather than resolved against the new
+/// one, where it would name a different file.
 ///
 /// The id resolves to a byte-exact path here, and the daemon re-validates that
 /// path against the session root before acting. The authoritative guard is the
 /// daemon's: a check on this side is one that anything speaking to the socket
 /// directly never reaches.
 #[tauri::command]
-fn delete(app: AppHandle, state: State<'_, AppState>, id: NodeId) -> CmdResult<Deleted> {
-    if id == arena::ROOT {
-        return Err("the scan root cannot be deleted".into());
-    }
+async fn delete(app: AppHandle, id: NodeId, gen: u32) -> CmdResult<Deleted> {
+    off_main(app, move |_, state| delete_blocking(state, id, gen)).await
+}
 
-    let path = with_tree(&state, |t| t.path_of(id))?.map_err(|e| e.to_string())?;
+fn delete_blocking(state: &AppState, id: NodeId, gen: u32) -> CmdResult<Deleted> {
+    let _busy = state.claim(Busy::Deleting)?;
 
-    let items = {
-        let guard = state.session.lock().unwrap();
-        let session = guard.as_ref().ok_or("not connected to a device yet")?;
-        session.delete(&path)?
-    };
+    let path = with_tree(state, |t| t.arena.delete_target(id, gen))?.map_err(|e| e.to_string())?;
+    let items = state.session()?.delete(&path)?;
 
     // Only discount it locally once the device confirms it is gone.
-    let (stats, view) = {
-        let mut guard = state.tree.lock().unwrap();
-        let tree = guard.as_mut().ok_or("no scan has been run yet")?;
-        tree.remove(id).map_err(|e| e.to_string())?;
-
-        let watching = *state.watching.lock().unwrap();
-        (tree.stats(), tree.view(watching, DEFAULT_VIEW_LIMIT).ok())
-    };
-
-    let _ = app.emit("tree-changed", stats);
-    Ok(Deleted { items, stats, view })
+    with_tree(state, |t| {
+        t.arena.check_gen(gen)?;
+        t.arena.remove(id)?;
+        t.watching = t.arena.nearest_live(t.watching);
+        Ok(Deleted {
+            items,
+            stats: t.arena.stats(),
+            view: t.arena.view(t.watching, DEFAULT_VIEW_LIMIT)?,
+        })
+    })?
+    .map_err(|e: arena::ArenaError| e.to_string())
 }
 
 // ── Entry point ─────────────────────────────────────────────────────────────
@@ -417,12 +591,7 @@ pub fn run() {
             // Tear the session down, or the forward stays open and the daemon
             // keeps running on the phone until it is unplugged.
             if let tauri::RunEvent::Exit = event {
-                let state = app.state::<AppState>();
-                let session = state.session.lock().unwrap().take();
-                let mut adb = state.adb.lock().unwrap();
-                if let (Some(session), Some(adb)) = (session, adb.as_mut()) {
-                    session.stop(adb);
-                }
+                app.state::<AppState>().end_session();
             }
         });
 }
