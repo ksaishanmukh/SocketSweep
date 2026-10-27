@@ -3083,6 +3083,14 @@ dependencies = [
 [[package]]
 name = "socketsweep-host-core"
 version = "1.0.0"
+dependencies = [
+ "rand",
+ "serde",
+ "serde_json",
+ "socketsweep-gui-contract",
+ "socketsweep-transport",
+ "socketsweep-wire",
+]
 
 [[package]]
 name = "socketsweep-protocol"
@@ -3112,6 +3120,9 @@ version = "1.0.0"
 [[package]]
 name = "socketsweep-transport-adb"
 version = "1.0.0"
+dependencies = [
+ "socketsweep-transport",
+]
 
 [[package]]
 name = "socketsweep-wire"
