@@ -10,6 +10,7 @@
 export { commands, events } from "../bindings";
 export type {
   AppUsage,
+  CommandError,
   Connected,
   ConnectionLost,
   CopyProgress,
@@ -19,6 +20,7 @@ export type {
   Device,
   DeviceState,
   EntryKind,
+  ErrorCode,
   FocusState,
   Measure,
   NodeRef,
@@ -38,32 +40,7 @@ export type {
   View,
 } from "../bindings";
 
-/**
- * How every command fails (`ErrorCode` and `CommandError` in
- * `crates/gui-contract`).
- *
- * These two types are declared by hand because the generated bindings do not
- * export them: specta only emits types reachable from a command's arguments
- * or result, and the error type appears only in prose. Keep them in step with
- * `ErrorCode` in the contract crate.
- */
-export type ErrorCode =
-  | "notConnected"
-  | "noScan"
-  | "stale"
-  | "removed"
-  | "busy"
-  | "device"
-  | "daemon"
-  | "cancelled"
-  | "invalid"
-  | "io";
-
-export interface CommandError {
-  code: ErrorCode;
-  /** For the user, already worded. */
-  message: string;
-}
+import type { CommandError, ErrorCode } from "../bindings";
 
 export function isCommandError(err: unknown): err is CommandError {
   return (

@@ -57,6 +57,8 @@ export function useDelete({
         const wanted = before && sameNode(before.node, result.view.node) ? before.rows.length : 0;
         if (wanted > result.view.rows.length && result.view.hidden > 0) {
           try {
+            // The live views follow the last `focus`, not `getView`.
+            void commands.focus(result.view.node, wanted, metricRef.current).catch(() => {});
             const full = await commands.getView(result.view.node, wanted, metricRef.current);
             if (session === sessionRef.current) nav.applyLiveView(full);
           } catch {

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { Row, View } from "../../api";
 import { formatBytes, formatNumber } from "../../lib/format";
+import { folderName } from "../../lib/path";
 import { nodeKey, sizeOf } from "../../lib/size";
 import { toItems } from "../../lib/treemapItems";
 import { VIEW_PAGE_SIZE } from "../../hooks/useNavigation";
@@ -50,6 +51,7 @@ export function ResultScreen({
   const waiting = searching && searchResults === null;
   const running = scanInfo?.running ?? false;
   const copyDisabled = copy !== null;
+  const copyTarget = session.copyDestination ? folderName(session.copyDestination) : undefined;
   const viewSize = sizeOf(view.size, metric);
 
   return (
@@ -202,6 +204,7 @@ export function ResultScreen({
               onDelete={onDelete}
               onCopy={(row) => void session.startCopy(row)}
               copyDisabled={copyDisabled}
+              copyTarget={copyTarget}
               onReveal={(row) => void session.reveal(row)}
               emptyMessage={running ? "Looking for files…" : "No files found."}
             />
@@ -263,6 +266,7 @@ export function ResultScreen({
             onDelete={onDelete}
             onCopy={(row) => void session.startCopy(row)}
             copyDisabled={copyDisabled}
+            copyTarget={copyTarget}
             onReveal={searching ? (row) => void session.reveal(row) : undefined}
             showBar={false}
             emptyMessage={

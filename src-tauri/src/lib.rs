@@ -54,14 +54,14 @@ shell_commands! {
     fn disconnect() -> ();
     fn start_scan(root: Option<String>) -> ScanStarted;
     fn cancel_scan() -> ();
-    fn focus(node: Option<NodeRef>) -> ();
+    fn focus(node: Option<NodeRef>, limit: Option<u32>, by: Option<SizeMetric>) -> ();
     fn get_view(node: Option<NodeRef>, limit: Option<u32>, by: Option<SizeMetric>) -> View;
     fn get_breadcrumbs(node: NodeRef) -> Vec<Crumb>;
     fn get_treemap(node: Option<NodeRef>, depth: Option<u32>, by: Option<SizeMetric>) -> TreemapNode;
     fn largest_files(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<Row>;
     fn type_breakdown(by: Option<SizeMetric>) -> Vec<TypeGroup>;
     fn app_breakdown(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<AppUsage>;
-    fn search(query: String, limit: Option<u32>) -> Vec<Row>;
+    fn search(query: String, limit: Option<u32>, by: Option<SizeMetric>) -> Vec<Row>;
     fn delete(node: NodeRef) -> Deleted;
     fn copy_to_desktop(node: NodeRef, destination: Option<String>) -> CopyResult;
     fn cancel_copy() -> ();
@@ -87,8 +87,6 @@ fn bundled(handle: &tauri::AppHandle, file: &str) -> Result<PathBuf, tauri::Erro
 
 fn build_app(handle: &tauri::AppHandle) -> Result<App, Box<dyn std::error::Error>> {
     let adb = bundled(handle, if cfg!(windows) { "adb.exe" } else { "adb" })?;
-    let transport = AdbTransport::connect(&adb)
-        .map_err(|e| format!("could not start adb ({}): {e}", adb.display()))?;
 
     let paths = handle.path();
     let config = AppConfig {
@@ -102,9 +100,13 @@ fn build_app(handle: &tauri::AppHandle) -> Result<App, Box<dyn std::error::Error
     };
 
     let emitter = handle.clone();
-    Ok(App::new(Arc::new(transport), config, move |event| {
-        forward(&emitter, event)
-    }))
+    // adb starts on the first command that needs a phone, so a failure to
+    // start it reaches the window as an error instead of stopping it opening.
+    Ok(App::lazy(
+        move || AdbTransport::connect(&adb),
+        config,
+        move |event| forward(&emitter, event),
+    ))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

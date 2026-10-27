@@ -46,12 +46,19 @@ export function useNavigation({ sessionRef, metricRef, log, fail }: SessionDeps)
     setLoadingMore(false);
   }, [put]);
 
-  /** Tells the host which folder the user is looking at. Failure only costs speed. */
+  /**
+   * Tells the host which folder the user is looking at, and how: the live
+   * views it pushes while the scan runs use the size and row count given here
+   * (`getView` does not change them), so ask again whenever either changes.
+   * Failure only costs speed.
+   */
   const focus = useCallback(
-    (node: NodeRef) => {
-      commands.focus(node).catch((err) => log(`[FOCUS] ${errorMessage(err)}`));
+    (node: NodeRef, limit?: number) => {
+      commands
+        .focus(node, limit, metricRef.current)
+        .catch((err) => log(`[FOCUS] ${errorMessage(err)}`));
     },
-    [log],
+    [log, metricRef],
   );
 
   const loadTreemap = useCallback(
@@ -138,12 +145,10 @@ export function useNavigation({ sessionRef, metricRef, log, fail }: SessionDeps)
     const session = sessionRef.current;
     if (!current || session === null) return;
     const seq = navSeq.current;
+    const limit = current.rows.length || undefined;
+    focus(current.node, limit);
     try {
-      const next = await commands.getView(
-        current.node,
-        current.rows.length || undefined,
-        metricRef.current,
-      );
+      const next = await commands.getView(current.node, limit, metricRef.current);
       if (session !== sessionRef.current || seq !== navSeq.current) return;
       if (next.node.session !== session) return;
       put(next);
@@ -151,7 +156,7 @@ export function useNavigation({ sessionRef, metricRef, log, fail }: SessionDeps)
       if (session === sessionRef.current) log(`[ERROR] ${errorMessage(err)}`);
     }
     void loadTreemap(current.node, seq);
-  }, [loadTreemap, log, metricRef, put, sessionRef]);
+  }, [focus, loadTreemap, log, metricRef, put, sessionRef]);
 
   /** Re-reads only the treemap, whose tiles grow as the scan measures. */
   const refreshTreemap = useCallback(() => {
@@ -165,13 +170,11 @@ export function useNavigation({ sessionRef, metricRef, log, fail }: SessionDeps)
     const session = sessionRef.current;
     if (!current || session === null || current.hidden <= 0) return;
     const seq = navSeq.current;
+    const limit = current.rows.length + VIEW_PAGE_SIZE;
     setLoadingMore(true);
+    focus(current.node, limit);
     try {
-      const next = await commands.getView(
-        current.node,
-        current.rows.length + VIEW_PAGE_SIZE,
-        metricRef.current,
-      );
+      const next = await commands.getView(current.node, limit, metricRef.current);
       // If the user went elsewhere meanwhile, these rows belong to a folder
       // that is no longer open.
       if (seq === navSeq.current && session === sessionRef.current) put(next);
@@ -180,7 +183,7 @@ export function useNavigation({ sessionRef, metricRef, log, fail }: SessionDeps)
     } finally {
       if (session === sessionRef.current) setLoadingMore(false);
     }
-  }, [fail, metricRef, put, sessionRef]);
+  }, [fail, focus, metricRef, put, sessionRef]);
 
   /** The latest view, for callers that must not wait for a render. */
   const currentView = useCallback(() => viewRef.current, []);

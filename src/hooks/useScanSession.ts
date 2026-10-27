@@ -66,7 +66,7 @@ export function useScanSession(notify: Notify) {
   const deps: SessionDeps = { sessionRef, metricRef, log, fail };
   const nav = useNavigation(deps);
   const analyses = useAnalyses(deps);
-  const search = useSearch({ sessionRef, sessionId });
+  const search = useSearch({ sessionRef, metricRef, sessionId });
   const copier = useCopy({ sessionRef, log, notify });
 
   const { clear: clearNav } = nav;

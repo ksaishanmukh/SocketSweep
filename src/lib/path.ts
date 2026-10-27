@@ -7,3 +7,9 @@ export function joinPath(dir: string, name: string): string {
 export function isWithin(path: string, folder: string): boolean {
   return path === folder || path.startsWith(folder.endsWith("/") ? folder : folder + "/");
 }
+
+/** The last segment of a path on this computer (either separator), for labels: `C:\Users\me\Desktop` is `Desktop`. */
+export function folderName(path: string): string {
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : path;
+}

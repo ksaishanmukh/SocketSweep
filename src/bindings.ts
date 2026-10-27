@@ -45,11 +45,13 @@ export const commands = {
   /**
    * The user opened folder `node` (by click, breadcrumb, treemap or "go
    * to"); a file means its folder. The phone measures it first, and
-   * `scan-progress` carries this folder's view. `null` means the root.
+   * `scan-progress` carries this folder's view, sorted by `by` (default
+   * disk) and capped at `limit` rows (default 500). Call it again for the
+   * same folder to change those; `getView` does not. `null` means the root.
    * Hover and scrolling are not focus.
    */
-  focus: (node?: NodeRef | null): Promise<void> =>
-    invoke<void>("focus", { node }),
+  focus: (node?: NodeRef | null, limit?: number | null, by?: SizeMetric | null): Promise<void> =>
+    invoke<void>("focus", { node, limit, by }),
   /**
    * A folder's rows, largest first by `by` (default disk). `node`
    * defaults to the root, `limit` to 500.
@@ -84,10 +86,10 @@ export const commands = {
     invoke<AppUsage[]>("app_breakdown", { limit, by }),
   /**
    * Files and folders whose name contains `query`, case-insensitively
-   * (default 200 results).
+   * (default 200 results), largest first by `by` (default disk).
    */
-  search: (query: string, limit?: number | null): Promise<Row[]> =>
-    invoke<Row[]>("search", { query, limit }),
+  search: (query: string, limit?: number | null, by?: SizeMetric | null): Promise<Row[]> =>
+    invoke<Row[]>("search", { query, limit, by }),
   /**
    * Delete `node` and everything below it from the phone. Refused for a
    * stale node and for the scan root. Allowed during a scan, which skips
@@ -133,12 +135,25 @@ export type AppUsage = {
 	node: NodeRef,
 };
 
+/**  How every command fails. */
+export type CommandError = {
+	code: ErrorCode,
+	/**  For the user, already worded. */
+	message: string,
+};
+
 /**  The answer to `connect`. */
 export type Connected = {
 	serial: string,
 	model: string,
 	/**  The root that scans default to, as the user knows it (`/sdcard`). */
 	root: string,
+	/**
+	 *  Where `copyToDesktop` copies when no destination is given, as a path on
+	 *  this computer (the desktop), so the GUI can name the action up front.
+	 *  `null` when the host knows no default; a copy must then name one.
+	 */
+	copyDestination: string | null,
 	/**
 	 *  The last finished scan of this device and root, if it has been seen
 	 *  before, for showing what changed.
@@ -230,6 +245,28 @@ export type EntryKind = "file" | "dir" | "symlink" |
 /**  Sockets, pipes, devices. */
 "other";
 
+export type ErrorCode = 
+/**  No device is connected. */
+"notConnected" | 
+/**  Connected, but no scan has started. */
+"noScan" | 
+/**  The node is from an earlier session. The GUI refreshes. */
+"stale" | 
+/**  The node has since been deleted. */
+"removed" | 
+/**  Another operation that cannot overlap this one is running. */
+"busy" | 
+/**  adb or the phone refused or failed. */
+"device" | 
+/**  The daemon on the phone refused or failed. */
+"daemon" | 
+/**  The user cancelled it. */
+"cancelled" | 
+/**  The arguments make no sense, e.g. deleting the scan root. */
+"invalid" | 
+/**  A file on this computer could not be written. */
+"io";
+
 export type FocusState = {
 	node: NodeRef,
 	/**  The folder's subtree is fully measured; the GUI clears its spinner. */
@@ -317,7 +354,9 @@ export type ScanProgress = {
 	finished: ScanFinished | null,
 	/**
 	 *  The focused folder, refreshed. Only that one, so the payload does not
-	 *  grow with the tree.
+	 *  grow with the tree. Its sort and row cap are the `by` and `limit` of
+	 *  the last `focus` (defaults: disk, 500 rows); `getView` never changes
+	 *  them, so a GUI that wants more rows or another sort calls `focus` again.
 	 */
 	view: View | null,
 };

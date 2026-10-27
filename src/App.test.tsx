@@ -110,7 +110,7 @@ describe("App", () => {
     }) => void;
     api.copyToDesktop.mockReturnValue(new Promise((resolve) => (finish = resolve)));
 
-    await user.click(screen.getByRole("button", { name: "Copy notes.txt to computer" }));
+    await user.click(screen.getByRole("button", { name: "Copy notes.txt to Desktop" }));
 
     expect(api.copyToDesktop).toHaveBeenCalledWith(node(3));
     expect(await screen.findByText(/Copying notes\.txt/)).toBeTruthy();

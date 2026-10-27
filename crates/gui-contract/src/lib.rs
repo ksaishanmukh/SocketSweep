@@ -150,6 +150,10 @@ pub struct Connected {
     pub model: String,
     /// The root that scans default to, as the user knows it (`/sdcard`).
     pub root: String,
+    /// Where `copyToDesktop` copies when no destination is given, as a path on
+    /// this computer (the desktop), so the GUI can name the action up front.
+    /// `null` when the host knows no default; a copy must then name one.
+    pub copy_destination: Option<String>,
     /// The last finished scan of this device and root, if it has been seen
     /// before, for showing what changed.
     pub previous: Option<ScanRecord>,
@@ -327,7 +331,9 @@ pub struct ScanProgress {
     /// Set on the last event of a scan.
     pub finished: Option<ScanFinished>,
     /// The focused folder, refreshed. Only that one, so the payload does not
-    /// grow with the tree.
+    /// grow with the tree. Its sort and row cap are the `by` and `limit` of
+    /// the last `focus` (defaults: disk, 500 rows); `getView` never changes
+    /// them, so a GUI that wants more rows or another sort calls `focus` again.
     pub view: Option<View>,
 }
 

@@ -27,7 +27,7 @@ use specta::datatype::DataType;
 use specta::Types;
 use specta_typescript::{Exporter, FrameworkExporter, Typescript};
 
-use crate::{command_defs, event_defs, CommandDef, EventDef};
+use crate::{command_defs, event_defs, CommandDef, CommandError, EventDef};
 
 /// The generated file's location in the repository.
 pub fn bindings_path() -> PathBuf {
@@ -44,6 +44,9 @@ pub fn render() -> Result<String, specta_typescript::Error> {
     let mut types = Types::default();
     let commands = command_defs(&mut types);
     let events = event_defs(&mut types);
+    // Only types reachable from a command's signature are exported on their
+    // own; the error every command rejects with appears in none.
+    <CommandError as specta::Type>::definition(&mut types);
 
     let exporter: Exporter = Typescript::default().into();
     exporter

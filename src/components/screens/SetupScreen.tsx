@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { commands, type Device, type DeviceState } from "../../api";
+import { commands, errorMessage, type Device, type DeviceState } from "../../api";
 import { IconUsb, Spinner } from "../icons";
 
 /** How each non-usable state is named, and what to do about it, since the fix differs. */
@@ -28,6 +28,8 @@ export function SetupScreen({
   status?: string;
 }) {
   const [devices, setDevices] = useState<Device[] | null>(null);
+  /** Why the devices could not be listed, e.g. adb would not start. */
+  const [problem, setProblem] = useState<string | null>(null);
 
   // Poll while idle so plugging a phone in is noticed without a manual refresh.
   // The cancelled flag matters: a poll in flight when this screen unmounts (the
@@ -39,10 +41,17 @@ export function SetupScreen({
     const poll = async () => {
       try {
         const list = await commands.listDevices();
-        if (!cancelled) setDevices(list);
-      } catch {
-        // No adb server means nothing to list. Connect reports the real error.
-        if (!cancelled) setDevices([]);
+        if (!cancelled) {
+          setDevices(list);
+          setProblem(null);
+        }
+      } catch (err) {
+        // Nothing can be listed, and the person needs to know why: the host
+        // starts adb on first use, so this is where a failure to start shows.
+        if (!cancelled) {
+          setDevices([]);
+          setProblem(errorMessage(err));
+        }
       }
     };
 
@@ -157,8 +166,14 @@ export function SetupScreen({
         </ul>
       )}
 
+      {!loading && problem && (
+        <p role="alert" className="max-w-sm text-center text-xs text-amber-400/80">
+          {problem}
+        </p>
+      )}
+
       {/* ADB ships with the app, so it is deliberately absent from this list. */}
-      {!loading && usable.length === 0 && problems.length === 0 && (
+      {!loading && usable.length === 0 && problems.length === 0 && !problem && (
         <div className="flex flex-col items-center gap-1.5 text-xs text-zinc-600">
           <p>• Android device connected via USB</p>
           <p>• USB Debugging enabled in Developer Options</p>
