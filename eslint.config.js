@@ -21,7 +21,7 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
-      // The Recharts treemap integration leans on `any`; Stage 5 removes it.
+      // A few spots in the frontend still lean on `any`; remove them over time.
       // Keep this a warning until then so the gate stays green but the debt visible.
       "@typescript-eslint/no-explicit-any": "warn",
     },
