@@ -23,6 +23,18 @@
 //! it. Anything other than `Hello` as the first request is refused the same
 //! way.
 //!
+//! # Keepalives
+//!
+//! A reply can take minutes: a directory of a hundred thousand files is one
+//! frame that is not written until every file in it has been stat'ed, and a
+//! recursive delete says nothing until it is done. So that the host can bound
+//! the silence it tolerates rather than the length of a reply, the daemon sends
+//! [`Frame::Keepalive`] whenever it has sent nothing for about
+//! [`KEEPALIVE_INTERVAL`]. A keepalive carries nothing and may appear anywhere
+//! in a scan or delete reply; readers skip it. A host whose read timeout
+//! comfortably exceeds the interval still notices a dead daemon, just not a
+//! slow one.
+//!
 //! The token is [`TOKEN_LEN`] random bytes the host generates per session. It
 //! reaches the daemon through the [`TOKEN_ENV`] environment variable,
 //! hex-encoded, never through argv. The abstract socket keeps other apps on the
@@ -40,6 +52,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io::{self, Read, Write};
+use std::time::Duration;
 
 /// Upper bound on a single frame, so a corrupt length prefix cannot make the
 /// reader allocate wildly. A 100k-entry directory encodes to a few MB.
@@ -48,7 +61,11 @@ pub const MAX_FRAME_BYTES: u32 = 64 * 1024 * 1024;
 /// Sent in [`Request::Hello`]. The daemon refuses a connection whose version
 /// differs, so a stale daemon left on the device fails loudly instead of
 /// misreading frames. Bump it whenever the wire format changes.
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
+
+/// How long the daemon goes without sending anything, at most and give or take,
+/// while a reply is in progress. See [keepalives](crate#keepalives).
+pub const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Length in bytes of the per-session token.
 pub const TOKEN_LEN: usize = 32;
@@ -66,7 +83,8 @@ pub enum Request {
     Ping,
     /// Walk `root` and stream [`Frame::Dir`] until [`Frame::ScanDone`].
     ///
-    /// Every reply ends in exactly one `ScanDone`. A rejected or unreadable root
+    /// [`Frame::Keepalive`] may arrive anywhere in the reply and means nothing
+    /// beyond "still working". Every reply ends in exactly one `ScanDone`. A rejected or unreadable root
     /// is reported as a [`Frame::Error`] followed by `ScanDone` with default
     /// (zero) stats, so the host can always read until `ScanDone` rather than
     /// relying on a timeout. The one exception is the connection itself
@@ -77,6 +95,9 @@ pub enum Request {
     },
     /// Recursively delete `path`. The daemon validates it against the session
     /// root and refuses anything outside — see the `guard` module in the daemon.
+    ///
+    /// Answered with [`Frame::Deleted`] or [`Frame::Error`], preceded by any
+    /// number of [`Frame::Keepalive`] while a large delete is under way.
     Delete {
         path: Vec<u8>,
     },
@@ -94,7 +115,8 @@ pub enum Request {
     },
 }
 
-/// Daemon → host. A scan produces many `Dir` frames then one `ScanDone`.
+/// Daemon → host. A scan produces many `Dir` frames then one `ScanDone`, with
+/// `Keepalive` frames anywhere in between.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Frame {
     Pong,
@@ -123,6 +145,11 @@ pub enum Frame {
     Error {
         message: String,
     },
+    /// Nothing to report, but the reply is still in progress; see
+    /// [keepalives](crate#keepalives). Never ends a reply, and readers skip it.
+    ///
+    /// Last in the enum so the older variants keep their wire index.
+    Keepalive,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -340,6 +367,14 @@ mod tests {
         }
     }
 
+    #[test]
+    fn keepalives_round_trip() {
+        let mut buf = Vec::new();
+        write_msg(&mut buf, &Frame::Keepalive).unwrap();
+        let back: Frame = read_msg(&mut buf.as_slice()).unwrap().unwrap();
+        assert_eq!(back, Frame::Keepalive);
+    }
+
     /// The daemon reports the root it resolved to, which is not the root that
     /// was asked for: /sdcard is a symlink chain on a real device.
     #[test]
@@ -471,6 +506,30 @@ mod tests {
         })
         .unwrap();
         assert_eq!(hello[0], 4);
+    }
+
+    /// Keepalive was appended, so the older frames keep their wire index.
+    #[test]
+    fn keepalive_does_not_renumber_existing_frames() {
+        assert_eq!(postcard::to_stdvec(&Frame::Pong).unwrap(), [0]);
+        let index = |f: &Frame| postcard::to_stdvec(f).unwrap()[0];
+        assert_eq!(index(&Frame::ScanStarted { root: Vec::new() }), 1);
+        assert_eq!(
+            index(&Frame::Dir {
+                path: Vec::new(),
+                entries: Vec::new()
+            }),
+            2
+        );
+        assert_eq!(index(&Frame::ScanDone(ScanStats::default())), 3);
+        assert_eq!(index(&Frame::Deleted { items: 0 }), 4);
+        assert_eq!(
+            index(&Frame::Error {
+                message: String::new()
+            }),
+            5
+        );
+        assert_eq!(postcard::to_stdvec(&Frame::Keepalive).unwrap(), [6]);
     }
 
     #[test]

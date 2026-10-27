@@ -20,7 +20,7 @@ use std::io::BufReader;
 use std::time::Instant;
 
 use socketsweep_lib::arena::{Arena, ROOT};
-use socketsweep_lib::session::{read_scan, ScanCancel, SCAN_CANCELLED, SCAN_CUT_OFF};
+use socketsweep_lib::session::{read_delete, read_scan, ScanCancel, SCAN_CANCELLED, SCAN_CUT_OFF};
 use socketsweep_protocol::{read_msg, write_msg, Entry, EntryKind, Frame, ScanStats};
 
 /// A scan reply as the daemon would write it.
@@ -120,6 +120,57 @@ fn a_cancelled_scan_stops_passing_frames_on() {
     assert_eq!(seen, 1, "frames already buffered are dropped");
 }
 
+/// A huge directory or a slow stretch of storage makes the daemon send
+/// keepalives; they only reset the read timeout and never reach the arena.
+#[test]
+fn keepalives_are_skipped() {
+    let (result, seen) = replay(&[
+        Frame::Keepalive,
+        started(),
+        Frame::Keepalive,
+        Frame::Keepalive,
+        dir(),
+        Frame::Keepalive,
+        done(),
+    ]);
+    assert_eq!(result, Ok(()));
+    assert_eq!(seen, [started(), dir(), done()]);
+}
+
+#[test]
+fn a_stream_of_only_keepalives_is_still_cut_off() {
+    let (result, seen) = replay(&[started(), Frame::Keepalive, Frame::Keepalive]);
+    assert_eq!(result, Err(SCAN_CUT_OFF.into()));
+    assert_eq!(seen, [started()]);
+}
+
+#[test]
+fn a_delete_reply_waits_through_keepalives() {
+    let bytes = stream(&[
+        Frame::Keepalive,
+        Frame::Keepalive,
+        Frame::Deleted { items: 12_345 },
+    ]);
+    assert_eq!(read_delete(&mut bytes.as_slice()), Ok(12_345));
+
+    let bytes = stream(&[
+        Frame::Keepalive,
+        Frame::Error {
+            message: "permission denied".into(),
+        },
+    ]);
+    assert_eq!(
+        read_delete(&mut bytes.as_slice()),
+        Err("permission denied".into())
+    );
+
+    let bytes = stream(&[Frame::Keepalive]);
+    assert!(
+        read_delete(&mut bytes.as_slice()).is_err(),
+        "keepalives alone are not an answer"
+    );
+}
+
 #[test]
 #[ignore = "needs a frame capture from a real device; set SOCKETSWEEP_FRAMES"]
 fn a_recorded_device_scan_builds_a_consistent_tree() {
@@ -153,6 +204,7 @@ fn a_recorded_device_scan_builds_a_consistent_tree() {
                 reported = Some(stats);
                 tree.as_mut().expect("tree").finish();
             }
+            Frame::Keepalive => {}
             other => panic!("unexpected frame in a scan stream: {other:?}"),
         }
     }

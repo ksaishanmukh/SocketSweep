@@ -63,8 +63,11 @@ const REQUIRED_ABI: &str = "arm64-v8a";
 /// keep this as a command of its own.
 const KILL_DAEMON: &str = "pkill -f '[s]ocketsweep-daemon'";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-/// A scan streams frames continuously, so this bounds the gap between frames
-/// rather than the whole scan.
+/// Bounds the gap between frames rather than a whole reply. The daemon sends a
+/// keepalive whenever it has been quiet for
+/// [`KEEPALIVE_INTERVAL`](socketsweep_protocol::KEEPALIVE_INTERVAL), through a
+/// huge directory or a long delete alike, so a gap this long means it has
+/// stopped, not that it is slow.
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 /// Per-attempt wait while the freshly started daemon binds its socket. Until it
 /// does, adb accepts the connection and then closes it, so a short wait is
@@ -374,6 +377,9 @@ impl Session {
 
     /// Ask the daemon to delete a path. The daemon re-validates it against the
     /// session root; this side does not police it.
+    ///
+    /// Waits as long as the delete takes, which for a large folder can be
+    /// minutes; see [`read_delete`].
     pub fn delete(&self, path: &[u8]) -> Result<u64, String> {
         let (mut reader, stream) = self.open(READ_TIMEOUT)?;
         send(
@@ -382,12 +388,7 @@ impl Session {
                 path: path.to_vec(),
             },
         )?;
-        match read_msg::<_, Frame>(&mut reader).map_err(|e| e.to_string())? {
-            Some(Frame::Deleted { items }) => Ok(items),
-            Some(Frame::Error { message }) => Err(message),
-            Some(other) => Err(format!("unexpected reply to delete: {other:?}")),
-            None => Err("daemon closed the connection without answering".into()),
-        }
+        read_delete(&mut reader)
     }
 
     /// Best-effort teardown. Every step is allowed to fail: the device may
@@ -407,8 +408,24 @@ fn send(stream: &TcpStream, request: &Request) -> Result<(), String> {
     writer.flush().map_err(|e| e.to_string())
 }
 
-/// Read a scan reply to its end, handing each frame other than `Error` to
-/// `on_frame`.
+/// Read a delete reply, returning how many entries went.
+///
+/// Keepalives are skipped, so the read timeout limits only how long the daemon
+/// may go silent, not how long the delete may take.
+pub fn read_delete<R: Read>(reader: &mut R) -> Result<u64, String> {
+    loop {
+        match read_msg::<_, Frame>(reader).map_err(|e| e.to_string())? {
+            Some(Frame::Keepalive) => {}
+            Some(Frame::Deleted { items }) => return Ok(items),
+            Some(Frame::Error { message }) => return Err(message),
+            Some(other) => return Err(format!("unexpected reply to delete: {other:?}")),
+            None => return Err("daemon closed the connection without answering".into()),
+        }
+    }
+}
+
+/// Read a scan reply to its end, handing each frame other than `Error` and
+/// `Keepalive` to `on_frame`.
 ///
 /// Succeeds only when the stream reaches `ScanDone` with no `Error` before it.
 /// An `Error` is held until `ScanDone` arrives and then returned, so a failed
@@ -431,6 +448,8 @@ where
             Some(Frame::Error { message }) => {
                 error.get_or_insert(message);
             }
+            // Only there to reset the read timeout.
+            Some(Frame::Keepalive) => {}
             Some(frame @ Frame::ScanDone(_)) => {
                 return match error {
                     Some(message) => Err(message),

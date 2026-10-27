@@ -14,11 +14,11 @@ use std::time::Duration;
 
 use socketsweep_protocol::{
     read_msg, token_from_hex, tokens_match, write_msg, Frame, ProtocolError, Request, ScanStats,
-    Token, PROTOCOL_VERSION, TOKEN_ENV, TOKEN_LEN,
+    Token, KEEPALIVE_INTERVAL, PROTOCOL_VERSION, TOKEN_ENV, TOKEN_LEN,
 };
 use socketsweep_scanner::{scan, ScanConfig, ScanError};
 
-use crate::guard;
+use crate::{guard, keepalive};
 
 /// How long a connection may sit without sending a request. The daemon serves
 /// one connection at a time, so a client that connects and goes quiet would
@@ -288,15 +288,7 @@ fn dispatch<W: Write>(request: Request, args: &Args, stream: &UnixStream, out: &
         Request::Delete { path } => {
             let requested = bytes_to_path(&path);
             match guard::resolve_under_root(&args.root, &requested) {
-                Ok(resolved) => {
-                    let frame = match guard::remove(&resolved) {
-                        Ok(items) => Frame::Deleted { items },
-                        Err(e) => Frame::Error {
-                            message: format!("failed to delete {}: {e}", resolved.display()),
-                        },
-                    };
-                    let _ = write_msg(out, &frame);
-                }
+                Ok(resolved) => run_delete(resolved, out),
                 Err(e) => {
                     eprintln!("[daemon] rejected delete: {e}");
                     let _ = write_msg(
@@ -305,11 +297,39 @@ fn dispatch<W: Write>(request: Request, args: &Args, stream: &UnixStream, out: &
                             message: e.to_string(),
                         },
                     );
+                    Control::Continue
                 }
             }
-            Control::Continue
         }
     }
+}
+
+/// Remove `target` and report how it went, sending [`Frame::Keepalive`] every
+/// [`KEEPALIVE_INTERVAL`] until it is done.
+///
+/// Counting and removing a large folder through FUSE can take minutes, and the
+/// host bounds how long it waits in silence, not how long it waits in all.
+fn run_delete<W: Write>(target: PathBuf, out: &mut W) -> Control {
+    let worker_target = target.clone();
+    let done = keepalive::run_with_keepalives(out, KEEPALIVE_INTERVAL, move || {
+        guard::remove(&worker_target)
+    });
+    let result = done.result.and_then(|removed| removed);
+
+    if let Err(e) = &result {
+        eprintln!("[daemon] delete of {} failed: {e}", target.display());
+    }
+    if !done.connected {
+        return Control::Close;
+    }
+    let frame = match result {
+        Ok(items) => Frame::Deleted { items },
+        Err(e) => Frame::Error {
+            message: format!("failed to delete {}: {e}", target.display()),
+        },
+    };
+    let _ = write_msg(out, &frame);
+    Control::Continue
 }
 
 /// End a scan reply that produced no result. Every scan reply ends in
@@ -322,9 +342,8 @@ fn scan_failed<W: Write>(out: &mut W, message: String) {
 
 fn run_scan<W: Write>(root: &Path, threads: usize, stream: &UnixStream, out: &mut W) -> Control {
     let cfg = ScanConfig {
-        root: root.to_path_buf(),
         threads,
-        max_depth: 64,
+        ..ScanConfig::new(root)
     };
 
     // `root` is canonicalised, so it is typically /storage/emulated/0 rather

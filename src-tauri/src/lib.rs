@@ -27,7 +27,7 @@
 //! `Arc` that a command clones out of its lock before using it, and only one of
 //! connect, scan or delete runs at a time (see [`Busy`]). `disconnect` and app
 //! exit are deliberately outside that rule: they cancel a running scan rather
-//! than wait for it.
+//! than wait for it to finish, and wait only, briefly, for it to let go.
 //!
 //! Where several locks are taken together the order is `busy`, `session`,
 //! `tree`.
@@ -38,7 +38,7 @@ pub mod history;
 pub mod session;
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -53,6 +53,11 @@ use session::{ScanCancel, Session};
 /// Rows per view response. Enough to fill any screen; the frontend virtualises
 /// and asks for more if it needs them.
 const DEFAULT_VIEW_LIMIT: usize = 500;
+
+/// How long ending a session waits for a cancelled scan to let go of the busy
+/// slot. Cancelling closes the scan's socket, so it normally lets go within
+/// milliseconds; the bound only stops a wedged scan holding up a disconnect.
+const SCAN_RELEASE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// How often the host pushes an updated view during a scan. 10Hz is fast enough
 /// that numbers look live and slow enough that React is not re-rendering on
@@ -116,6 +121,7 @@ struct BusyGuard<'a>(&'a AppState);
 impl Drop for BusyGuard<'_> {
     fn drop(&mut self) {
         *lock(&self.0.busy) = None;
+        self.0.idle.notify_all();
     }
 }
 
@@ -125,6 +131,8 @@ pub struct AppState {
     session: Mutex<Option<Arc<Session>>>,
     tree: Mutex<Option<Tree>>,
     busy: Mutex<Option<Busy>>,
+    /// Signalled whenever `busy` empties.
+    idle: Condvar,
     /// Bumped by every disconnect, so a connect that was already under way
     /// when the user disconnected does not install its session afterwards.
     disconnects: AtomicU64,
@@ -140,11 +148,31 @@ impl AppState {
         Ok(BusyGuard(self))
     }
 
-    /// Stop a running scan, if there is one.
-    fn cancel_scan(&self) {
-        if let Some(Busy::Scanning(cancel)) = lock(&self.busy).as_ref() {
-            cancel.cancel();
+    /// Stop a running scan, if there is one, returning its handle.
+    fn cancel_scan(&self) -> Option<Arc<ScanCancel>> {
+        match lock(&self.busy).as_ref() {
+            Some(Busy::Scanning(cancel)) => {
+                cancel.cancel();
+                Some(Arc::clone(cancel))
+            }
+            _ => None,
         }
+    }
+
+    /// Wait, for at most `timeout`, until the scan `cancel` belongs to has
+    /// released the busy slot.
+    ///
+    /// A cancelled scan still holds the slot until its thread unwinds, and a
+    /// connect issued straight after a disconnect would otherwise be refused
+    /// with "a scan is already running". The slot's lock is released while
+    /// waiting.
+    fn wait_for_scan_release(&self, cancel: &Arc<ScanCancel>, timeout: Duration) {
+        let busy = lock(&self.busy);
+        let _ = self.idle.wait_timeout_while(
+            busy,
+            timeout,
+            |busy| matches!(busy, Some(Busy::Scanning(running)) if Arc::ptr_eq(running, cancel)),
+        );
     }
 
     fn session(&self) -> CmdResult<Arc<Session>> {
@@ -158,7 +186,9 @@ impl AppState {
         self.disconnects.fetch_add(1, Ordering::SeqCst);
         // Before anything else: the daemon serves one connection at a time, so
         // the shutdown request below would otherwise queue behind the scan.
-        self.cancel_scan();
+        if let Some(cancel) = self.cancel_scan() {
+            self.wait_for_scan_release(&cancel, SCAN_RELEASE_TIMEOUT);
+        }
         let session = lock(&self.session).take();
         *lock(&self.tree) = None;
 
@@ -594,4 +624,48 @@ pub fn run() {
                 app.state::<AppState>().end_session();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A disconnect followed at once by a connect must not be refused because
+    /// the cancelled scan's thread has not unwound yet.
+    #[test]
+    fn a_cancelled_scan_is_waited_for_until_it_lets_go() {
+        let state = AppState::default();
+        let cancel = Arc::new(ScanCancel::default());
+        let scanning = state.claim(Busy::Scanning(cancel.clone())).unwrap();
+
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                let _scanning = scanning;
+                while !cancel.is_cancelled() {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                // Unwinding takes a moment after the cancel lands.
+                std::thread::sleep(Duration::from_millis(50));
+            });
+
+            let cancelled = state.cancel_scan().expect("a scan is running");
+            state.wait_for_scan_release(&cancelled, Duration::from_secs(60));
+            assert!(state.claim(Busy::Connecting).is_ok());
+        });
+    }
+
+    #[test]
+    fn a_scan_that_never_lets_go_does_not_hold_up_the_wait_forever() {
+        let state = AppState::default();
+        let _scanning = state
+            .claim(Busy::Scanning(Arc::new(ScanCancel::default())))
+            .unwrap();
+
+        let cancelled = state.cancel_scan().expect("a scan is running");
+        state.wait_for_scan_release(&cancelled, Duration::from_millis(20));
+        assert_eq!(
+            state.claim(Busy::Connecting).err().as_deref(),
+            Some("a scan is already running")
+        );
+    }
 }

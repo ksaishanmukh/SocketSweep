@@ -21,10 +21,12 @@
 //! `SOCKETSWEEP_TOKEN` and serves only connections that present it in their
 //! opening `Hello`; see the protocol crate's handshake section.
 
-// Compiled on every host so its tests run during ordinary development, though
-// its only caller, `serve`, is Linux-family only.
+// Compiled on every host so their tests run during ordinary development, though
+// their only caller, `serve`, is Linux-family only.
 #[cfg_attr(not(any(target_os = "linux", target_os = "android")), allow(dead_code))]
 mod guard;
+#[cfg_attr(not(any(target_os = "linux", target_os = "android")), allow(dead_code))]
+mod keepalive;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod serve;
