@@ -1,17 +1,10 @@
-import { useCallback, useRef, useState } from "react";
-import {
-  commands,
-  errorMessage,
-  type Crumb,
-  type NodeRef,
-  type TreemapNode,
-  type View,
-} from "../api";
-import { sameNode } from "../lib/size";
 import type { SessionDeps } from "./types";
+import { useFocus, useLoadTreemap } from "./useFocusAndTreemap";
+import { useNavigationState } from "./useNavigationState";
+import { useOpenFolder } from "./useOpenFolder";
+import { useRefreshFolder } from "./useRefreshFolder";
 
-/** How many more rows "Load more" asks the host for each time. */
-export const VIEW_PAGE_SIZE = 500;
+export { VIEW_PAGE_SIZE } from "./useRefreshFolder";
 
 /**
  * Which folder is open, and everything that hangs off it: its rows, the path
@@ -23,183 +16,21 @@ export const VIEW_PAGE_SIZE = 500;
  * session they began under (a rescan or reconnect replaces the tree) and by a
  * navigation counter (the slower of two quick clicks must not win).
  */
-export function useNavigation({ sessionRef, metricRef, log, fail }: SessionDeps) {
-  const [view, setView] = useState<View | null>(null);
-  const [crumbs, setCrumbs] = useState<Crumb[]>([]);
-  const [treemap, setTreemap] = useState<TreemapNode | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-
-  /** Mirrors `view` for async code that must not read a stale closure. */
-  const viewRef = useRef<View | null>(null);
-  const navSeq = useRef(0);
-
-  const put = useCallback((next: View | null) => {
-    viewRef.current = next;
-    setView(next);
-  }, []);
-
-  const clear = useCallback(() => {
-    navSeq.current += 1;
-    put(null);
-    setCrumbs([]);
-    setTreemap(null);
-    setLoadingMore(false);
-  }, [put]);
-
-  /**
-   * Tells the host which folder the user is looking at, and how: the live
-   * views it pushes while the scan runs use the size and row count given here
-   * (`getView` does not change them), so ask again whenever either changes.
-   * Failure only costs speed.
-   */
-  const focus = useCallback(
-    (node: NodeRef, limit?: number) => {
-      commands
-        .focus(node, limit, metricRef.current)
-        .catch((err) => log(`[FOCUS] ${errorMessage(err)}`));
-    },
-    [log, metricRef],
-  );
-
-  const loadTreemap = useCallback(
-    async (node: NodeRef, seq: number) => {
-      const session = sessionRef.current;
-      const current = () => seq === navSeq.current && session === sessionRef.current;
-      try {
-        const next = await commands.getTreemap(node, 2, metricRef.current);
-        if (current() && next.node.session === session) setTreemap(next);
-      } catch {
-        // A missing treemap is not worth interrupting the user over.
-        if (current()) setTreemap(null);
-      }
-    },
-    [metricRef, sessionRef],
-  );
-
-  /**
-   * Opens a folder. Resolves false only when the host could not show it; a
-   * navigation overtaken by a newer one counts as fine, since the newer one
-   * reports for itself.
-   */
-  const open = useCallback(
-    async (node: NodeRef): Promise<boolean> => {
-      const session = sessionRef.current;
-      // A node from another session names nothing in this tree.
-      if (session === null || node.session !== session) return false;
-      const seq = ++navSeq.current;
-      focus(node);
-      try {
-        const [nextView, nextCrumbs] = await Promise.all([
-          commands.getView(node, undefined, metricRef.current),
-          commands.getBreadcrumbs(node),
-        ]);
-        if (session !== sessionRef.current || nextView.node.session !== session) return false;
-        if (seq !== navSeq.current) return true;
-        put(nextView);
-        setCrumbs(nextCrumbs);
-        void loadTreemap(node, seq);
-        return true;
-      } catch (err) {
-        if (session === sessionRef.current && seq === navSeq.current) fail(err);
-        return false;
-      }
-    },
-    [fail, focus, loadTreemap, metricRef, put, sessionRef],
-  );
-
-  /** Shows a view the host already returned (after a delete), then fills in what hangs off it. */
-  const showView = useCallback(
-    (next: View) => {
-      const session = sessionRef.current;
-      if (session === null || next.node.session !== session) return;
-      const seq = ++navSeq.current;
-      put(next);
-      commands
-        .getBreadcrumbs(next.node)
-        .then((c) => {
-          if (seq === navSeq.current && session === sessionRef.current) setCrumbs(c);
-        })
-        .catch((err) => log(`[ERROR] ${errorMessage(err)}`));
-      void loadTreemap(next.node, seq);
-    },
-    [loadTreemap, log, put, sessionRef],
-  );
-
-  /**
-   * A refreshed copy of the folder on screen, pushed by the host while the
-   * scan runs. Only the open folder is taken; one for a folder the user has
-   * since left, or from another session, is dropped.
-   */
-  const applyLiveView = useCallback(
-    (next: View) => {
-      if (next.node.session !== sessionRef.current) return;
-      if (!sameNode(next.node, viewRef.current?.node)) return;
-      put(next);
-    },
-    [put, sessionRef],
-  );
-
-  /** Re-reads the open folder in place, e.g. after the size toggle changes the sort. */
-  const reload = useCallback(async () => {
-    const current = viewRef.current;
-    const session = sessionRef.current;
-    if (!current || session === null) return;
-    const seq = navSeq.current;
-    const limit = current.rows.length || undefined;
-    focus(current.node, limit);
-    try {
-      const next = await commands.getView(current.node, limit, metricRef.current);
-      if (session !== sessionRef.current || seq !== navSeq.current) return;
-      if (next.node.session !== session) return;
-      put(next);
-    } catch (err) {
-      if (session === sessionRef.current) log(`[ERROR] ${errorMessage(err)}`);
-    }
-    void loadTreemap(current.node, seq);
-  }, [focus, loadTreemap, log, metricRef, put, sessionRef]);
-
-  /** Re-reads only the treemap, whose tiles grow as the scan measures. */
-  const refreshTreemap = useCallback(() => {
-    const current = viewRef.current;
-    if (current) void loadTreemap(current.node, navSeq.current);
-  }, [loadTreemap]);
-
-  /** Fetches the next page of a folder that has more rows than were loaded. */
-  const loadMore = useCallback(async () => {
-    const current = viewRef.current;
-    const session = sessionRef.current;
-    if (!current || session === null || current.hidden <= 0) return;
-    const seq = navSeq.current;
-    const limit = current.rows.length + VIEW_PAGE_SIZE;
-    setLoadingMore(true);
-    focus(current.node, limit);
-    try {
-      const next = await commands.getView(current.node, limit, metricRef.current);
-      // If the user went elsewhere meanwhile, these rows belong to a folder
-      // that is no longer open.
-      if (seq === navSeq.current && session === sessionRef.current) put(next);
-    } catch (err) {
-      if (session === sessionRef.current) fail(err);
-    } finally {
-      if (session === sessionRef.current) setLoadingMore(false);
-    }
-  }, [fail, focus, metricRef, put, sessionRef]);
-
-  /** The latest view, for callers that must not wait for a render. */
-  const currentView = useCallback(() => viewRef.current, []);
+export function useNavigation(deps: SessionDeps) {
+  const state = useNavigationState();
+  const focus = useFocus(deps);
+  const loadTreemap = useLoadTreemap(deps, state);
+  const opening = useOpenFolder({ ...deps, state, focus, loadTreemap });
+  const refreshing = useRefreshFolder({ ...deps, state, focus, loadTreemap });
 
   return {
-    view,
-    crumbs,
-    treemap,
-    loadingMore,
-    open,
-    showView,
-    applyLiveView,
-    reload,
-    refreshTreemap,
-    loadMore,
-    currentView,
-    clear,
+    view: state.view,
+    crumbs: state.crumbs,
+    treemap: state.treemap,
+    loadingMore: state.loadingMore,
+    ...opening,
+    ...refreshing,
+    currentView: state.currentView,
+    clear: state.clear,
   };
 }

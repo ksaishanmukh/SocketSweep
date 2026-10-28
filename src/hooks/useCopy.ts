@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import {
   commands,
   errorCode,
   errorMessage,
   events,
   type CopyProgress,
+  type CopyResult,
   type NodeRef,
   type Row,
 } from "../api";
@@ -38,15 +47,7 @@ export function useCopy({
   /** The node being copied, for matching `copy-progress` without a stale closure. */
   const copying = useRef<NodeRef | null>(null);
 
-  useEffect(() => {
-    const pending = events.copyProgress((p) => {
-      if (!sameNode(p.node, copying.current)) return;
-      setCopy((c) => (c ? { ...c, progress: p } : c));
-    });
-    return () => {
-      pending.then((off) => off());
-    };
-  }, []);
+  useCopyProgress(copying, setCopy);
 
   /** Forgets a copy whose session is gone (the host stops it with the connection). */
   const reset = useCallback(() => {
@@ -70,15 +71,7 @@ export function useCopy({
       log(`[COPY] ${row.name}…`);
       try {
         const done = await commands.copyToDesktop(row.node);
-        const notes: string[] = [];
-        if (done.skipped > 0) notes.push(`${formatNumber(done.skipped)} links not copied`);
-        if (done.renamed > 0) notes.push(`${formatNumber(done.renamed)} renamed`);
-        notify(
-          `Copied ${row.name} to ${done.destination}: ${formatNumber(done.files)} ${
-            done.files === 1 ? "file" : "files"
-          }, ${formatBytes(done.bytes)}${notes.length ? ` (${notes.join(", ")})` : ""}`,
-          "success",
-        );
+        notify(copiedMessage(row.name, done), "success");
         log(`[COPY] ${formatNumber(done.files)} files to ${done.destination}.`);
       } catch (err) {
         if (errorCode(err) === "cancelled") {
@@ -101,4 +94,29 @@ export function useCopy({
   }, [log]);
 
   return { copy, start, cancel, reset };
+}
+
+/** Feeds the host's `copy-progress` events into the copy in flight. */
+function useCopyProgress(
+  copying: MutableRefObject<NodeRef | null>,
+  setCopy: Dispatch<SetStateAction<CopyState | null>>,
+) {
+  useEffect(() => {
+    const pending = events.copyProgress((p) => {
+      if (!sameNode(p.node, copying.current)) return;
+      setCopy((c) => (c ? { ...c, progress: p } : c));
+    });
+    return () => {
+      pending.then((off) => off());
+    };
+  }, [copying, setCopy]);
+}
+
+function copiedMessage(name: string, done: CopyResult): string {
+  const notes: string[] = [];
+  if (done.skipped > 0) notes.push(`${formatNumber(done.skipped)} links not copied`);
+  if (done.renamed > 0) notes.push(`${formatNumber(done.renamed)} renamed`);
+  return `Copied ${name} to ${done.destination}: ${formatNumber(done.files)} ${
+    done.files === 1 ? "file" : "files"
+  }, ${formatBytes(done.bytes)}${notes.length ? ` (${notes.join(", ")})` : ""}`;
 }
