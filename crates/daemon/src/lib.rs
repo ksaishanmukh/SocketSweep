@@ -1,23 +1,13 @@
-//! The SocketSweep phone daemon (`docs/architecture.md`, sections 2 and 3).
+//! The SocketSweep phone daemon.
 //!
 //! Pushed to `/data/local/tmp` and started over adb with the session token in
-//! `SOCKETSWEEP_TOKEN`; it listens on an abstract unix socket and speaks wire
-//! protocol v4 to the desktop host.
+//! `SOCKETSWEEP_TOKEN`; it listens on an abstract unix socket and speaks the
+//! wire protocol to the desktop host.
 //!
-//! # Modules
-//!
-//! | Module | Portable | Role |
-//! |---|---|---|
-//! | [`session`] | yes | Handshake, reader, request routing; one connection |
-//! | [`outbox`] | yes | The writer thread: control queue before bulk queue, batching, heartbeat, dead-peer check; the engine's [`EventSink`](socketsweep_engine::EventSink) |
-//! | [`actions`] | yes | The symlink-safe guard, delete with totals, copy manifest walk |
-//! | `fs_rustix` | Linux/Android | The real [`Fs`](socketsweep_engine::Fs): `openat`, `getdents64`, `statat` |
-//! | `listener` | Linux/Android | Abstract socket; an authenticated new connection replaces the old one |
-//!
-//! The scan itself (`sched`, `aggregate`, `pool`) is `socketsweep-engine`.
-//! Everything portable runs on any host over `std::fs` ([`StdFs`](socketsweep_engine::StdFs)
-//! and [`LocalActions`](actions::LocalActions)) or, in `socketsweep-sim`, over
-//! an in-memory `SimFs` as `FakeDaemon`.
+//! Everything except the rustix file system and the socket listener is
+//! portable: it runs on any host over `std::fs`
+//! ([`StdFs`](socketsweep_engine::StdFs) and
+//! [`LocalActions`](actions::LocalActions)) or over an in-memory file system.
 //!
 //! # Why an abstract socket and a token
 //!

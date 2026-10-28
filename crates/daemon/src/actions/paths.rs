@@ -2,8 +2,6 @@
 
 use std::path::{Path, PathBuf};
 
-// ── Paths as bytes ──────────────────────────────────────────────────────────
-
 #[cfg(unix)]
 pub fn bytes_to_path(p: &[u8]) -> PathBuf {
     use std::os::unix::ffi::OsStrExt;

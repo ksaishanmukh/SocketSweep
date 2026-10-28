@@ -1,4 +1,4 @@
-//! `session`: one authenticated connection, from `Hello` to close.
+//! One authenticated connection, from `Hello` to close.
 //!
 //! Portable: it sees the connection only as a reader, a writer and a way to
 //! shut it down ([`Conn`]), and the phone only through the engine's [`Fs`] and
@@ -31,13 +31,6 @@
 //! Requests need a non-zero id not already in use (`BadRequest`,
 //! `DuplicateId`). When the connection ends, for any reason, everything it
 //! started is cancelled and waited for.
-
-//!
-//! # Layout
-//!
-//! `handshake` checks and answers the `Hello`; `serve` runs the reader and
-//! the writer and tears the session down; `dispatch` routes each request;
-//! `jobs` runs scans, deletes and copy manifests on their own threads.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};

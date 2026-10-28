@@ -1,4 +1,4 @@
-//! `socketsweep-daemon`: the phone binary. See the library docs.
+//! `socketsweep-daemon`: the phone binary.
 //!
 //! ```text
 //! SOCKETSWEEP_TOKEN=<64 hex digits> socketsweep-daemon --socket <abstract-name> [--root <path>] [--threads <n>]

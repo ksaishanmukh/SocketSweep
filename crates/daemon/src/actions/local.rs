@@ -9,8 +9,6 @@ use super::{
     bytes_to_path, delete_tree, guard, manifest_tree, path_to_bytes, ActionError, Actions,
 };
 
-// ── The real implementation ─────────────────────────────────────────────────
-
 /// [`Actions`] over `std::fs`, confined to `root` (the daemon's `--root`).
 #[derive(Debug, Clone)]
 pub struct LocalActions {

@@ -14,8 +14,6 @@ use super::guard;
 use super::metadata::{account, kind_of};
 use super::ActionError;
 
-// ── Delete ──────────────────────────────────────────────────────────────────
-
 struct DeleteCtx<'a> {
     cancel: &'a AtomicBool,
     progress: &'a mut dyn FnMut(u64),

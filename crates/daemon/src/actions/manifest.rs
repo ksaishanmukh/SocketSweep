@@ -10,8 +10,6 @@ use super::metadata::{kind_of, mode_of, mtime_of};
 use super::paths::name_bytes;
 use super::ActionError;
 
-// ── Copy manifest ───────────────────────────────────────────────────────────
-
 fn copy_item(rel: Vec<u8>, m: &Metadata) -> CopyItem {
     let kind = kind_of(m);
     CopyItem {

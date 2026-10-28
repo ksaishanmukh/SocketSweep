@@ -4,7 +4,8 @@
 //!   `CopyManifest`, `DeleteProgress`). Every round sends all of it before any
 //!   bulk, so a reply never waits behind a scan's backlog.
 //! - **Bulk queue:** scan events, each encoded the moment it is queued (under
-//!   the engine's scheduler lock, which is what gives G1–G3), so the queue is
+//!   the engine's scheduler lock, which preserves the order of state
+//!   changes), so the queue is
 //!   accounted in bytes. Above [`OutboxConfig::high_water`] it reports itself
 //!   [`congested`](Outbox::congested) and the engine's workers stop taking
 //!   tasks until the writer has drained it below
@@ -23,9 +24,6 @@
 //! them again: postcard encodes `ServerFrame { id, msg: Scan(events) }` as
 //! `varint(id) varint(Scan's index) varint(events.len())` followed by each
 //! event's own encoding. A test pins this against `encode_frame`.
-
-//!
-//! The writer thread is in `writer`; the batch frame encoding in `frame`.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -184,7 +182,7 @@ impl Outbox {
         lock(&self.state).bulk_bytes
     }
 
-    /// Note that a frame arrived from the host.
+    /// Record that a frame arrived from the host.
     pub fn touch_rx(&self) {
         *lock(&self.last_rx) = Instant::now();
     }
