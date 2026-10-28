@@ -82,7 +82,8 @@ impl Tree {
                 (_, _, None) => Measure::Unknown,
             };
             let own = entry.stat.as_ref().map(size_of).unwrap_or_default();
-            let id = self.push_node(parent, entry, own, measure);
+            let mtime = entry.stat.map_or(0, |s| s.mtime);
+            let id = self.push_node(parent, entry, (own, mtime), measure);
             if let Some(child_dir) = entry.id {
                 self.introduce(child_dir, id, DirState::Introduced)?;
                 self.nodes[id as usize].dir = child_dir;
@@ -95,12 +96,19 @@ impl Tree {
             }
             delta.apparent += own.apparent;
             delta.disk += own.disk;
+            delta.newest_mtime = delta.newest_mtime.max(mtime);
             added.push(id);
         }
         Ok((delta, added, opened))
     }
 
-    fn push_node(&mut self, parent: NodeId, entry: &Entry, own: Size, measure: Measure) -> NodeId {
+    fn push_node(
+        &mut self,
+        parent: NodeId,
+        entry: &Entry,
+        (own, mtime): (Size, i64),
+        measure: Measure,
+    ) -> NodeId {
         let id = self.nodes.len() as NodeId;
         self.nodes.push(Node {
             name: entry.name.clone().into_boxed_slice(),
@@ -111,6 +119,7 @@ impl Tree {
             kind: entry.kind,
             dir: NONE,
             own,
+            mtime,
             sub: Totals::default(),
             measure,
             stat_known: entry.stat.is_some(),
@@ -176,8 +185,10 @@ impl Tree {
             match stat {
                 Some(stat) => {
                     n.own = size_of(stat);
+                    n.mtime = stat.mtime;
                     delta.apparent += n.own.apparent;
                     delta.disk += n.own.disk;
+                    delta.newest_mtime = delta.newest_mtime.max(stat.mtime);
                 }
                 None => {
                     n.stat_failed = true;

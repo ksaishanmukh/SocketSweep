@@ -125,7 +125,7 @@ fn golden_trace() {
     let h = trace_hash(&events);
     assert_eq!(
         h,
-        0xb36c_29fc_bbd3_18a6,
+        0xf048_30d2_0322_7cce,
         "golden trace hash is {h:#018x} ({} events)",
         events.len()
     );

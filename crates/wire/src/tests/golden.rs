@@ -21,7 +21,7 @@ fn golden_hello() {
         [0x11; 16],
         Caps::DISK_USAGE | Caps::COPY_MANIFEST,
     );
-    let mut expected = vec![b'S', b'S', b'W', b'P', 4];
+    let mut expected = vec![b'S', b'S', b'W', b'P', 5];
     expected.extend([0xA5; TOKEN_LEN]);
     expected.extend([0x11; 16]);
     expected.push(9);
@@ -35,14 +35,14 @@ fn golden_hello() {
 
 #[test]
 fn golden_hello_replies() {
-    let mut expected = vec![0, 4];
+    let mut expected = vec![0, 5];
     expected.extend([0x11; 16]);
     expected.extend([9, 1, b'v', 8]);
     // Limits: 16 MiB, 4096, 65536, 64, 16, as varints.
     expected.extend([0x80, 0x80, 0x80, 0x08, 0x80, 0x20, 0x80, 0x80, 0x04, 64, 16]);
     golden(&HelloReply::Welcome(welcome()), &expected);
     golden(&HelloReply::Refused, &[1]);
-    golden(&HelloReply::WrongVersion { version: 5 }, &[2, 5]);
+    golden(&HelloReply::WrongVersion { version: 6 }, &[2, 6]);
 }
 
 /// The two `StartScan` frames: default options, and a changed worker count
@@ -132,7 +132,8 @@ fn golden_client_frames() {
 
 #[test]
 fn golden_server_frames() {
-    const TOTALS: [u8; 6] = [1, 2, 3, 4, 5, 1];
+    // newest_mtime 100 zigzags to 200: a two-byte varint.
+    const TOTALS: [u8; 8] = [1, 2, 3, 4, 5, 1, 0xC8, 0x01];
     let mut deleted = vec![4, 11];
     deleted.extend(TOTALS);
     let frames: Vec<(ServerMsg, Vec<u8>)> = vec![
@@ -184,7 +185,8 @@ fn golden_server_frames() {
 
 #[test]
 fn golden_scan_events() {
-    const TOTALS: [u8; 6] = [1, 2, 3, 4, 5, 1];
+    // newest_mtime 100 zigzags to 200: a two-byte varint.
+    const TOTALS: [u8; 8] = [1, 2, 3, 4, 5, 1, 0xC8, 0x01];
     // apparent 5, blocks 8, mtime -1 (zigzag 1).
     const STAT: [u8; 3] = [5, 8, 1];
 

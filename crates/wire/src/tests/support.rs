@@ -21,6 +21,7 @@ pub(super) fn totals() -> Totals {
         dirs: 4,
         errors: 5,
         flags: Totals::UNREADABLE,
+        newest_mtime: 100,
     }
 }
 

@@ -18,6 +18,9 @@ pub(super) struct Node {
     pub(super) dir: DirId,
     /// This entry's own `lstat` sizes.
     pub(super) own: Size,
+    /// This entry's own `st_mtime`; 0 until its `lstat` arrives (or if it
+    /// failed).
+    pub(super) mtime: i64,
     /// Strictly below; zero for anything but a directory.
     pub(super) sub: Totals,
     pub(super) measure: Measure,
@@ -41,9 +44,17 @@ impl Node {
         }
     }
 
+    /// The newest `st_mtime` of this entry and, for a directory, everything
+    /// below it; 0 when none is known. A high-water mark, like the wire
+    /// [`Totals::newest_mtime`]: deletes never lower it.
+    pub(super) fn newest_mtime(&self) -> i64 {
+        self.mtime.max(self.sub.newest_mtime)
+    }
+
     /// Everything this node contributes to its parent's sub totals.
     pub(super) fn contribution(&self) -> Totals {
         let mut t = self.sub;
+        t.newest_mtime = self.newest_mtime();
         t.apparent = t.apparent.saturating_add(self.own.apparent);
         t.disk = t.disk.saturating_add(self.own.disk);
         if self.is_dir() {

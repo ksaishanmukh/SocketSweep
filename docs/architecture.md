@@ -28,7 +28,7 @@ Every contract has a **fake** implementation, so each side can be tested alone.
 | ---------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------- |
 | GUI ↔ host       | `crates/gui-contract`: command and event types                 | `tauri-specta` generates `src/bindings.ts`; CI fails if it is stale. React code imports only `src/api/` | `src/api` mock in vitest           |
 | host ↔ transport | `crates/transport`: `trait Transport`, `trait Duplex`          | Rust trait; host-core depends on the trait only                                                         | `FakeTransport` (in-memory device) |
-| host ↔ phone     | `crates/wire`: protocol v4                                     | One crate for both ends; golden byte tests; the version must match exactly                              | `FakeDaemon` (in `crates/sim`)     |
+| host ↔ phone     | `crates/wire`: protocol v5                                     | One crate for both ends; golden byte tests; the version must match exactly                              | `FakeDaemon` (in `crates/sim`)     |
 | daemon internals | `trait Fs`, `trait EventSink`; `sched` is a pure state machine | Rust traits                                                                                             | `SimFs`, a recording sink          |
 
 ### Workspace layout
@@ -51,7 +51,7 @@ The daemon is built for `aarch64-linux-android` (phones) and
 `x86_64-linux-android` (emulator, for end-to-end tests), at API 30 (Android 11)
 and above. One phone at a time, but every contract carries a session id.
 
-## 2. Wire protocol v4 (host ↔ phone)
+## 2. Wire protocol v5 (host ↔ phone)
 
 ### Framing
 
@@ -65,7 +65,7 @@ are **frozen forever**, so any future daemon can read the version with
 `postcard::take_from_bytes`.
 
 ```rust
-pub const PROTOCOL_VERSION: u16 = 4;
+pub const PROTOCOL_VERSION: u16 = 5;
 pub type ReqId = u32;      // chosen by the host, never 0; 0 = session-level
 pub type DirId = u32;      // assigned by the daemon per scan, dense, root = 0
 pub type SessionId = [u8; 16];
@@ -129,9 +129,11 @@ pub enum ScanEvent {
 pub struct Entry  { name: Vec<u8>, kind: Kind, stat: Option<Stat>, id: Option<DirId> }
 pub enum   Kind   { File, Dir, Symlink, Other }
 pub struct Stat   { apparent: u64, blocks: u64, mtime: i64 }   // disk usage = blocks * 512
-pub struct Totals { apparent: u64, disk: u64, files: u32, dirs: u32, errors: u32, flags: u8 }
+pub struct Totals { apparent: u64, disk: u64, files: u32, dirs: u32, errors: u32, flags: u8,
+                     newest_mtime: i64 }
 ```
 
+- `Totals.newest_mtime` is the maximum `Stat.mtime` (Unix seconds) over every entry counted below the directory, subdirectories' own entries included (a directory's mtime moves when something directly inside it is added or removed). It merges up with `max`, entries whose stat failed contribute nothing, and 0 means no mtime is known. It is a high-water mark: a prune or delete never lowers it, because the survivors would have to be revisited to find the next-newest.
 - `Entry.id` is `Some` exactly when the entry is a directory that will be walked.
 - `Entry.stat` is `None` in a skeleton listing. The stats arrive later in a
   `Stats` event, which refers to entries by their position in the listing.

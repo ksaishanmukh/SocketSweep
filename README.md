@@ -83,7 +83,7 @@ React GUI ──► src-tauri (thin shell) ──► host-core ──► transpo
 |---|---|---|
 | GUI and host | `crates/gui-contract`: command and event types, with generated TypeScript bindings | `src/api` mock in vitest |
 | Host and transport | `crates/transport`: the `Transport` and `Duplex` traits | `FakeTransport` |
-| Host and phone | `crates/wire`: protocol v4, checked by golden byte tests | `FakeDaemon` (in `crates/sim`) |
+| Host and phone | `crates/wire`: protocol v5, checked by golden byte tests | `FakeDaemon` (in `crates/sim`) |
 | Daemon internals | The `Fs` and `EventSink` traits; the scheduler is a pure state machine | `SimFs`, a recording sink |
 
 ### Workspace layout (target)

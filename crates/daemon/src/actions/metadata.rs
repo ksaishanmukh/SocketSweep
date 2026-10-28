@@ -59,7 +59,8 @@ pub(super) fn mtime_of(m: &Metadata) -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// Add one removed (or listed) entry to `t`, as the engine counts it.
+/// Add one removed (or listed) entry to `t`, as the engine counts it
+/// (`newest_mtime` included, so a delete reports what it took away).
 pub(super) fn account(t: &mut Totals, m: &Metadata) {
     if kind_of(m) == Kind::Dir {
         t.dirs = t.dirs.saturating_add(1);
@@ -70,4 +71,5 @@ pub(super) fn account(t: &mut Totals, m: &Metadata) {
     t.disk = t
         .disk
         .saturating_add(blocks_of(m).saturating_mul(BLOCK_SIZE));
+    t.newest_mtime = t.newest_mtime.max(mtime_of(m));
 }
