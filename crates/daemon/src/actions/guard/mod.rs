@@ -97,7 +97,7 @@ fn canonical_root(root: &Path) -> Result<PathBuf, GuardError> {
 /// a plain string prefix test would let `/sdcard/Downloads` pass a
 /// `/sdcard/Down` root.
 ///
-/// Pair with [`remove`], which deletes the returned path without following it.
+/// Pair with [`delete_tree`](super::delete_tree), which deletes the returned path without following it.
 ///
 /// # Known limitation
 ///

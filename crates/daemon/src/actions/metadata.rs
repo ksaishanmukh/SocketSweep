@@ -5,8 +5,6 @@ use std::fs::Metadata;
 
 use socketsweep_wire::{Kind, Totals, BLOCK_SIZE};
 
-// ── Metadata ────────────────────────────────────────────────────────────────
-
 pub(super) fn kind_of(m: &Metadata) -> Kind {
     let t = m.file_type();
     if t.is_symlink() {

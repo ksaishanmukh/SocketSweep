@@ -1,4 +1,4 @@
-//! `listener`: the abstract unix socket. Linux/Android only.
+//! The abstract unix socket. Linux/Android only.
 //!
 //! Each connection is handshaken on a thread of its own, so one that connects
 //! and says nothing cannot lock the host out. An **authenticated** new

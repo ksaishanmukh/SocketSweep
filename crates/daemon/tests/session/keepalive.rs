@@ -60,7 +60,6 @@ fn a_lost_connection_cancels_a_running_scan() {
         root: root_bytes(&root),
         opts: ScanOpts::default(),
     });
-    // The scan has started.
     loop {
         let f = host.recv();
         if f.id == id {

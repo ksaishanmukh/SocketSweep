@@ -1,5 +1,4 @@
-//! `fswalk`: the engine's [`Fs`] on the phone, with rustix. Linux/Android
-//! only.
+//! The engine's [`Fs`] on the phone, with rustix. Linux/Android only.
 //!
 //! - Every directory is opened `openat(O_RDONLY | O_DIRECTORY | O_NOFOLLOW |
 //!   O_CLOEXEC)`, so a directory swapped for a symbolic link is refused

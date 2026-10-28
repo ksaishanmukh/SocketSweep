@@ -227,7 +227,7 @@ fn introduce_children(
     }
 }
 
-/// G1–G3 as the host sees them, plus exactly-once listing and completion.
+/// The ordering guarantees as the host sees them, plus exactly-once listing and completion.
 pub fn check_stream(events: &[ScanEvent]) -> HashMap<DirId, Vec<u8>> {
     let mut names: HashMap<DirId, Vec<u8>> = HashMap::new();
     let mut parent: HashMap<DirId, DirId> = HashMap::new();

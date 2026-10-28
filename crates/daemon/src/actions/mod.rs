@@ -1,10 +1,9 @@
-//! `actions`: everything that touches files by path rather than by scan —
-//! resolving request paths through the guard, delete, and the copy manifest.
+//! Everything that touches files by path rather than by scan: resolving
+//! request paths through the guard, delete, and the copy manifest.
 //!
 //! [`Actions`] is the contract the session uses. [`LocalActions`] is the real
 //! one, over `std::fs` and confined to the daemon's `--root`; it is portable,
-//! so the session's tests run it on any host. `socketsweep-sim` implements it
-//! over `SimFs` for `FakeDaemon`.
+//! so the session's tests run it on any host.
 //!
 //! # Safety rules (all enforced in [`guard`] and [`delete_tree`])
 //!
@@ -15,13 +14,6 @@
 //!   copy may also name the root itself); the root is never deleted.
 //! - Within a deleted directory, entries are judged by `lstat`, so a link to a
 //!   directory is unlinked, not descended into.
-
-//!
-//! # Layout
-//!
-//! `error` holds [`ActionError`]; `paths` and `metadata` convert paths and
-//! file metadata; `delete` and `manifest` walk a tree; `local` is
-//! [`LocalActions`].
 
 pub mod guard;
 
