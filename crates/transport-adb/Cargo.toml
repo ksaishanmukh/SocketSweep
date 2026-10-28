@@ -7,3 +7,6 @@ repository.workspace = true
 
 [dependencies]
 socketsweep-transport = { workspace = true }
+
+[lints.clippy]
+too_many_lines = "warn"
