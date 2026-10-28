@@ -1,5 +1,5 @@
-import { useCallback } from "react";
-import { commands, errorCode, type Row, type Totals } from "../api";
+import { useCallback, type MutableRefObject } from "react";
+import { commands, errorCode, type Row, type SizeMetric, type Totals, type View } from "../api";
 import { formatNumber } from "../lib/format";
 import { isWithin, joinPath } from "../lib/path";
 import { sameNode } from "../lib/size";
@@ -55,25 +55,11 @@ export function useDelete({
         // The host caps the returned view at one page. If the same folder had
         // more rows loaded, fetch them again so the list does not collapse.
         const wanted = before && sameNode(before.node, result.view.node) ? before.rows.length : 0;
-        if (wanted > result.view.rows.length && result.view.hidden > 0) {
-          try {
-            // The live views follow the last `focus`, not `getView`.
-            void commands.focus(result.view.node, wanted, metricRef.current).catch(() => {});
-            const full = await commands.getView(result.view.node, wanted, metricRef.current);
-            if (session === sessionRef.current) nav.applyLiveView(full);
-          } catch {
-            // The capped view is already showing; "Load more" still works.
-          }
-        }
+        await refetchLoadedRows({ view: result.view, wanted, session, sessionRef, metricRef, nav });
         // A deleted node may still be sitting in the results list, along with
         // anything that lived inside it.
         const deletedPath = path ?? joinPath(row.parent ?? before?.path ?? "", row.name);
-        const folder = row.kind === "dir" ? deletedPath : null;
-        search.dropHits(
-          (hit) =>
-            sameNode(hit.node, row.node) ||
-            (folder !== null && hit.parent !== null && isWithin(hit.parent, folder)),
-        );
+        search.dropHits(isInsideDeleted(row, deletedPath));
         search.rerun();
         void analyses.refresh();
         notify(`Deleted ${row.name}`, "success");
@@ -92,4 +78,37 @@ export function useDelete({
     },
     [analyses, fail, log, metricRef, nav, notify, search, sessionRef, setTotals],
   );
+}
+
+async function refetchLoadedRows({
+  view,
+  wanted,
+  session,
+  sessionRef,
+  metricRef,
+  nav,
+}: {
+  view: View;
+  wanted: number;
+  session: number;
+  sessionRef: MutableRefObject<number | null>;
+  metricRef: MutableRefObject<SizeMetric>;
+  nav: ReturnType<typeof useNavigation>;
+}) {
+  if (wanted <= view.rows.length || view.hidden <= 0) return;
+  try {
+    // The live views follow the last `focus`, not `getView`.
+    void commands.focus(view.node, wanted, metricRef.current).catch(() => {});
+    const full = await commands.getView(view.node, wanted, metricRef.current);
+    if (session === sessionRef.current) nav.applyLiveView(full);
+  } catch {
+    // The capped view is already showing; "Load more" still works.
+  }
+}
+
+function isInsideDeleted(row: Row, deletedPath: string) {
+  const folder = row.kind === "dir" ? deletedPath : null;
+  return (hit: Row) =>
+    sameNode(hit.node, row.node) ||
+    (folder !== null && hit.parent !== null && isWithin(hit.parent, folder));
 }

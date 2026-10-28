@@ -1,23 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { errorMessage, type Row, type SizeMetric, type Totals } from "../api";
+import { useCallback, useRef, useState } from "react";
+import type { Row, SizeMetric, Totals } from "../api";
 import type { Notify, SessionDeps } from "./types";
 import { useAnalyses } from "./useAnalyses";
 import { useCopy } from "./useCopy";
 import { useDelete } from "./useDelete";
+import { useDisplayChoice, type Mode } from "./useDisplayChoice";
+import { useLiveRefresh } from "./useLiveRefresh";
 import { useNavigation } from "./useNavigation";
 import { useSearch } from "./useSearch";
 import { useSessionLifecycle } from "./useSessionLifecycle";
+import { useSessionLog } from "./useSessionLog";
 
 export { VIEW_PAGE_SIZE } from "./useNavigation";
 export type { CopyState } from "./useCopy";
+export type { Mode } from "./useDisplayChoice";
 export type { Phase, ScanInfo } from "./useSessionLifecycle";
-
-/** Which analysis the main canvas is showing. */
-export type Mode = "treemap" | "largest" | "types" | "apps";
-
-const MAX_LOG_LINES = 200;
-/** How often the treemap and analyses are re-read while sizes are still arriving. */
-const LIVE_REFRESH_MS = 1500;
 
 /**
  * The whole GUI-side session: connect, scan, browse, search, delete, copy.
@@ -38,125 +35,36 @@ export function useScanSession(notify: Notify) {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const sessionRef = useRef<number | null>(null);
   const [totals, setTotals] = useState<Totals | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [mode, setModeState] = useState<Mode>("treemap");
-  const modeRef = useRef<Mode>("treemap");
+  const { logs, log, fail } = useSessionLog(notify);
+  const display = useDisplayChoice();
 
-  // Disk usage is what deleting frees, so it is the default; apparent size is
-  // the file-manager number.
-  const [metric, setMetricState] = useState<SizeMetric>("disk");
-  const metricRef = useRef<SizeMetric>("disk");
+  const deps: SessionDeps = { sessionRef, metricRef: display.metricRef, log, fail };
+  const parts = useTreeParts(deps, notify, sessionId);
+  const { nav, analyses, search, copier } = parts;
 
-  const log = useCallback((msg: string) => {
-    setLogs((prev) =>
-      [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-MAX_LOG_LINES),
-    );
-  }, []);
-
-  const fail = useCallback(
-    (err: unknown) => {
-      const message = errorMessage(err);
-      notify(message, "error");
-      log(`[ERROR] ${message}`);
-      return message;
-    },
-    [log, notify],
-  );
-
-  const deps: SessionDeps = { sessionRef, metricRef, log, fail };
-  const nav = useNavigation(deps);
-  const analyses = useAnalyses(deps);
-  const search = useSearch({ sessionRef, metricRef, sessionId });
-  const copier = useCopy({ sessionRef, log, notify });
-
-  const { clear: clearNav } = nav;
-  const { clear: clearAnalyses } = analyses;
-  const { clear: clearSearch } = search;
-  const { reset: resetCopy } = copier;
-  const reset = useCallback(() => {
-    clearNav();
-    clearAnalyses();
-    clearSearch();
-    resetCopy();
-  }, [clearAnalyses, clearNav, clearSearch, resetCopy]);
-
-  const lifecycle = useSessionLifecycle({
-    ...deps,
-    notify,
-    setSessionId,
-    setTotals,
-    nav,
-    analyses,
-    search,
-    reset,
-  });
+  const lifecycle = useSessionLifecycle({ ...deps, ...parts, notify, setSessionId, setTotals });
   const remove = useDelete({ ...deps, notify, nav, analyses, search, setTotals });
+  const setMetric = useSetMetric(display.storeMetric, display.metricRef, parts);
+  const reveal = useReveal(display.setMode, parts);
 
-  const setMode = useCallback((next: Mode) => {
-    modeRef.current = next;
-    setModeState(next);
-  }, []);
-
-  /** Changing the size re-sorts everything the host sorted for us, so ask again. */
-  const { reload, refreshTreemap } = nav;
-  const { refresh: refreshAnalyses } = analyses;
-  const { rerun: rerunSearch } = search;
-  const setMetric = useCallback(
-    (next: SizeMetric) => {
-      if (metricRef.current === next) return;
-      metricRef.current = next;
-      setMetricState(next);
-      void reload();
-      void refreshAnalyses();
-      rerunSearch();
-    },
-    [refreshAnalyses, reload, rerunSearch],
-  );
-
-  // Sizes keep climbing while the scan runs, and the treemap and analyses are
-  // snapshots: re-read them on a slow tick. The open folder's rows need no
-  // tick, because the host pushes them with every `scan-progress`.
-  const browsing = lifecycle.phase === "browsing";
-  const running = lifecycle.scanInfo?.running ?? false;
-  useEffect(() => {
-    if (!browsing || !running) return;
-    const timer = setInterval(() => {
-      refreshTreemap();
-      if (modeRef.current !== "treemap") void refreshAnalyses();
-    }, LIVE_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [browsing, running, refreshAnalyses, refreshTreemap]);
-
-  // A folder the phone has just finished measuring is worth redrawing at once.
-  const settled = lifecycle.scanInfo?.focusSettled ?? false;
-  useEffect(() => {
-    if (browsing && settled) refreshTreemap();
-  }, [browsing, settled, refreshTreemap]);
-
-  const { open } = nav;
-  /**
-   * Jump to the folder containing a cross-tree result, and back to the treemap
-   * so the destination has context. Finding a huge file is only half the job.
-   */
-  const reveal = useCallback(
-    async (row: Row) => {
-      if (!row.parentNode) return;
-      setMode("treemap");
-      clearSearch();
-      await open(row.parentNode);
-    },
-    [clearSearch, open, setMode],
-  );
+  useLiveRefresh({
+    browsing: lifecycle.phase === "browsing",
+    running: lifecycle.scanInfo?.running ?? false,
+    settled: lifecycle.scanInfo?.focusSettled ?? false,
+    modeRef: display.modeRef,
+    refreshTreemap: nav.refreshTreemap,
+    refreshAnalyses: analyses.refresh,
+  });
 
   return {
     ...lifecycle,
     sessionId,
     totals,
     logs,
-    metric,
+    metric: display.metric,
     setMetric,
-    mode,
-    setMode,
+    mode: display.mode,
+    setMode: display.setMode,
     view: nav.view,
     crumbs: nav.crumbs,
     treemap: nav.treemap,
@@ -178,3 +86,69 @@ export function useScanSession(notify: Notify) {
 }
 
 export type ScanSession = ReturnType<typeof useScanSession>;
+
+type TreeParts = ReturnType<typeof useTreeParts>;
+
+/** The hooks that hold nodes of the current tree, and the one call that forgets them all. */
+function useTreeParts(deps: SessionDeps, notify: Notify, sessionId: number | null) {
+  const nav = useNavigation(deps);
+  const analyses = useAnalyses(deps);
+  const search = useSearch({
+    sessionRef: deps.sessionRef,
+    metricRef: deps.metricRef,
+    sessionId,
+  });
+  const copier = useCopy({ sessionRef: deps.sessionRef, log: deps.log, notify });
+
+  const { clear: clearNav } = nav;
+  const { clear: clearAnalyses } = analyses;
+  const { clear: clearSearch } = search;
+  const { reset: resetCopy } = copier;
+  const reset = useCallback(() => {
+    clearNav();
+    clearAnalyses();
+    clearSearch();
+    resetCopy();
+  }, [clearAnalyses, clearNav, clearSearch, resetCopy]);
+
+  return { nav, analyses, search, copier, reset };
+}
+
+/** Changing the size re-sorts everything the host sorted for us, so ask again. */
+function useSetMetric(
+  storeMetric: (next: SizeMetric) => void,
+  metricRef: SessionDeps["metricRef"],
+  { nav, analyses, search }: TreeParts,
+) {
+  const { reload } = nav;
+  const { refresh: refreshAnalyses } = analyses;
+  const { rerun: rerunSearch } = search;
+  return useCallback(
+    (next: SizeMetric) => {
+      if (metricRef.current === next) return;
+      storeMetric(next);
+      void reload();
+      void refreshAnalyses();
+      rerunSearch();
+    },
+    [metricRef, refreshAnalyses, reload, rerunSearch, storeMetric],
+  );
+}
+
+/**
+ * Jump to the folder containing a cross-tree result, and back to the treemap
+ * so the destination has context. Finding a huge file is only half the job.
+ */
+function useReveal(setMode: (mode: Mode) => void, { nav, search }: TreeParts) {
+  const { open } = nav;
+  const { clear: clearSearch } = search;
+  return useCallback(
+    async (row: Row) => {
+      if (!row.parentNode) return;
+      setMode("treemap");
+      clearSearch();
+      await open(row.parentNode);
+    },
+    [clearSearch, open, setMode],
+  );
+}
