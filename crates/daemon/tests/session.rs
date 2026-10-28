@@ -17,7 +17,7 @@ use socketsweep_transport::fake::{pipe, PipeEnd};
 use socketsweep_transport::Duplex;
 use socketsweep_wire::{
     encode_frame, read_frame, Caps, ClientFrame, ClientMsg, DirId, ErrCode, Hello, HelloReply,
-    Kind, Outcome, ReqId, ScanEvent, ScanOpts, ServerFrame, ServerMsg, Token, Totals,
+    Kind, Outcome, ReqId, ScanEvent, ScanMode, ScanOpts, ServerFrame, ServerMsg, Token, Totals,
     PROTOCOL_VERSION, ROOT_DIR, SESSION_LEVEL,
 };
 
@@ -511,6 +511,37 @@ fn a_scan_streams_every_directory_once_with_true_totals() {
         .filter(|e| matches!(e, ScanEvent::SubtreeDone { .. }))
         .count();
     assert_eq!(done as u32, dirs + 1, "every directory finished once");
+    host.send(ClientMsg::Shutdown);
+    t.join().unwrap().unwrap();
+}
+
+/// `ScanOpts::mode: Plain` (the benchmark baseline) reaches the engine: no
+/// skeleton, no deferred stats, the same totals.
+#[test]
+fn a_plain_scan_is_honoured() {
+    let tmp = fixture();
+    let root = root_of(&tmp);
+    let (t, mut host) = connect(config(), Arc::new(StdFs), &root, Caps::all());
+    let id = host.send(ClientMsg::StartScan {
+        root: root_bytes(&root),
+        opts: ScanOpts {
+            mode: ScanMode::Plain,
+            ..ScanOpts::default()
+        },
+    });
+    let events = scan_events(&host, id, |f| panic!("unexpected {f:?}"));
+    check_stream(&events);
+    let (outcome, totals) = finished(&events);
+    assert_eq!(outcome, Outcome::Complete);
+    let (files, dirs, apparent) = truth(&root);
+    assert_eq!((totals.files, totals.dirs), (files, dirs));
+    assert_eq!(totals.apparent, apparent);
+    for e in &events {
+        assert!(
+            !matches!(e, ScanEvent::SkeletonReady { .. } | ScanEvent::Stats { .. }),
+            "plain mode sent {e:?}"
+        );
+    }
     host.send(ClientMsg::Shutdown);
     t.join().unwrap().unwrap();
 }

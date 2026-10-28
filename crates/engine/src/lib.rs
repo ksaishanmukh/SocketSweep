@@ -13,6 +13,14 @@
 //!   [`ScanEvent`](socketsweep_wire::ScanEvent)s at the moment the state
 //!   changes. The simulator in `socketsweep-sim` drives it directly.
 //!
+//! # Modes
+//!
+//! [`ScanOpts::mode`](socketsweep_wire::ScanOpts::mode) picks the scheduler.
+//! `Focus` is the v4 design (skeleton phase, deferred stats, proximity
+//! allocation). `Plain` is the benchmark baseline of section 6: no skeleton,
+//! `Full` tasks only, and the focus is acknowledged (`FocusState`) but does
+//! not steer the workers, which spread and descend as with no focus.
+//!
 //! # Running a scan (daemon)
 //!
 //! ```no_run

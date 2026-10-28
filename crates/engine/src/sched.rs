@@ -14,7 +14,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use socketsweep_wire::{
-    DirId, FsOp, Limits, Outcome, ScanEvent, ScanOpts, Tier, TierCfg, Totals, ROOT_DIR,
+    DirId, FsOp, Limits, Outcome, ScanEvent, ScanMode, ScanOpts, Tier, TierCfg, Totals, ROOT_DIR,
     STALL_THRESHOLD,
 };
 
@@ -243,6 +243,9 @@ pub(crate) struct Cfg {
     pub one_fs: bool,
     pub tiers: [TierCfg; 3],
     pub ramp: Micros,
+    /// [`ScanMode::Plain`]: no skeleton phase, `Full` tasks only, and the
+    /// focus does not steer the workers.
+    pub plain: bool,
 }
 
 /// A snapshot of the allocation, for progress reports and tests.
@@ -314,7 +317,12 @@ impl ScanState {
             one_fs: opts.one_filesystem,
             tiers: opts.tiers,
             ramp: u64::from(opts.ramp_ms) * 1000,
+            plain: opts.mode == ScanMode::Plain,
         };
+        // Plain mode never has a skeleton phase: with no buckets, every
+        // pending directory is read with `Full`, and `SkeletonReady` is never
+        // sent.
+        let skeleton = (!cfg.plain).then(|| vec![VecDeque::from([ROOT_DIR])]);
         let mut root_rec = DirRec::new(NONE, Box::default(), 0);
         root_rec.pending_desc = 1;
         let mut s = ScanState {
@@ -326,7 +334,7 @@ impl ScanState {
             workers: vec![WorkerSlot::default(); usize::from(workers)],
             focus: None,
             last_seq: None,
-            skeleton: Some(vec![VecDeque::from([ROOT_DIR])]),
+            skeleton,
             skeleton_ready_at: None,
             unlisted_by_depth: vec![1],
             unlisted: 1,
@@ -384,7 +392,16 @@ impl ScanState {
         self.dirs[0].totals
     }
 
-    /// When the skeleton phase ended, if it has.
+    /// The mode this scan runs in.
+    pub fn mode(&self) -> ScanMode {
+        if self.cfg.plain {
+            ScanMode::Plain
+        } else {
+            ScanMode::Focus
+        }
+    }
+
+    /// When the skeleton phase ended, if it has (never in plain mode).
     pub fn skeleton_ready_at(&self) -> Option<Micros> {
         self.skeleton_ready_at
     }
@@ -470,8 +487,13 @@ impl ScanState {
     }
 
     /// The focused folder F and its parent P, when the focus is below the
-    /// root. Focus at the root behaves as no focus: everything is Open.
+    /// root. Focus at the root behaves as no focus: everything is Open. In
+    /// plain mode the focus is only acknowledged (`FocusState`), never used
+    /// for scheduling, so this is always `None` there.
     pub(crate) fn focus_fp(&self) -> Option<(DirId, DirId)> {
+        if self.cfg.plain {
+            return None;
+        }
         let f = self.focus?;
         if f.dir == ROOT_DIR {
             None

@@ -1,0 +1,75 @@
+name: Emulator end-to-end
+
+# Slow (an emulator boot, a 50,000-file fixture, a few dozen scans), so not on
+# every pull request: nightly, by hand from the Actions tab, and on a pull
+# request that carries the `e2e` label (manual and scheduled runs only exist
+# once this file is on the default branch).
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Measured benchmark runs per script and mode
+        default: '3'
+  schedule:
+    - cron: '17 3 * * *'
+
+jobs:
+  emulator:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      BENCH_RUNS: ${{ github.event.inputs.runs || '3' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Hardware acceleration for the x86_64 emulator.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      # Both ABIs, with the runner's NDK, exactly as the daemon job builds
+      # them; the emulator uses src-tauri/bin/daemon-x86_64.
+      - name: Build device daemons
+        run: npm run build:daemon
+
+      - name: Build the benchmark and end-to-end driver
+        run: cargo build --release -p socketsweep-bench
+
+      # One emulator boot for everything. Each line runs on its own and fails
+      # the step. The end-to-end test pushes the seeded fixture and deletes a
+      # folder of it, so the fixture is pushed again for the benchmark.
+      - name: End-to-end test and benchmark on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          target: google_apis
+          disk-size: 6000M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            ./target/release/socketsweep-bench e2e --seed 1
+            ./target/release/socketsweep-bench fixture --seed 1
+            ./target/release/socketsweep-bench run --root /sdcard/ssfixture --runs "$BENCH_RUNS" --json socketsweep-bench.json
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: socketsweep-bench
+          path: socketsweep-bench.json
+          if-no-files-found: warn

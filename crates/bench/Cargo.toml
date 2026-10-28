@@ -1,0 +1,32 @@
+[package]
+name = "socketsweep-bench"
+description = "Dev-only: benchmark the v4 engine's focus mode against its plain mode on a real device, and the emulator end-to-end test"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "socketsweep_bench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "socketsweep-bench"
+path = "src/main.rs"
+
+[dependencies]
+socketsweep-host-core = { workspace = true }
+socketsweep-gui-contract = { workspace = true }
+socketsweep-transport = { workspace = true }
+socketsweep-transport-adb = { workspace = true }
+socketsweep-wire = { workspace = true }
+# The fixture tree is built with the simulator's seeded generator, so the
+# device fixture, its expected totals and the offline tests agree.
+socketsweep-sim = { workspace = true }
+postcard = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+socketsweep-transport = { workspace = true, features = ["fake"] }

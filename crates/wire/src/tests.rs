@@ -458,6 +458,29 @@ fn golden_client_frames() {
                 0x00, 0x00, 0x80, 0x3F, 1, 2, // near: 1.0, 1, 2
                 0x00, 0x00, 0x80, 0x40, 255, 255, // back: 4.0, auto, none
                 0x90, 0x03, // ramp_ms: 400
+                0,    // mode: Focus
+            ],
+        ),
+        (
+            ClientMsg::StartScan {
+                root: b"/r".to_vec(),
+                opts: ScanOpts {
+                    workers: Some(3),
+                    mode: ScanMode::Plain,
+                    ..ScanOpts::default()
+                },
+            },
+            &[
+                1, 2, b'/', b'r', // root
+                1, 3,  // workers: Some(3)
+                64, // max_depth
+                0xE8, 0x07, // skeleton_budget_ms: 1000
+                2, 4, 1, // min depth, max depth, one_filesystem
+                0x00, 0x00, 0x40, 0x40, 0, 255, // open: 3.0, 0, none
+                0x00, 0x00, 0x80, 0x3F, 1, 2, // near: 1.0, 1, 2
+                0x00, 0x00, 0x80, 0x40, 255, 255, // back: 4.0, auto, none
+                0x90, 0x03, // ramp_ms: 400
+                1,    // mode: Plain
             ],
         ),
         (
@@ -933,6 +956,7 @@ fn default_scan_options_match_the_specification() {
     assert_eq!(opts.skeleton_min_depth, 2);
     assert_eq!(opts.skeleton_max_depth, 4);
     assert_eq!(opts.ramp_ms, 400);
+    assert_eq!(opts.mode, ScanMode::Focus);
 
     let [open, near, back] = opts.tiers;
     assert_eq!(

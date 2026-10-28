@@ -424,8 +424,9 @@ impl Shared {
         let scan = Scan::with_workers(info, &opts, workers, sink);
         lock(&self.active).insert(id, Active::Scan(scan.clone()));
         log!(
-            "scan {id} of {} with {workers} workers",
-            String::from_utf8_lossy(&resolved)
+            "scan {id} of {} with {workers} workers, {:?} mode",
+            String::from_utf8_lossy(&resolved),
+            opts.mode
         );
         self.spawn("ssd-scan", move |me| {
             let started = Instant::now();

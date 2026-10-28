@@ -121,7 +121,7 @@ pub use framing::{encode_frame, read_frame, read_frame_body, write_frame, WireEr
 pub use handshake::{check_hello, Caps, Hello, HelloCheck, HelloPrefix, HelloReply, Welcome};
 pub use messages::{
     ClientFrame, ClientMsg, CopyItem, Entry, ErrCode, FsOp, Kind, Limits, Outcome, ScanEvent,
-    ScanOpts, ServerFrame, ServerMsg, Stat, Tier, TierCfg, Totals,
+    ScanMode, ScanOpts, ServerFrame, ServerMsg, Stat, Tier, TierCfg, Totals,
 };
 pub use token::{token_from_hex, token_to_hex, tokens_match, Token, TOKEN_ENV, TOKEN_LEN};
 

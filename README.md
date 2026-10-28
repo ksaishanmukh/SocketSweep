@@ -98,9 +98,10 @@ React GUI ──► src-tauri (thin shell) ──► host-core ──► transpo
 | `crates/sim` | Dev only: simulated filesystem, simulator, baseline walker, `FakeDaemon` |
 | `src-tauri` | Thin shell that maps generated commands to `host-core` |
 | `src/` | React features, importing only the generated bindings through `src/api/` |
+| `crates/bench` | Benchmark and end-to-end runner against a phone or emulator |
 
-Until the rebuild lands, `crates/` on this branch still holds the v3 crates
-(`protocol` and `scanner`, kept only as a benchmark baseline).
+The benchmark baseline is the engine's plain mode (no skeleton, no deferred
+stats, no focus), so both sides of the comparison share one code path.
 
 ## Security
 
@@ -166,7 +167,24 @@ Checks:
 ```bash
 npm run lint && npm run typecheck && npm test
 cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
+
+Benchmark and end-to-end test on a phone or emulator (`crates/bench`; build the
+daemon first, it is picked from `src-tauri/bin` by the device's ABI):
+
+```bash
+# The engine's focus mode against its plain mode (the baseline), scripts a/b/c,
+# median and p90 table, results in socketsweep-bench.json
+cargo run --release -p socketsweep-bench -- run --serial <serial> --runs 10
+# The seeded fixture (50,000 files, 3,000 folders) pushed to /sdcard/ssfixture
+cargo run --release -p socketsweep-bench -- fixture --seed 1
+# Connect, scan, focus, delete, copy and disconnect through host-core, on that fixture
+cargo run --release -p socketsweep-bench -- e2e --seed 1
+```
+
+The `Emulator end-to-end` workflow runs the last two (and a three-run benchmark)
+on an x86_64 emulator nightly; start it by hand from the Actions tab.
 
 ## Origins and credit
 
