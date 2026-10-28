@@ -9,8 +9,6 @@ use super::FakeTransport;
 use super::PipeEnd;
 use crate::{DeviceInfo, DeviceState, Output, Result, TransportError};
 
-// ── Fake transport ──────────────────────────────────────────────────────────
-
 /// A device to add to a [`FakeTransport`].
 #[derive(Debug, Clone)]
 pub struct FakeDevice {
