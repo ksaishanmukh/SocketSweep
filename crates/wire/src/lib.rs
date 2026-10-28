@@ -107,6 +107,7 @@
 //! lasting identity, used by delete and copy. An id from another session is
 //! refused.
 
+pub mod apps;
 mod framing;
 mod handshake;
 mod messages;
