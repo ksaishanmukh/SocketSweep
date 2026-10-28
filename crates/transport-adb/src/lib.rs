@@ -37,7 +37,7 @@
 //! the long-lived adb server) and a window in which another local process can
 //! connect to it. The direct service has neither, so it is the only approach
 //! implemented. The forward helpers ([`AdbTransport::forward_any`],
-//! [`AdbTransport::forward_remove`]) stay available for diagnostics.
+//! [`AdbTransport::forward_remove`]) exist for diagnostics.
 //!
 //! # Pull
 //!
@@ -47,12 +47,6 @@
 //! and deleted on failure. The mtime is restored from a `STAT` made first on
 //! the same sync connection, which also turns a missing file into a clear
 //! error before any data flows.
-
-//! # Layout
-//!
-//! `server` talks to the adb server (connections, host queries, forwards,
-//! starting it), `transport` implements [`Transport`] on top, `errors` maps
-//! failures, `wire` holds the protocols and `devices` parses listings.
 
 mod devices;
 mod errors;
@@ -98,7 +92,7 @@ pub struct AdbTransport {
 }
 
 impl AdbTransport {
-    /// Connect to the adb server, starting it from our bundled binary only if
+    /// Connect to the adb server, starting it from the bundled binary only if
     /// nothing is listening on its port.
     pub fn connect(adb_binary: &Path) -> Result<Self> {
         let adb = Self::with_server(

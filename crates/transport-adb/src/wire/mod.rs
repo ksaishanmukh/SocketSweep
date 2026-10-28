@@ -1,7 +1,4 @@
 //! adb's wire protocols: smart sockets, shell v2 and sync.
-//!
-//! `smart_socket` is the request and status framing every connection starts
-//! with, `shell` the shell protocol v2, and `sync` file transfer.
 
 mod shell;
 mod smart_socket;
@@ -15,7 +12,7 @@ pub use smart_socket::{read_forward_reply, read_hex_string, request, send};
 pub use sync::{sync_header, sync_recv, sync_send, RecvError};
 
 /// Upper bound on a single shell-protocol packet or sync `FAIL` message, so a
-/// corrupt length cannot make us allocate gigabytes.
+/// corrupt length cannot make the host allocate gigabytes.
 const MAX_PACKET: usize = 16 * 1024 * 1024;
 
 #[derive(Debug)]

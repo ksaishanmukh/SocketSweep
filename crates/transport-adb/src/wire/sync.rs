@@ -8,8 +8,6 @@ use super::{Wire, WireError, MAX_PACKET};
 /// Largest `DATA` chunk the sync protocol accepts.
 pub const SYNC_CHUNK: usize = 64 * 1024;
 
-// ── Sync protocol ───────────────────────────────────────────────────────────
-
 /// A sync-protocol header: 4-byte id and a little-endian u32.
 pub fn sync_header(id: &[u8; 4], n: u32) -> [u8; 8] {
     let mut h = [0u8; 8];

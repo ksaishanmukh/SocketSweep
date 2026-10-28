@@ -34,7 +34,7 @@ impl AdbTransport {
 
     /// `adb forward tcp:0 <remote>`: forward a host port of the server's
     /// choosing to `remote` (e.g. `localabstract:name`), returning that port.
-    /// Not used by [`Transport::open_tunnel`]; see the crate docs.
+    /// Not used by [`Transport::open_tunnel`], which connects to the service directly.
     pub fn forward_any(&self, serial: &str, remote: &str) -> Result<u16> {
         self.forward(serial, "tcp:0", remote)?.ok_or_else(|| {
             TransportError::Protocol(format!(
