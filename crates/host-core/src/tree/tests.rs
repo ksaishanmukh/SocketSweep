@@ -1,5 +1,6 @@
 use super::*;
-use socketsweep_wire::BLOCK_SIZE;
+use socketsweep_gui_contract::{NodeRef, Row};
+use socketsweep_wire::{DirId, Entry, ScanEvent, Stat, BLOCK_SIZE};
 
 const S: SessionId = 7;
 

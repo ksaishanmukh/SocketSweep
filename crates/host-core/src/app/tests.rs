@@ -1,10 +1,20 @@
+#![allow(clippy::too_many_lines)]
+
+use super::scan::NEXT_SESSION;
 use super::*;
 use crate::client::ClientConfig;
+use crate::lock;
 use crate::testkit::{wait_for, FakeDaemon, Greeting, Responder};
+use socketsweep_gui_contract::{
+    self as gui, Commands, ErrorCode, Measure, NodeRef, ScanOutcome, ScanProgress, View,
+};
 use socketsweep_transport::fake::{FakeDevice, FakeTransport};
 use socketsweep_wire::{ClientFrame, ClientMsg, CopyItem, Entry, Kind, Stat, Totals};
+use socketsweep_wire::{Outcome, ScanEvent, ServerMsg};
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
+use std::time::Instant;
 
 const RESOLVED: &[u8] = b"/storage/emulated/0";
 
