@@ -1,4 +1,3 @@
-#![allow(clippy::too_many_lines)]
 
 use super::sync::SYNC_CHUNK;
 use super::*;
