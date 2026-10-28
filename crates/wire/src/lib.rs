@@ -1,9 +1,7 @@
-//! Protocol v4 between the desktop host and the phone daemon.
+//! The protocol between the desktop host and the phone daemon.
 //!
 //! Both ends depend on this crate, so there is exactly one definition of every
 //! message and of the encoding, and no opportunity for the two to disagree.
-//! The specification is section 2 of `docs/architecture.md`; this crate is its
-//! executable form, and the two change together.
 //!
 //! # Framing
 //!
@@ -15,8 +13,8 @@
 //! so **the order of fields and variants is the wire format**. Golden byte
 //! tests pin a representative frame of every enum, so an accidental reorder
 //! fails the build rather than a phone. Daemon and host ship together and the
-//! version must match exactly (see below), so the format may change freely
-//! between releases as long as [`PROTOCOL_VERSION`] is bumped with it.
+//! version must match exactly, so the format may change freely between
+//! releases as long as [`PROTOCOL_VERSION`] is bumped with it.
 //!
 //! # Handshake
 //!
@@ -107,7 +105,7 @@
 //!
 //! A [`DirId`] means something only within one scan. Path bytes are the
 //! lasting identity, used by delete and copy. An id from another session is
-//! refused: the session id replaces v3's tree generation check.
+//! refused.
 
 mod framing;
 mod handshake;

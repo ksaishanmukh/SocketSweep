@@ -1,11 +1,7 @@
-//! Everything after the handshake. See [requests and replies](crate#requests-and-replies).
+//! Everything after the handshake.
 //!
 //! Field and variant order is the wire format: add new variants at the end and
 //! bump [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) with any change.
-//!
-//! The messages are split by direction: `client` holds what the host sends,
-//! `options` how a scan is run, `server` what the daemon sends, and
-//! `values` the entries, stats and totals both directions carry.
 
 mod client;
 mod options;

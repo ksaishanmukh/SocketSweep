@@ -1,4 +1,4 @@
-//! The first frame in each direction. See [the handshake](crate#handshake).
+//! The first frame in each direction.
 
 use serde::{Deserialize, Serialize};
 
@@ -179,7 +179,7 @@ impl HelloCheck {
     }
 }
 
-/// Check the body of a connection's first frame, in the specified order:
+/// Check the body of a connection's first frame, in a fixed order:
 /// magic and token first (the token in constant time), then the version, then
 /// the rest of the message.
 ///

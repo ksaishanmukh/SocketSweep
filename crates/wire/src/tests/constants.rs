@@ -1,4 +1,4 @@
-//! The specified constants and defaults.
+//! Protocol constants and default scan options.
 
 use super::support::*;
 use crate::*;
@@ -41,7 +41,7 @@ fn default_scan_options_match_the_specification() {
     assert_eq!((near.weight, near.floor, near.cap), (1.0, 1, 2));
     assert_eq!(back.weight, 4.0);
     assert_eq!(back.cap, TierCfg::NO_CAP);
-    // max(1, W / 4)
+    // The back tier's auto floor is max(1, W / 4).
     assert_eq!(back.floor_for(8), 2);
     assert_eq!(back.floor_for(4), 1);
     assert_eq!(back.floor_for(2), 1);

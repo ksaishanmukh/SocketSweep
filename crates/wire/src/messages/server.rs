@@ -7,8 +7,6 @@ use super::{ClientMsg, Tier};
 use super::{CopyItem, Entry, Stat, Totals};
 use crate::{DirId, ReqId};
 
-// ── Daemon → host ───────────────────────────────────────────────────────────
-
 /// One reply or event from the daemon.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerFrame {
@@ -52,7 +50,7 @@ pub enum ServerMsg {
     },
 }
 
-/// One step of a scan. See [ordering guarantees](crate#ordering-guarantees).
+/// One step of a scan. Events obey the crate's ordering guarantees.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScanEvent {
     /// The first event of every scan. `root` is the path the daemon resolved
