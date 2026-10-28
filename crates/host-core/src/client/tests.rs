@@ -2,8 +2,12 @@ use super::*;
 use crate::testkit::{wait_for, FakeDaemon, Greeting};
 use socketsweep_transport::fake::{FakeDevice, FakeTransport};
 use socketsweep_transport::Transport;
-use socketsweep_wire::{Outcome, TOKEN_LEN};
-use std::sync::atomic::AtomicBool;
+use socketsweep_wire::{
+    Caps, ClientMsg, Outcome, ScanEvent, ScanOpts, ServerMsg, SessionId, Token, Totals,
+    SESSION_LEVEL, TOKEN_LEN,
+};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 
 const TOKEN: Token = [7; TOKEN_LEN];
 const SESSION: SessionId = [1; 16];
