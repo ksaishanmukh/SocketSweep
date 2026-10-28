@@ -254,6 +254,10 @@ fn scan_and_act(
     let p = wait_progress(rx, t, "SkeletonReady", |p| {
         p.skeleton.is_some() || p.finished.is_some()
     })?;
+    // On a fast device one progress event can carry the skeleton, the settled
+    // focus and the end of the scan together, so the end is remembered from
+    // whichever wait saw it rather than waited for again.
+    let mut finished = p.finished.clone();
     let sk = p
         .skeleton
         .ok_or("the scan finished without SkeletonReady")?;
@@ -269,19 +273,27 @@ fn scan_and_act(
     let top = cmd("get_view", app.get_view(None, Some(1000), None))?;
     let node = row(&top, FIXTURE_DIR)?;
     cmd("focus", app.focus(Some(node), None, None))?;
-    let p = wait_progress(rx, t, "the fixture to settle", |p| {
-        p.focus.is_some_and(|f| f.node == node && f.settled) || p.finished.is_some()
-    })?;
-    log(&format!(
-        "focus on {FIXTURE_DIR} settled at {} ms ({:?})",
-        p.elapsed_ms, p.phase
-    ));
-    let view = p.view.filter(|v| v.node == node);
-    if let Some(v) = &view {
-        check_view(v, want, apparent, "the focused fixture (scan-progress)")?;
+    if finished.is_none() {
+        let p = wait_progress(rx, t, "the fixture to settle", |p| {
+            p.focus.is_some_and(|f| f.node == node && f.settled) || p.finished.is_some()
+        })?;
+        log(&format!(
+            "focus on {FIXTURE_DIR} settled at {} ms ({:?})",
+            p.elapsed_ms, p.phase
+        ));
+        if let Some(v) = p.view.as_ref().filter(|v| v.node == node) {
+            check_view(v, want, apparent, "the focused fixture (scan-progress)")?;
+        }
+        finished = p.finished;
+    } else {
+        log("the scan finished before the focus could be sent");
     }
-    let p = wait_progress(rx, t, "the end of the scan", |p| p.finished.is_some())?;
-    let fin = p.finished.expect("finished");
+    let fin = match finished {
+        Some(fin) => fin,
+        None => wait_progress(rx, t, "the end of the scan", |p| p.finished.is_some())?
+            .finished
+            .expect("finished"),
+    };
     ensure(fin.outcome == ScanOutcome::Complete, || {
         format!("the scan ended {:?}: {:?}", fin.outcome, fin.message)
     })?;
