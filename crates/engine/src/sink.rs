@@ -1,7 +1,5 @@
-//! Where scan events go (`trait EventSink`).
-//!
-//! Internal contract between the engine and the daemon's session writer
-//! (`docs/architecture.md`, section 3, `session`).
+//! Where scan events go: the contract between the engine and the daemon's
+//! session writer.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,7 +10,7 @@ use socketsweep_wire::{ScanEvent, ServerFrame};
 ///
 /// The engine calls [`EventSink::bulk`] **while holding the scheduler lock**,
 /// so the order of calls is the order of state changes; that is what gives
-/// the ordering guarantees G1–G3. An implementation must therefore append
+/// the ordering guarantees. An implementation must therefore append
 /// and return at once: never block, never wait for the connection, and never
 /// call back into the scan.
 pub trait EventSink: Send + Sync {
@@ -22,8 +20,8 @@ pub trait EventSink: Send + Sync {
     fn bulk(&self, events: Vec<ScanEvent>);
 
     /// Queue a control frame (`Pong`, `Deleted`, `Failed`), which is sent
-    /// before anything in the bulk queue. The engine itself does not use it;
-    /// it is here so one sink serves the whole session.
+    /// before anything in the bulk queue. The engine does not use it; it is
+    /// here so one sink serves the whole session.
     fn control(&self, frame: ServerFrame);
 
     /// The bulk queue is above its high-water mark (and has not yet drained

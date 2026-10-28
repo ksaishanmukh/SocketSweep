@@ -97,11 +97,11 @@ impl ScanState {
         seats(self.cfg.workers, &self.tier_inputs(now, active, pending))
     }
 
-    /// Step 2 of `pick`: floors first (a tier with work below its floor, as
-    /// the allocation resolves floors: limited by the workers, back first;
-    /// the back floor before any other),
-    /// then the largest `target − active`; ties go to the worker's previous
-    /// tier, then to the nearer tier. Only tiers with waiting work count.
+    /// Floors first (a tier with work below its floor, as the allocation
+    /// resolves floors: limited by the workers, back first; the back floor
+    /// before any other), then the largest `target − active`; ties go to the
+    /// worker's previous tier, then to the nearer tier. Only tiers with
+    /// waiting work count.
     pub(super) fn choose_tier(
         &self,
         w: usize,

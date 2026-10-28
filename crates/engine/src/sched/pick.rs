@@ -7,9 +7,7 @@ use super::{Micros, Pick, Running, ScanState, St, StatSt, Task, TaskKind};
 use crate::alloc::floor_seats;
 
 impl ScanState {
-    // ── Picking work ────────────────────────────────────────────────────────
-
-    /// Hand worker `w` its next task (spec `pick(worker)`). The worker must
+    /// Hand worker `w` its next task. The worker must
     /// have applied its previous result first; that released its seat.
     /// Congestion is the driver's business: it does not call `pick` while
     /// the sink is congested.
@@ -42,7 +40,7 @@ impl ScanState {
         Pick::Run(self.start_task(w, dir, kind, tier, now))
     }
 
-    /// Steps 3 and 4 of `pick`: find a task in `tier`.
+    /// Find a task in `tier`.
     fn find_task(&mut self, w: usize, tier: Tier) -> Option<(DirId, TaskKind)> {
         if let Some(d) = self.take_big(tier) {
             return Some((d, TaskKind::StatDir));

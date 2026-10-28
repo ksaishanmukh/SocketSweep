@@ -6,7 +6,7 @@ use socketsweep_wire::{DirId, ScanEvent, Tier};
 use super::{Micros, ScanState, St};
 
 impl ScanState {
-    /// Spec "Phase end": the frontier holds at least 4 × W directories and
+    /// Ends the phase when the frontier holds at least 4 × W directories and
     /// the depth reached is at least `skeleton_min_depth`, or the budget ran
     /// out, or the depth reached `skeleton_max_depth`. "Depth reached" is the
     /// shallowest depth that still has an unlisted directory (every level

@@ -1,6 +1,6 @@
-//! `aggregate`: applying task results, running totals, open-child counts,
-//! the completion cascade and pruning. Part of [`ScanState`], under the same
-//! lock as the scheduler.
+//! Applying task results: running totals, open-child counts, the completion
+//! cascade and pruning. Part of [`ScanState`], under the same lock as the
+//! scheduler.
 //!
 //! # Totals
 //!
@@ -38,20 +38,14 @@
 //! (sent straight after the listing). A `None` in `Stats` is an entry that
 //! could not be stat'ed.
 //!
-//! # G2 and deferred stats
+//! # Deferred stats
 //!
-//! G2 orders `Stats(D)` before every child's `SubtreeDone`. A child of a
+//! The wire order puts `Stats(D)` before every child's `SubtreeDone`. A child of a
 //! directory listed by `Names` can be measured before its parent's deferred
 //! stats arrive, so a child is only *finished* (its `SubtreeDone` emitted and
 //! its totals added to the parent) once the parent's stats are applied;
 //! until then it waits, complete, in state `Listed`. Applying the parent's
 //! stats finishes every such waiting child, then the parent if it can.
-//!
-//! # Layout
-//!
-//! The submodules: `listing` applies listings and unreadable directories,
-//! `stats` applies stats (deferred or not), `complete` runs the completion
-//! cascade and `prune` removes a deleted subtree.
 
 use socketsweep_wire::FsOp;
 #[cfg(doc)]

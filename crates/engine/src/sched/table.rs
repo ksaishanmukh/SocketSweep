@@ -46,7 +46,7 @@ pub(crate) struct Own {
 
 /// One row of the directory table. Children of a directory get consecutive
 /// ids when it is listed, so they are `first_child .. first_child +
-/// n_children` (the spec's sibling list, without the links).
+/// n_children`.
 #[derive(Debug, Clone)]
 pub(crate) struct DirRec {
     pub parent: DirId,
@@ -116,7 +116,7 @@ pub(crate) struct Running {
 pub(crate) struct WorkerSlot {
     pub task: Option<Running>,
     pub prev_tier: Option<Tier>,
-    /// The subtree the worker last descended in, or [`NONE`].
+    /// The subtree the worker last descended in.
     pub anchor: Option<DirId>,
 }
 
@@ -156,8 +156,6 @@ impl ScanState {
         }
         d == a
     }
-
-    // ── Counters ────────────────────────────────────────────────────────────
 
     /// Add `delta` to `pending_desc` of `d` and every ancestor.
     pub(crate) fn add_pending(&mut self, d: DirId, delta: i64) {

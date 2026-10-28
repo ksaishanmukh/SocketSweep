@@ -15,7 +15,7 @@ pub(super) enum Anchor {
 }
 
 impl ScanState {
-    /// Step 3 of `pick`: keep the previous anchor if it is still in the tier
+    /// Keep the previous anchor if it is still in the tier
     /// and has work; otherwise choose by the tier's rule. A tier root (F, P,
     /// or an ancestor of P) with its own task is taken first: its subtree
     /// straddles tiers, and its stats gate its children's completion.
@@ -66,7 +66,7 @@ impl ScanState {
         best.map(|b| Anchor::Sub(b.2))
     }
 
-    /// Step 4 of `pick`: depth-first from `a`: a directory's own task first,
+    /// Depth-first from `a`: a directory's own task first,
     /// else the highest-id child with work.
     pub(super) fn descend(&self, a: DirId) -> (DirId, TaskKind) {
         let mut x = a;
@@ -98,7 +98,8 @@ impl ScanState {
         }
     }
 
-    // (fewest workers, then most work) or (fewest workers, then least work)
+    /// Update `best` with the child of `parent` having the fewest workers,
+    /// then the most work (`most_work`) or the least.
     fn pick_child(
         &self,
         parent: DirId,
