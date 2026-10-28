@@ -1,6 +1,8 @@
 //! The session end to end over an in-memory pipe, with the real engine on
 //! `StdFs` and `LocalActions` over a temporary directory.
 
+#![allow(clippy::too_many_lines)]
+
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
