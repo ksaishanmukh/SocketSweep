@@ -11,7 +11,7 @@ use socketsweep_transport::fake::{FakeDevice, FakeTransport};
 use socketsweep_transport::{Duplex, Transport};
 use socketsweep_wire::{
     encode_frame, read_frame, Caps, ClientFrame, ClientMsg, DirId, Hello, HelloReply, Outcome,
-    ReqId, ScanEvent, ScanOpts, ServerFrame, ServerMsg, Token, ROOT_DIR,
+    ReqId, ScanEvent, ScanOpts, ServerFrame, ServerMsg, Token, Totals, ROOT_DIR,
 };
 
 const TOKEN: Token = [3; 32];
@@ -127,8 +127,99 @@ fn a_scan_through_the_fake_daemon_is_exact() {
     }
 }
 
-#[test]
-fn focus_and_a_hinted_delete_during_a_slow_scan() {
+/// Scan frames fed through the order checker; every other frame is handed
+/// back to the caller.
+struct Observer {
+    scan: ReqId,
+    checker: Checker,
+    events: Vec<ScanEvent>,
+}
+
+impl Observer {
+    fn take(&mut self, host: &Host) -> Option<ServerFrame> {
+        let f = host.recv();
+        match f.msg {
+            ServerMsg::Scan(batch) => {
+                assert_eq!(f.id, self.scan);
+                for e in &batch {
+                    self.checker.feed(e).unwrap();
+                }
+                self.events.extend(batch);
+                None
+            }
+            ServerMsg::Heartbeat => None,
+            _ => Some(f),
+        }
+    }
+
+    fn finished(&self) -> bool {
+        self.events
+            .iter()
+            .any(|e| matches!(e, ScanEvent::Finished { .. }))
+    }
+
+    /// The root's subdirectories, once listed.
+    fn root_children(&mut self, host: &Host) -> Vec<(Vec<u8>, DirId)> {
+        loop {
+            assert!(self.take(host).is_none());
+            let found = self.events.iter().find_map(|e| match e {
+                ScanEvent::Listing {
+                    dir: ROOT_DIR,
+                    entries,
+                    ..
+                } => Some(
+                    entries
+                        .iter()
+                        .filter_map(|en| en.id.map(|id| (en.name.clone(), id)))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            });
+            if let Some(c) = found {
+                return c;
+            }
+        }
+    }
+
+    /// Until the scan has finished and request `del` has answered; the
+    /// delete's item count and totals.
+    fn await_delete(&mut self, host: &Host, del: ReqId) -> (u64, Totals) {
+        let mut deleted = None;
+        while !self.finished() || deleted.is_none() {
+            if let Some(f) = self.take(host) {
+                assert_eq!(f.id, del, "{f:?}");
+                if let ServerMsg::Deleted { items, totals } = f.msg {
+                    deleted = Some((items, totals));
+                } else if !matches!(f.msg, ServerMsg::DeleteProgress { .. }) {
+                    panic!("delete failed: {f:?}");
+                }
+            }
+        }
+        deleted.unwrap()
+    }
+
+    /// The number of files in a copy manifest of `root`.
+    fn copy_manifest_len(&mut self, host: &mut Host, root: &[u8]) -> usize {
+        let copy = host.send(ClientMsg::PrepareCopy {
+            path: root.to_vec(),
+        });
+        let mut n = 0;
+        loop {
+            let f = self.take(host).expect("not a scan frame");
+            assert_eq!(f.id, copy);
+            let ServerMsg::CopyManifest { files, last, .. } = f.msg else {
+                panic!("{f:?}")
+            };
+            n += files.len();
+            if last {
+                return n;
+            }
+        }
+    }
+}
+
+/// A slow daemon over a random 200-directory tree, and a connected host.
+fn slow_daemon_and_host() -> (FakeDaemon, Host) {
     let daemon = FakeDaemon::new(SimFs::random(
         7,
         RandomShape {
@@ -140,53 +231,26 @@ fn focus_and_a_hinted_delete_during_a_slow_scan() {
     .with_latency(Duration::from_millis(3), Duration::ZERO);
     let transport = FakeTransport::new().with_device(FakeDevice::ready("phone"));
     daemon.install(&transport, "phone", "socketsweep-test", TOKEN);
-    let mut host = Host::connect(transport.open_tunnel("phone", "socketsweep-test").unwrap());
+    let host = Host::connect(transport.open_tunnel("phone", "socketsweep-test").unwrap());
+    (daemon, host)
+}
 
+#[test]
+fn focus_and_a_hinted_delete_during_a_slow_scan() {
+    let (daemon, mut host) = slow_daemon_and_host();
     let root = daemon.fs().root_path().to_vec();
     let opts = ScanOpts::default();
     let scan = host.send(ClientMsg::StartScan {
         root: root.clone(),
         opts: opts.clone(),
     });
-
-    let mut checker = Checker::new();
-    let mut events: Vec<ScanEvent> = Vec::new();
-    let mut take = |host: &Host, events: &mut Vec<ScanEvent>| -> Option<ServerFrame> {
-        let f = host.recv();
-        match f.msg {
-            ServerMsg::Scan(batch) => {
-                assert_eq!(f.id, scan);
-                for e in &batch {
-                    checker.feed(e).unwrap();
-                }
-                events.extend(batch);
-                None
-            }
-            ServerMsg::Heartbeat => None,
-            _ => Some(f),
-        }
+    let mut observer = Observer {
+        scan,
+        checker: Checker::new(),
+        events: Vec::new(),
     };
 
-    // The root's subdirectories, once listed.
-    let children: Vec<(Vec<u8>, DirId)> = loop {
-        assert!(take(&host, &mut events).is_none());
-        let found = events.iter().find_map(|e| match e {
-            ScanEvent::Listing {
-                dir: ROOT_DIR,
-                entries,
-                ..
-            } => Some(
-                entries
-                    .iter()
-                    .filter_map(|en| en.id.map(|id| (en.name.clone(), id)))
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        });
-        if let Some(c) = found {
-            break c;
-        }
-    };
+    let children = observer.root_children(&host);
     assert!(children.len() >= 2, "the tree has subdirectories");
     let (_, focus_dir) = children[0].clone();
     let (victim_name, victim) = children[children.len() - 1].clone();
@@ -204,33 +268,19 @@ fn focus_and_a_hinted_delete_during_a_slow_scan() {
         hint: Some((scan, victim)),
     });
 
-    let mut deleted = None;
-    while !events
-        .iter()
-        .any(|e| matches!(e, ScanEvent::Finished { .. }))
-        || deleted.is_none()
-    {
-        if let Some(f) = take(&host, &mut events) {
-            assert_eq!(f.id, del, "{f:?}");
-            if let ServerMsg::Deleted { items, totals } = f.msg {
-                deleted = Some((items, totals));
-            } else if !matches!(f.msg, ServerMsg::DeleteProgress { .. }) {
-                panic!("delete failed: {f:?}");
-            }
-        }
-    }
-    let (items, del_totals) = deleted.unwrap();
+    let (items, del_totals) = observer.await_delete(&host, del);
     assert!(items >= 1);
     assert!(del_totals.dirs >= 1);
     assert!(daemon.fs().find(&victim_path).is_none());
 
+    let events = &observer.events;
     assert!(events
         .iter()
         .any(|e| matches!(e, ScanEvent::FocusState { seq: 1, dir, .. } if *dir == focus_dir)));
     let pruned = events
         .iter()
         .any(|e| matches!(e, ScanEvent::Pruned { dir } if *dir == victim));
-    let (outcome, totals) = finished(&events);
+    let (outcome, totals) = finished(events);
     assert_eq!(outcome, Outcome::Complete);
     // Pruned (normally) or deleted before the scan reached it: either way
     // the totals are those of the tree that is left.
@@ -239,21 +289,9 @@ fn focus_and_a_hinted_delete_during_a_slow_scan() {
     daemon.fs().check_counters(&truth).unwrap();
 
     // A copy manifest of what is left of the root.
-    let copy = host.send(ClientMsg::PrepareCopy { path: root.clone() });
-    let mut n = 0;
-    loop {
-        let f = take(&host, &mut events).expect("not a scan frame");
-        assert_eq!(f.id, copy);
-        let ServerMsg::CopyManifest { files, last, .. } = f.msg else {
-            panic!("{f:?}")
-        };
-        n += files.len();
-        if last {
-            break;
-        }
-    }
+    let n = observer.copy_manifest_len(&mut host, &root);
     assert!(n as u32 > truth.root().dirs);
-    checker.finish().unwrap();
+    observer.checker.finish().unwrap();
 
     host.send(ClientMsg::Shutdown);
     let mut rest = Vec::new();
