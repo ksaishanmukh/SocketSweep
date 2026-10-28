@@ -1,8 +1,6 @@
 //! The desktop shell: a thin layer that builds the host, exposes each
-//! contract command to the window and forwards the host's events.
-//!
-//! All logic lives in `socketsweep-host-core`. This file only wires paths,
-//! commands and events. See `docs/architecture.md`, section 1.
+//! contract command to the window and forwards the host's events. All logic
+//! lives in `socketsweep-host-core`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
