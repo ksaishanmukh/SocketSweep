@@ -182,6 +182,9 @@ pub fn run(
     log(&format!(
         "fixture on the phone: {files} files, {dirs} dirs, {apparent} bytes"
     ));
+    // A view's size counts the folder's own entry as well as everything below
+    // it, which `find -mindepth 1` leaves out.
+    let apparent = apparent + dir_size(transport.as_ref(), &cfg.serial, &root)?;
 
     // ── Connect and scan ─────────────────────────────────────────────────────
     let (tx, rx) = mpsc::channel::<HostEvent>();
