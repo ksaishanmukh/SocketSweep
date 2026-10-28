@@ -46,6 +46,11 @@ src-tauri/bin/daemon-x86_64
 src-tauri/bin/daemon-arm64.gz
 src-tauri/bin/daemon-x86_64.gz
 
+# On-phone app-info helper, compiled from android-helper/ by
+# `npm run build:helper` (needs a JDK and the Android SDK). A declared bundle
+# resource, so build it before `tauri build` or clippy.
+src-tauri/bin/socketsweep-helper.dex
+
 # Exclude local JSON test dumps
 out*.json
 

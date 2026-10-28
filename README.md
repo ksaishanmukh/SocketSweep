@@ -160,6 +160,14 @@ npm run build:daemon    # cross-compiles the phone daemon (needs the NDK)
 npm run tauri dev       # run the desktop app with a phone plugged in
 ```
 
+`npm run build:helper` compiles the on-phone app-info helper (`android-helper/`,
+a few Java files that report installed apps' names and icons) to
+`src-tauri/bin/socketsweep-helper.dex`. It needs a JDK 17+ and an Android SDK
+with a platform (API 30+) and build-tools, found through `ANDROID_HOME` or
+`ANDROID_SDK_ROOT`. Instead of building either the daemon or the helper, you
+can download them from the `daemon` and `helper` artifacts of a CI run into
+`src-tauri/bin`.
+
 `npm run build:daemon` writes gzip-compressed `src-tauri/bin/daemon-arm64.gz` and
 `src-tauri/bin/daemon-x86_64.gz`; both are bundled with the app (compressed so
 the Linux AppImage tooling does not try to resolve an Android ELF) and
