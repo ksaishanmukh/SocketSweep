@@ -10,3 +10,6 @@ repository.workspace = true
 serde = { workspace = true }
 postcard = { workspace = true }
 bitflags = { workspace = true }
+
+[lints.clippy]
+too_many_lines = "warn"

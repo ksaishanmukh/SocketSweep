@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines)]
+
 //! Round trips, golden bytes, variant indices and framing edge cases.
 //!
 //! The golden byte tests are the guard on the wire format: they hard-code the
