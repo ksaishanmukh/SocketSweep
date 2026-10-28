@@ -12,3 +12,6 @@ repository.workspace = true
 fake = []
 
 [dependencies]
+
+[lints.clippy]
+too_many_lines = "warn"
