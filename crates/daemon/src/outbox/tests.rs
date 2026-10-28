@@ -1,5 +1,3 @@
-#![allow(clippy::too_many_lines)]
-
 use super::*;
 use socketsweep_wire::{read_frame, Outcome, Totals, SESSION_LEVEL};
 use std::io::{Cursor, Write};

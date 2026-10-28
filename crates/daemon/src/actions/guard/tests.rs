@@ -1,5 +1,3 @@
-#![allow(clippy::too_many_lines)]
-
 use super::*;
 use std::fs;
 use std::sync::atomic::AtomicBool;
