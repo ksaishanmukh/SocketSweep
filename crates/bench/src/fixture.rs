@@ -11,6 +11,7 @@
 
 use std::io::{self, Write};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use socketsweep_sim::{NodeId, Rng, SimFs, TreeBuilder};
 use socketsweep_transport::Transport;
@@ -332,21 +333,90 @@ pub fn push(
     transport
         .push(serial, tar, DEVICE_TAR, 0o644)
         .map_err(|e| format!("pushing the fixture: {e}"))?;
-    let cmd = format!(
-        "rm -rf '{root}' && cd '{parent}' && tar -xf {DEVICE_TAR}; s=$?; rm -f {DEVICE_TAR}; exit $s"
+    run_detached(
+        transport,
+        serial,
+        "extracting the fixture",
+        &format!("rm -rf '{root}' && cd '{parent}' && tar -xf {DEVICE_TAR}"),
+    )?;
+    transport
+        .shell(serial, &format!("rm -f {DEVICE_TAR}"))
+        .map_err(|e| format!("removing the pushed archive: {e}"))?;
+    Ok((fs, size))
+}
+
+/// Files a detached job leaves behind: its exit status, stdout and stderr.
+const JOB_DONE: &str = "/data/local/tmp/ssbench.done";
+const JOB_OUT: &str = "/data/local/tmp/ssbench.out";
+const JOB_LOG: &str = "/data/local/tmp/ssbench.log";
+
+/// How long a detached job may take. Tens of thousands of files through
+/// `/sdcard`'s FUSE layer take minutes on an emulator.
+const JOB_DEADLINE: Duration = Duration::from_secs(30 * 60);
+
+/// Run `script` on the phone and return its stdout.
+///
+/// A shell call that stays silent longer than the transport's read timeout is
+/// treated as a lost device, and `tar` or `find -exec … +` over a large tree
+/// can be silent for minutes. So the script runs detached, writing its output
+/// and exit status to files, and is polled for. `script` must not contain
+/// double quotes.
+fn run_detached(
+    transport: &dyn Transport,
+    serial: &str,
+    what: &str,
+    script: &str,
+) -> Result<String, String> {
+    let launch = format!(
+        "rm -f {JOB_DONE} {JOB_DONE}.tmp {JOB_OUT} {JOB_LOG}; \
+         nohup sh -c \"{script}; echo \\$? > {JOB_DONE}.tmp; mv {JOB_DONE}.tmp {JOB_DONE}\" \
+         </dev/null >{JOB_OUT} 2>{JOB_LOG} &"
     );
     let out = transport
-        .shell(serial, &cmd)
-        .map_err(|e| format!("extracting the fixture: {e}"))?;
+        .shell(serial, &launch)
+        .map_err(|e| format!("{what}: starting: {e}"))?;
     if !out.success() {
         return Err(format!(
-            "extracting the fixture failed ({:?}): {}{}",
+            "{what}: could not start ({:?}): {}",
             out.exit,
-            String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         ));
     }
-    Ok((fs, size))
+
+    let deadline = Instant::now() + JOB_DEADLINE;
+    let status = loop {
+        std::thread::sleep(Duration::from_secs(1));
+        let status = transport
+            .shell(serial, &format!("cat {JOB_DONE} 2>/dev/null"))
+            .map_err(|e| format!("{what}: waiting: {e}"))?
+            .stdout_text();
+        let status = status.trim().to_string();
+        if !status.is_empty() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "{what}: took longer than {} minutes",
+                JOB_DEADLINE.as_secs() / 60
+            ));
+        }
+    };
+
+    let read = |file: &str| {
+        transport
+            .shell(serial, &format!("cat {file} 2>/dev/null"))
+            .map(|o| o.stdout_text())
+            .map_err(|e| format!("{what}: reading its output: {e}"))
+    };
+    let stdout = read(JOB_OUT)?;
+    let stderr = read(JOB_LOG)?;
+    transport
+        .shell(serial, &format!("rm -f {JOB_DONE} {JOB_OUT} {JOB_LOG}"))
+        .ok();
+    if status != "0" {
+        return Err(format!("{what}: failed (exit {status}): {}", stderr.trim()));
+    }
+    Ok(stdout)
 }
 
 /// What is under `path` on the phone, by `find` and `stat`: (files, dirs,
@@ -357,20 +427,14 @@ pub fn measure_on_device(
     serial: &str,
     path: &str,
 ) -> Result<(u32, u32, u64, u64), String> {
-    let out = transport
-        .shell(
-            serial,
-            &format!("find '{path}' -mindepth 1 -exec stat -c '%F|%s' {{}} +"),
-        )
-        .map_err(|e| format!("measuring {path}: {e}"))?;
-    if !out.success() {
-        return Err(format!(
-            "measuring {path} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
+    let out = run_detached(
+        transport,
+        serial,
+        &format!("measuring {path}"),
+        &format!("find '{path}' -mindepth 1 -exec stat -c '%F|%s' {{}} +"),
+    )?;
     let (mut files, mut dirs, mut bytes, mut file_bytes) = (0u32, 0u32, 0u64, 0u64);
-    for line in out.stdout_text().lines() {
+    for line in out.lines() {
         let Some((kind, size)) = line.rsplit_once('|') else {
             continue;
         };
