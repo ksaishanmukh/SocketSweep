@@ -159,8 +159,10 @@ npm run build:daemon    # cross-compiles the phone daemon (needs the NDK)
 npm run tauri dev       # run the desktop app with a phone plugged in
 ```
 
-`npm run build:daemon` writes `src-tauri/bin/daemon-arm64` and
-`src-tauri/bin/daemon-x86_64`; both are bundled with the app.
+`npm run build:daemon` writes gzip-compressed `src-tauri/bin/daemon-arm64.gz` and
+`src-tauri/bin/daemon-x86_64.gz`; both are bundled with the app (compressed so
+the Linux AppImage tooling does not try to resolve an Android ELF) and
+decompressed on the host before being pushed to the phone.
 
 Checks:
 

@@ -271,6 +271,38 @@ fn daemon_log(transport: &dyn Transport, serial: &str) -> Option<String> {
     Some(format!("{}{ellipsis}", &log[..end]))
 }
 
+/// Push the daemon build at `binary` to the phone. A `.gz` build (how the app
+/// bundles it, so installer tooling does not scan an Android ELF) is
+/// decompressed to a temporary file first; any other path is pushed as is.
+fn push_daemon(
+    transport: &dyn Transport,
+    serial: &str,
+    binary: &Path,
+) -> Result<(), TransportError> {
+    if binary.extension().and_then(|e| e.to_str()) != Some("gz") {
+        return transport.push(serial, binary, DEVICE_BIN, 0o755);
+    }
+    let local = |source| TransportError::Local {
+        path: binary.to_path_buf(),
+        source,
+    };
+    let tmp = std::env::temp_dir().join(format!(
+        "socketsweep-daemon-{}-{:016x}",
+        std::process::id(),
+        rand::rng().random::<u64>()
+    ));
+    let unpack = || -> std::io::Result<()> {
+        let mut gz = flate2::read::GzDecoder::new(std::fs::File::open(binary)?);
+        let mut out = std::fs::File::create(&tmp)?;
+        std::io::copy(&mut gz, &mut out)?;
+        Ok(())
+    };
+    let result = unpack().map_err(local);
+    let result = result.and_then(|()| transport.push(serial, &tmp, DEVICE_BIN, 0o755));
+    let _ = std::fs::remove_file(&tmp);
+    result
+}
+
 /// Kill the daemon and remove its binary. Best effort: the phone may be gone.
 pub fn tear_down(transport: &dyn Transport, serial: &str) {
     let _ = transport.shell(serial, KILL_DAEMON);
@@ -303,7 +335,7 @@ impl Daemon {
         // A daemon left over from a crashed run holds the old binary.
         let _ = transport.shell(serial, KILL_DAEMON);
         let _ = transport.shell(serial, GRANT_STORAGE);
-        transport.push(serial, binary, DEVICE_BIN, 0o755)?;
+        push_daemon(transport, serial, binary)?;
 
         let result = Self::launch(transport, serial, root, info, options);
         if result.is_err() {
@@ -426,6 +458,32 @@ mod tests {
             Some(("it's".into(), " rest"))
         );
         assert!(parse_launch_command("pkill -f x").is_none());
+    }
+
+    #[test]
+    fn a_gzipped_daemon_is_pushed_decompressed_and_a_raw_one_as_is() {
+        use socketsweep_transport::fake::{FakeDevice, FakeTransport};
+        use std::io::Write;
+
+        let dir = std::env::temp_dir().join(format!("ss-daemon-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = b"ELF pretend daemon".repeat(100);
+
+        let gz = dir.join("daemon-arm64.gz");
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        enc.write_all(&payload).unwrap();
+        std::fs::write(&gz, enc.finish().unwrap()).unwrap();
+        let raw = dir.join("daemon-raw");
+        std::fs::write(&raw, &payload).unwrap();
+
+        for path in [&gz, &raw] {
+            let t = FakeTransport::new().with_device(FakeDevice::ready("P1"));
+            push_daemon(&t, "P1", path).unwrap();
+            let file = t.file("P1", DEVICE_BIN.as_bytes()).unwrap();
+            assert_eq!(file.data, payload, "{}", path.display());
+            assert_eq!(file.mode, 0o755);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

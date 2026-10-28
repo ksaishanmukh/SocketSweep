@@ -2,8 +2,8 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "resources": [
-      "bin/daemon-arm64",
-      "bin/daemon-x86_64",
+      "bin/daemon-arm64.gz",
+      "bin/daemon-x86_64.gz",
       "bin/adb.exe",
       "bin/AdbWinApi.dll",
       "bin/AdbWinUsbApi.dll"

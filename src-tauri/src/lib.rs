@@ -91,8 +91,8 @@ fn build_app(handle: &tauri::AppHandle) -> Result<App, Box<dyn std::error::Error
     let paths = handle.path();
     let config = AppConfig {
         daemon: DaemonBinaries {
-            arm64: Some(bundled(handle, "daemon-arm64")?),
-            x86_64: Some(bundled(handle, "daemon-x86_64")?),
+            arm64: Some(bundled(handle, "daemon-arm64.gz")?),
+            x86_64: Some(bundled(handle, "daemon-x86_64.gz")?),
         },
         history_file: paths.app_data_dir().ok().map(|d| d.join("history.json")),
         default_destination: paths.desktop_dir().or_else(|_| paths.download_dir()).ok(),

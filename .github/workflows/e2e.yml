@@ -42,7 +42,7 @@ jobs:
           workspaces: . -> target
 
       # Both ABIs, with the runner's NDK, exactly as the daemon job builds
-      # them; the emulator uses src-tauri/bin/daemon-x86_64.
+      # them; the emulator uses src-tauri/bin/daemon-x86_64.gz.
       - name: Build device daemons
         run: npm run build:daemon
 
