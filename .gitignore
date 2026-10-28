@@ -49,3 +49,6 @@ src-tauri/bin/daemon-x86_64.gz
 # Exclude local JSON test dumps
 out*.json
 
+# Benchmark results written by socketsweep-bench
+socketsweep-bench.json
+
