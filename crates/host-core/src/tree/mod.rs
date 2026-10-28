@@ -53,6 +53,9 @@ mod sizes;
 use socketsweep_gui_contract::{Measure, NodeId, SessionId, Size, SizeMetric};
 use socketsweep_wire::{Kind, Outcome, Totals, ROOT_DIR};
 
+#[cfg(doc)]
+use socketsweep_wire::DirId;
+
 use nodes::{DirRec, DirState, Node, NONE};
 
 /// The scan root's node.
