@@ -1,14 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { formatBytes, formatNumber } from "../lib/format";
 import type { Row } from "../api";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { IconTrash } from "./icons";
 
 /** Above this, the dialog asks the user to type the name rather than just click. */
 const TYPE_TO_CONFIRM_BYTES = 1024 ** 3;
 const TYPE_TO_CONFIRM_FILES = 100;
-
-const FOCUSABLE =
-  'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
 /**
  * Deleting is the one irreversible thing this app does.
@@ -34,60 +32,9 @@ export function ConfirmDialog({
   const [typed, setTyped] = useState("");
   const cancelRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const onCancelRef = useRef(onCancel);
-  useEffect(() => {
-    onCancelRef.current = onCancel;
-  });
+  useFocusTrap(dialogRef, cancelRef, onCancel);
 
-  const isDir = target.kind === "dir";
-  const freed = target.size.disk;
-  // Not measured yet: the size says nothing about what is there.
-  const unscanned = target.measure === "unknown";
-  // Still being counted: the number is a lower bound.
-  const counting = target.measure === "partial";
-  // Lossy names cannot be retyped, so they fall back to a fixed word.
-  const untypeable = target.name.includes("\uFFFD") || target.name.trim() === "";
-  const phrase = untypeable ? "DELETE" : target.name;
-  // A folder that is not fully measured may hold far more than it shows.
-  const heavy =
-    (isDir && (unscanned || counting)) ||
-    freed >= TYPE_TO_CONFIRM_BYTES ||
-    target.files >= TYPE_TO_CONFIRM_FILES;
-  const armed = !heavy || typed.normalize("NFC") === phrase.normalize("NFC");
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    // Focus starts on Cancel, so Enter cannot delete anything by reflex.
-    cancelRef.current?.focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onCancelRef.current();
-        return;
-      }
-      if (e.key !== "Tab") return;
-      const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE);
-      if (!nodes || nodes.length === 0) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      const active = document.activeElement;
-      if (!dialogRef.current?.contains(active)) {
-        e.preventDefault();
-        first.focus();
-      } else if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      if (opener && document.contains(opener)) opener.focus();
-    };
-  }, []);
+  const rules = confirmationRules(target, typed);
 
   return (
     <div
@@ -113,68 +60,139 @@ export function ConfirmDialog({
           {path}
         </p>
 
-        {unscanned ? (
-          <p className="text-sm text-zinc-400 mb-4">
-            <span className="font-semibold text-zinc-200">
-              Not measured yet — its real size is unknown.
-            </span>{" "}
-            {isDir ? "Everything inside will be deleted. " : ""}It cannot be undone.
-          </p>
-        ) : (
-          <p className="text-sm text-zinc-400 mb-4">
-            This frees {counting && "at least "}
-            <span className="font-semibold text-zinc-200">{formatBytes(freed)}</span>
-            {counting && " (still counting)"}
-            {isDir && (
-              <>
-                {" "}
-                across{" "}
-                <span className="font-semibold text-zinc-200">
-                  {formatNumber(target.files)} files
-                </span>
-              </>
-            )}
-            . It cannot be undone.
-          </p>
-        )}
+        <Consequence target={target} rules={rules} />
 
-        {heavy && (
-          <label className="block mb-5">
-            <span className="text-xs text-zinc-500">
-              {untypeable && "This name cannot be typed exactly. "}Type{" "}
-              <span className="font-mono text-zinc-300">{phrase}</span> to confirm
-            </span>
-            <input
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              className="mt-1 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-sm font-mono text-zinc-200
-                focus-visible:outline-2 focus-visible:outline-accent-500"
-            />
-          </label>
-        )}
+        {rules.heavy && <TypeToConfirm rules={rules} typed={typed} onChange={setTyped} />}
 
-        <div className="flex items-center gap-3 justify-end">
-          <button
-            ref={cancelRef}
-            onClick={onCancel}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800
-              transition-colors rounded focus-visible:outline-2 focus-visible:outline-accent-500"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={!armed}
-            className="px-4 py-2 rounded-lg text-sm font-bold bg-red-600 hover:bg-red-500 text-white transition-colors
-              shadow-lg shadow-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
-              focus-visible:outline-2 focus-visible:outline-red-400"
-          >
-            Delete
-          </button>
-        </div>
+        <DialogActions
+          cancelRef={cancelRef}
+          armed={rules.armed}
+          onCancel={onCancel}
+          onConfirm={onConfirm}
+        />
       </div>
     </div>
+  );
+}
+
+function DialogActions({
+  cancelRef,
+  armed,
+  onCancel,
+  onConfirm,
+}: {
+  cancelRef: RefObject<HTMLButtonElement | null>;
+  armed: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 justify-end">
+      <button
+        ref={cancelRef}
+        onClick={onCancel}
+        className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800
+              transition-colors rounded focus-visible:outline-2 focus-visible:outline-accent-500"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={onConfirm}
+        disabled={!armed}
+        className="px-4 py-2 rounded-lg text-sm font-bold bg-red-600 hover:bg-red-500 text-white transition-colors
+              shadow-lg shadow-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
+              focus-visible:outline-2 focus-visible:outline-red-400"
+      >
+        Delete
+      </button>
+    </div>
+  );
+}
+
+interface ConfirmationRules {
+  isDir: boolean;
+  freed: number;
+  /** Not measured yet: the size says nothing about what is there. */
+  unscanned: boolean;
+  /** Still being counted: the number is a lower bound. */
+  counting: boolean;
+  /** Lossy names cannot be retyped, so they fall back to a fixed word. */
+  untypeable: boolean;
+  phrase: string;
+  /** Large enough, or unknown enough, that clicking is not confirmation. */
+  heavy: boolean;
+  /** The confirm button may be pressed. */
+  armed: boolean;
+}
+
+function confirmationRules(target: Row, typed: string): ConfirmationRules {
+  const isDir = target.kind === "dir";
+  const freed = target.size.disk;
+  const unscanned = target.measure === "unknown";
+  const counting = target.measure === "partial";
+  const untypeable = target.name.includes("�") || target.name.trim() === "";
+  const phrase = untypeable ? "DELETE" : target.name;
+  // A folder that is not fully measured may hold far more than it shows.
+  const heavy =
+    (isDir && (unscanned || counting)) ||
+    freed >= TYPE_TO_CONFIRM_BYTES ||
+    target.files >= TYPE_TO_CONFIRM_FILES;
+  const armed = !heavy || typed.normalize("NFC") === phrase.normalize("NFC");
+  return { isDir, freed, unscanned, counting, untypeable, phrase, heavy, armed };
+}
+
+function Consequence({ target, rules }: { target: Row; rules: ConfirmationRules }) {
+  const { isDir, freed, unscanned, counting } = rules;
+  if (unscanned) {
+    return (
+      <p className="text-sm text-zinc-400 mb-4">
+        <span className="font-semibold text-zinc-200">
+          Not measured yet — its real size is unknown.
+        </span>{" "}
+        {isDir ? "Everything inside will be deleted. " : ""}It cannot be undone.
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm text-zinc-400 mb-4">
+      This frees {counting && "at least "}
+      <span className="font-semibold text-zinc-200">{formatBytes(freed)}</span>
+      {counting && " (still counting)"}
+      {isDir && (
+        <>
+          {" "}
+          across{" "}
+          <span className="font-semibold text-zinc-200">{formatNumber(target.files)} files</span>
+        </>
+      )}
+      . It cannot be undone.
+    </p>
+  );
+}
+
+function TypeToConfirm({
+  rules,
+  typed,
+  onChange,
+}: {
+  rules: ConfirmationRules;
+  typed: string;
+  onChange: (typed: string) => void;
+}) {
+  return (
+    <label className="block mb-5">
+      <span className="text-xs text-zinc-500">
+        {rules.untypeable && "This name cannot be typed exactly. "}Type{" "}
+        <span className="font-mono text-zinc-300">{rules.phrase}</span> to confirm
+      </span>
+      <input
+        value={typed}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        className="mt-1 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-sm font-mono text-zinc-200
+                focus-visible:outline-2 focus-visible:outline-accent-500"
+      />
+    </label>
   );
 }

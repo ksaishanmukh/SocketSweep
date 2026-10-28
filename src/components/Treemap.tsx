@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useElementSize } from "../hooks/useElementSize";
 import { formatBytes } from "../lib/format";
 import { squarifyNested, type Tile, type TreemapItem } from "../lib/squarify";
+import { TreemapTile } from "./TreemapTile";
 
 /** Nested squarified treemap in plain SVG. */
 
@@ -37,22 +39,10 @@ export function Treemap({
   emptyMessage = "Nothing to show here.",
 }: TreemapProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
+  const size = useElementSize(hostRef);
   // Remembering which items the tile came from drops a stale tooltip after drilling in.
   const [hover, setHover] = useState<{ tile: Tile; items: TreemapItem[] } | null>(null);
   const hovered = hover?.items === items ? hover.tile : null;
-
-  // Track the container so the layout recomputes on resize.
-  useEffect(() => {
-    const el = hostRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setSize({ w: Math.floor(width), h: Math.floor(height) });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   const tiles = useMemo(
     () =>
@@ -61,16 +51,7 @@ export function Treemap({
         : [],
     [items, size.w, size.h],
   );
-
-  // Colour by the top-level ancestor so children read as part of their parent.
-  const colorOf = useMemo(() => {
-    const map = new Map<number, string>();
-    let next = 0;
-    for (const t of tiles) {
-      if (t.depth === 0) map.set(t.id, PALETTE[next++ % PALETTE.length]);
-    }
-    return map;
-  }, [tiles]);
+  const colorOf = useTopLevelColors(tiles);
 
   return (
     <div ref={hostRef} className="relative w-full h-full">
@@ -86,94 +67,65 @@ export function Treemap({
           role="group"
           aria-label="Storage treemap"
         >
-          {tiles.map((tile, i) => {
-            const parentColor =
-              tile.depth === 0 ? colorOf.get(tile.id) : findAncestorColor(tiles, i, colorOf);
-            const selected = tile.id === selectedId;
-
-            return (
-              <g
-                key={`${tile.id}-${tile.depth}`}
-                onMouseEnter={() => setHover({ tile, items })}
-                onMouseLeave={() => setHover((h) => (h?.tile.id === tile.id ? null : h))}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelect?.(tile.id);
-                }}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  onOpen(tile.id, tile.isDir);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onOpen(tile.id, tile.isDir);
-                  }
-                }}
-                onFocus={() => onSelect?.(tile.id)}
-                tabIndex={0}
-                role="button"
-                aria-label={`${tile.name}, ${formatBytes(tile.size)}${counting?.has(tile.id) ? ", still counting" : ""}`}
-                className="treemap-tile cursor-pointer"
-              >
-                <rect
-                  x={tile.x}
-                  y={tile.y}
-                  width={Math.max(0, tile.w)}
-                  height={Math.max(0, tile.h)}
-                  fill={parentColor ?? "#3f3f46"}
-                  fillOpacity={tile.depth === 0 ? 0.85 : 0.55}
-                  stroke={selected ? "#fff" : "#ffffff22"}
-                  strokeWidth={selected ? 2 : 1}
-                />
-                {tile.w > 54 && tile.h > 24 && (
-                  <text
-                    x={tile.x + 5}
-                    y={tile.y + 12}
-                    fill="#fff"
-                    fontSize={11}
-                    className="pointer-events-none select-none"
-                  >
-                    {clip(tile.name, tile.w - 10)}
-                  </text>
-                )}
-                {tile.depth === 0 && tile.w > 54 && tile.h > 42 && (
-                  <text
-                    x={tile.x + 5}
-                    y={tile.y + 26}
-                    fill="#e4e4e7"
-                    fontSize={9}
-                    fillOpacity={0.75}
-                    className="pointer-events-none select-none font-mono"
-                  >
-                    {formatBytes(tile.size)}
-                    {counting?.has(tile.id) ? "+" : ""}
-                  </text>
-                )}
-              </g>
-            );
-          })}
+          {tiles.map((tile, i) => (
+            <TreemapTile
+              key={`${tile.id}-${tile.depth}`}
+              tile={tile}
+              color={tile.depth === 0 ? colorOf.get(tile.id) : findAncestorColor(tiles, i, colorOf)}
+              selected={tile.id === selectedId}
+              counting={counting?.has(tile.id) ?? false}
+              onOpen={onOpen}
+              onSelect={onSelect}
+              onHoverStart={(t) => setHover({ tile: t, items })}
+              onHoverEnd={(t) => setHover((h) => (h?.tile.id === t.id ? null : h))}
+            />
+          ))}
         </svg>
       )}
 
       {hovered && (
-        <div
-          className="pointer-events-none absolute z-10 bg-zinc-900 border border-zinc-700 px-2 py-1.5 rounded shadow-xl text-xs"
-          style={{
-            left: Math.min(hovered.x + 8, Math.max(0, size.w - 200)),
-            top: Math.min(hovered.y + 8, Math.max(0, size.h - 64)),
-          }}
-        >
-          <p className="font-semibold text-zinc-200 max-w-48 truncate">{hovered.name}</p>
-          <p className="text-zinc-400 font-mono mt-0.5">
-            {formatBytes(hovered.size)}
-            {counting?.has(hovered.id) ? "+" : ""}
-          </p>
-          {counting?.has(hovered.id) && <p className="text-amber-400/80 mt-0.5">Still counting</p>}
-          {hovered.isDir && <p className="text-zinc-600 mt-0.5">Double-click to open</p>}
-        </div>
+        <TreemapTooltip tile={hovered} counting={counting?.has(hovered.id) ?? false} size={size} />
       )}
+    </div>
+  );
+}
+
+/** Colour by the top-level ancestor so children read as part of their parent. */
+function useTopLevelColors(tiles: Tile[]) {
+  return useMemo(() => {
+    const map = new Map<number, string>();
+    let next = 0;
+    for (const t of tiles) {
+      if (t.depth === 0) map.set(t.id, PALETTE[next++ % PALETTE.length]);
+    }
+    return map;
+  }, [tiles]);
+}
+
+function TreemapTooltip({
+  tile,
+  counting,
+  size,
+}: {
+  tile: Tile;
+  counting: boolean;
+  size: { w: number; h: number };
+}) {
+  return (
+    <div
+      className="pointer-events-none absolute z-10 bg-zinc-900 border border-zinc-700 px-2 py-1.5 rounded shadow-xl text-xs"
+      style={{
+        left: Math.min(tile.x + 8, Math.max(0, size.w - 200)),
+        top: Math.min(tile.y + 8, Math.max(0, size.h - 64)),
+      }}
+    >
+      <p className="font-semibold text-zinc-200 max-w-48 truncate">{tile.name}</p>
+      <p className="text-zinc-400 font-mono mt-0.5">
+        {formatBytes(tile.size)}
+        {counting ? "+" : ""}
+      </p>
+      {counting && <p className="text-amber-400/80 mt-0.5">Still counting</p>}
+      {tile.isDir && <p className="text-zinc-600 mt-0.5">Double-click to open</p>}
     </div>
   );
 }
@@ -191,10 +143,4 @@ function findAncestorColor(
     if (tiles[i].depth === 0) return colors.get(tiles[i].id);
   }
   return undefined;
-}
-
-/** Rough character budget; SVG has no ellipsis and measuring per frame is not worth it. */
-function clip(name: string, pixels: number): string {
-  const max = Math.floor(pixels / 6.2);
-  return name.length <= max ? name : `${name.slice(0, Math.max(1, max - 1))}…`;
 }

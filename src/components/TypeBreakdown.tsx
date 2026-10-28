@@ -53,41 +53,53 @@ export function TypeBreakdown({ groups, metric }: { groups: TypeGroup[]; metric:
       </div>
 
       <ul className="flex flex-col gap-3">
-        {groups.map((g) => {
-          const size = sizeOf(g.size, metric);
-          const share = total > 0 ? (size / total) * 100 : 0;
-          return (
-            <li key={g.label} className="flex items-center gap-3">
-              <span
-                className="w-2.5 h-2.5 rounded-sm shrink-0"
-                style={{ background: HUES[g.label] ?? HUES.Other }}
-                aria-hidden
-              />
-              <span className="text-sm text-zinc-300 w-24 shrink-0">{g.label}</span>
-
-              <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${Math.max(0.5, share)}%`,
-                    background: HUES[g.label] ?? HUES.Other,
-                  }}
-                />
-              </div>
-
-              <span className="text-xs font-mono text-zinc-400 w-20 text-right tabular-nums shrink-0">
-                {formatBytes(size)}
-              </span>
-              <span className="text-xs text-zinc-600 w-14 text-right tabular-nums shrink-0">
-                {share.toFixed(1)}%
-              </span>
-              <span className="text-xs text-zinc-600 w-24 text-right tabular-nums shrink-0">
-                {formatNumber(g.files)} files
-              </span>
-            </li>
-          );
-        })}
+        {groups.map((g) => (
+          <TypeRow key={g.label} group={g} metric={metric} total={total} />
+        ))}
       </ul>
     </div>
+  );
+}
+
+function TypeRow({
+  group,
+  metric,
+  total,
+}: {
+  group: TypeGroup;
+  metric: SizeMetric;
+  total: number;
+}) {
+  const size = sizeOf(group.size, metric);
+  const share = total > 0 ? (size / total) * 100 : 0;
+  return (
+    <li className="flex items-center gap-3">
+      <span
+        className="w-2.5 h-2.5 rounded-sm shrink-0"
+        style={{ background: HUES[group.label] ?? HUES.Other }}
+        aria-hidden
+      />
+      <span className="text-sm text-zinc-300 w-24 shrink-0">{group.label}</span>
+
+      <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${Math.max(0.5, share)}%`,
+            background: HUES[group.label] ?? HUES.Other,
+          }}
+        />
+      </div>
+
+      <span className="text-xs font-mono text-zinc-400 w-20 text-right tabular-nums shrink-0">
+        {formatBytes(size)}
+      </span>
+      <span className="text-xs text-zinc-600 w-14 text-right tabular-nums shrink-0">
+        {share.toFixed(1)}%
+      </span>
+      <span className="text-xs text-zinc-600 w-24 text-right tabular-nums shrink-0">
+        {formatNumber(group.files)} files
+      </span>
+    </li>
   );
 }
