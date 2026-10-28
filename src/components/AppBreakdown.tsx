@@ -6,10 +6,8 @@ import { sizeOf } from "../lib/size";
  * Storage attributed to the app that owns it.
  *
  * Android puts per-app files under `Android/{data,obb,media}/<package>`, so
- * ownership is a property of location. That is what makes this view work where
- * the file-type one cannot: on a real device most of the space is game assets
- * with extensions no category list recognises, so "what kind of file is this"
- * answers "unknown" while "who does it belong to" answers "that game".
+ * ownership follows from location. This works where file types do not: most
+ * space is game assets with unrecognised extensions.
  */
 export function AppBreakdown({
   apps,
@@ -75,11 +73,8 @@ function AppRow({
       >
         <div className="flex items-baseline gap-3">
           {/*
-            Rendered whole and unemphasised, in mono, to read as the
-            identifier it is. Highlighting the last segment made
-            com.activision.callofduty.shooter look like an app called
-            "shooter" — an assertion about the app's name that we have
-            no basis for, since Android does not give us the label.
+            Shown whole, in mono, as the identifier it is. Emphasising the last
+            segment would imply an app name, but Android gives no label.
           */}
           <span className="flex-1 min-w-0 truncate text-sm font-mono text-zinc-300">
             {app.package}
