@@ -1,6 +1,5 @@
 //! Seat allocation between the proximity tiers (D'Hondt with floors and
-//! caps). Pure; see `docs/architecture.md`, section 3, "Proximity
-//! allocation".
+//! caps). Pure.
 
 use socketsweep_wire::{Tier, TierCfg};
 
@@ -73,7 +72,7 @@ pub fn seats(workers: u8, tiers: &[TierInput; 3]) -> [u8; 3] {
     seats.map(|s| s as u8)
 }
 
-/// Step 1 of [`seats`]: each tier's floor, limited by what it can use and
+/// The first step of [`seats`]: each tier's floor, limited by what it can use and
 /// by the workers left, given back tier first.
 pub fn floor_seats(workers: u8, tiers: &[TierInput; 3]) -> [u32; 3] {
     let mut seats = [0u32; 3];
@@ -88,8 +87,7 @@ pub fn floor_seats(workers: u8, tiers: &[TierInput; 3]) -> [u32; 3] {
 }
 
 /// The open tier's weight `dwell` microseconds after a focus change: it ramps
-/// linearly from 1.0 to `full` over `ramp` (spec: `1 + 2 · min(1, dwell /
-/// ramp)` with the default weight 3).
+/// linearly from 1.0 to `full` over `ramp`.
 pub fn ramped_weight(full: f32, dwell: u64, ramp: u64) -> f32 {
     if ramp == 0 || full <= 1.0 {
         return full;
@@ -134,7 +132,7 @@ mod tests {
     #[test]
     fn measured_focus_gives_its_seats_away() {
         // D'Hondt with Near capped at 2 and weight 1 against Back's 4 gives
-        // Near only its floor; see the table note in the spec.
+        // Near only its floor.
         assert_eq!(seats(8, &defaults(8, 3.0, [0, 100, 100])), [0, 1, 7]);
     }
 

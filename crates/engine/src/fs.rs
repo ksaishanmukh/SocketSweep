@@ -1,11 +1,9 @@
-//! The file system contract the engine walks through (`trait Fs`).
+//! The file system contract the engine walks through ([`Fs`]).
 //!
-//! This is an internal contract of the daemon (`docs/architecture.md`,
-//! section 3, `fswalk`). The phone daemon implements it with rustix
+//! The phone daemon implements it with rustix
 //! (`openat(O_DIRECTORY | O_NOFOLLOW)`, `getdents64`,
 //! `statat(AT_SYMLINK_NOFOLLOW)`); [`StdFs`](crate::StdFs) is a portable
-//! `std::fs` version for tests and host tools; `socketsweep-sim` has a seeded
-//! in-memory `SimFs`.
+//! `std::fs` version for tests and host tools.
 //!
 //! Paths are bytes end to end. The engine builds a directory's path by joining
 //! the scan root and each name with `/`.
@@ -26,7 +24,7 @@ pub mod errno {
 
 /// What `lstat` said about one entry, with the identity the engine needs for
 /// hardlink de-duplication. The wire [`Stat`] carries no inode, so the engine
-/// de-duplicates before it sums totals (see [`ScanState`](crate::ScanState)).
+/// de-duplicates before it sums totals ([`ScanState`](crate::ScanState)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FsStat {
     /// The entry's type from `st_mode`.
@@ -117,7 +115,7 @@ impl<'a> Interrupt<'a> {
     }
 }
 
-/// Reads directories and stats entries. Internal contract of the daemon.
+/// Reads directories and stats entries.
 ///
 /// Implementations must be safe to call from many worker threads at once,
 /// never follow symbolic links (neither the final component nor, for the

@@ -1,6 +1,5 @@
-//! The v4 scan engine: `sched`, `aggregate` and `pool` from
-//! `docs/architecture.md`, section 3. Host-portable; the phone daemon
-//! supplies a rustix [`Fs`] and its session's [`EventSink`].
+//! The scan engine: scheduler, aggregator and worker pool. Host-portable; the
+//! phone daemon supplies a rustix [`Fs`] and its session's [`EventSink`].
 //!
 //! # Contracts
 //!
@@ -8,16 +7,16 @@
 //!   at once. Byte paths, never following symbolic links.
 //! - [`EventSink`]: the session's bulk and control queues. `bulk` is called
 //!   under the scheduler lock and must not block.
-//! - [`ScanState`]: the pure scheduler + aggregator. Inputs (picks, results,
+//! - [`ScanState`]: the pure scheduler and aggregator. Inputs (picks, results,
 //!   focus, prunes, ticks, with the time passed in) produce wire
 //!   [`ScanEvent`](socketsweep_wire::ScanEvent)s at the moment the state
-//!   changes. The simulator in `socketsweep-sim` drives it directly.
+//!   changes, so a simulator can drive it directly.
 //!
 //! # Modes
 //!
 //! [`ScanOpts::mode`](socketsweep_wire::ScanOpts::mode) picks the scheduler.
-//! `Focus` is the v4 design (skeleton phase, deferred stats, proximity
-//! allocation). `Plain` is the benchmark baseline of section 6: no skeleton,
+//! `Focus` uses a skeleton phase, deferred stats and proximity allocation.
+//! `Plain` is the benchmark baseline: no skeleton,
 //! `Full` tasks only, and the focus is acknowledged (`FocusState`) but does
 //! not steer the workers, which spread and descend as with no focus.
 //!

@@ -6,7 +6,7 @@ use socketsweep_wire::{DirId, Outcome, ScanEvent, ROOT_DIR};
 use crate::sched::{Micros, ScanState, St, StatSt, NONE};
 
 impl ScanState {
-    /// Listed, stat'ed, every child finished, and (G2) the parent's stats
+    /// Listed, stat'ed, every child finished, and the parent's stats
     /// applied.
     pub(super) fn ready(&self, x: DirId) -> bool {
         let r = &self.dirs[x as usize];

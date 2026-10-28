@@ -5,8 +5,6 @@ use socketsweep_wire::{DirId, ScanEvent, ROOT_DIR};
 use super::{Focus, Micros, ScanState, St};
 
 impl ScanState {
-    // ── Focus ───────────────────────────────────────────────────────────────
-
     /// `ClientMsg::Focus`. A `seq` not above the last one seen (for `Focus`
     /// or `ClearFocus`) is stale and ignored, as is an unknown or pruned
     /// directory (its `seq` is still used up). Returns whether the focus

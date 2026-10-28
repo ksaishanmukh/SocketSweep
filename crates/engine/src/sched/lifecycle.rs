@@ -140,8 +140,6 @@ impl ScanState {
         self.workers.iter().filter(|w| w.task.is_some()).count()
     }
 
-    // ── Time ────────────────────────────────────────────────────────────────
-
     /// Advance time: ends the skeleton phase when due and emits `Progress`
     /// every [`PROGRESS_INTERVAL`]. Drivers call it periodically even when
     /// no task finishes (the pool's ticker thread, the simulator's tick

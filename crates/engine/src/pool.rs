@@ -1,9 +1,9 @@
-//! `pool`: the worker threads that drive a [`ScanState`].
+//! The worker threads that drive a [`ScanState`].
 //!
 //! One mutex guards the state; workers loop `lock; pick; unlock; do task;
 //! lock; apply; unlock`, and every event produced under the lock is handed
 //! to the [`EventSink`] before the lock is released, which is what makes the
-//! event order the order of state changes (G1–G3). A ticker thread wakes
+//! event order the order of state changes. A ticker thread wakes
 //! the state periodically (skeleton budget, `Progress`, stalled
 //! directories) while every worker is busy in a long task.
 

@@ -1,21 +1,15 @@
-//! `sched`: the directory table, tiers, allocation and choosing work.
+//! The directory table, tiers, allocation and choosing work.
 //!
 //! [`ScanState`] is a pure state machine: no threads, no clock (every method
 //! that needs the time takes `now`, in microseconds since an arbitrary
 //! origin), no I/O. Inputs are picks, task results, focus changes, prunes and
 //! ticks; outputs are wire [`ScanEvent`]s, appended to an internal queue at
 //! the moment the state changes and drained with
-//! [`ScanState::take_events`]. The threaded [`pool`](crate::pool) and the
-//! simulator in `socketsweep-sim` both drive it.
+//! [`ScanState::take_events`]. The threaded [`pool`](crate::pool) and a
+//! simulator can both drive it.
 //!
-//! The aggregation half (applying results, the completion cascade, prunes)
-//! is in [`aggregate`](crate::aggregate).
-//!
-//! The scheduler is split into submodules: `task` (what a worker is handed),
-//! `table` (the directory table and its counters), `lifecycle` (creation,
-//! accessors, time and the end of a scan), `focus`, `tiers` (the allocation),
-//! `skeleton` (the breadth-first phase), `pick` and `anchor` (choosing a
-//! worker's next task) and `validate`.
+//! Applying results, the completion cascade and prunes live in
+//! [`aggregate`](crate::aggregate).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -44,13 +38,13 @@ pub(crate) const NONE: DirId = DirId::MAX;
 
 /// A deferred stat job of at least this many entries is a "big job": it is
 /// handed out before anything else in its tier, so the scan's tail stays
-/// short (spec: "the biggest jobs start first").
+/// short.
 pub const BIG_JOB_ENTRIES: u32 = 2048;
 
 /// How often [`ScanState::tick`] emits [`ScanEvent::Progress`].
 pub const PROGRESS_INTERVAL: Micros = 500_000;
 
-/// The scheduler and aggregator for one scan. See the module docs.
+/// The scheduler and aggregator for one scan.
 #[derive(Debug)]
 pub struct ScanState {
     pub(crate) cfg: Cfg,
