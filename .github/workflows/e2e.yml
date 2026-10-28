@@ -45,6 +45,15 @@ jobs:
       - name: Build device daemons
         run: npm run build:daemon
 
+      # The runner's Android SDK (ANDROID_HOME) supplies android.jar and d8.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build app-info helper
+        run: npm run build:helper
+
       - name: Build the benchmark and end-to-end driver
         run: cargo build --release -p socketsweep-bench
 
@@ -63,6 +72,12 @@ jobs:
           # On failure, print the daemon's own log from the phone: it is the
           # only record of why the daemon refused or dropped a connection.
           script: |
+            # App-info helper: version header, and a non-empty label for a
+            # package every image has. CRs are stripped in case adb adds them.
+            adb push src-tauri/bin/socketsweep-helper.dex /data/local/tmp/socketsweep-helper.dex
+            adb shell "CLASSPATH=/data/local/tmp/socketsweep-helper.dex app_process / dev.socketsweep.Helper apps" | tr -d '\r' > helper.out
+            head -n 1 helper.out | grep -qx '{"v":1}'
+            grep -Eq '"pkg":"com.android.settings","label":"[^"]+"' helper.out
             ./target/release/socketsweep-bench e2e --seed 1 || { adb shell cat /data/local/tmp/socketsweep.log; false; }
             ./target/release/socketsweep-bench fixture --seed 1
             ./target/release/socketsweep-bench run --root /sdcard/ssfixture --runs "$BENCH_RUNS" --json socketsweep-bench.json || { adb shell cat /data/local/tmp/socketsweep.log; false; }

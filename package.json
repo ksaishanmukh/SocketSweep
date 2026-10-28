@@ -7,6 +7,7 @@
   "scripts": {
     "setup": "node scripts/setup-bins.mjs",
     "build:daemon": "node scripts/build-daemon.mjs",
+    "build:helper": "node scripts/build-helper.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",

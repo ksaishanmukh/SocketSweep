@@ -51,13 +51,14 @@ jobs:
       # tauri.linux.conf.json adds bin/adb.
       # src-tauri/bin is gitignored, and these checks only compile and lint, so
       # empty placeholders satisfy the existence check without a download or an
-      # NDK. The real files come from the daemon job and `npm run setup`.
+      # NDK. The real files come from the daemon and helper jobs and `npm run setup`.
       - name: Build frontend (tauri-build reads frontendDist)
         run: npm run build
       - name: Create placeholder bundle resources
         run: |
           mkdir -p src-tauri/bin
-          touch src-tauri/bin/daemon-arm64.gz src-tauri/bin/daemon-x86_64.gz src-tauri/bin/adb
+          touch src-tauri/bin/daemon-arm64.gz src-tauri/bin/daemon-x86_64.gz
+          touch src-tauri/bin/socketsweep-helper.dex src-tauri/bin/adb
 
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -95,8 +96,35 @@ jobs:
             src-tauri/bin/daemon-x86_64.gz
           if-no-files-found: error
 
+  # ── On-phone app-info helper, built once ──────────────────────────────────
+  # A .dex is the same on every OS, so compile it here (the runner has the
+  # Android SDK in ANDROID_HOME) and share it with the bundle jobs.
+  helper:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build app-info helper
+        run: npm run build:helper
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helper
+          path: src-tauri/bin/socketsweep-helper.dex
+          if-no-files-found: error
+
   build:
-    needs: [check, daemon]
+    needs: [check, daemon, helper]
     strategy:
       fail-fast: false
       matrix:
@@ -150,6 +178,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: daemon
+          path: src-tauri/bin
+
+      - name: Download app-info helper
+        uses: actions/download-artifact@v4
+        with:
+          name: helper
           path: src-tauri/bin
 
       # ── Fetch platform-specific ADB from Google ───────────────────────────

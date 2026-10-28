@@ -4,6 +4,7 @@
     "resources": [
       "bin/daemon-arm64.gz",
       "bin/daemon-x86_64.gz",
+      "bin/socketsweep-helper.dex",
       "bin/adb.exe",
       "bin/AdbWinApi.dll",
       "bin/AdbWinUsbApi.dll"
