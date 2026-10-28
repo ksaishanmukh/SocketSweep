@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
 use socketsweep_gui_contract::{Connected, Device, DeviceState, ErrorCode};
-use socketsweep_transport::{self as transport, TransportError};
+use socketsweep_transport::{self as transport, Transport, TransportError};
 
 use super::errors::{err, launch_err, transport_err, CmdResult};
 use super::state::{Busy, Conn, Inner};
@@ -63,24 +63,7 @@ pub(super) fn connect(
         }
     }));
 
-    {
-        let mut slot = lock(&inner.conn);
-        if inner.epoch.load(Ordering::SeqCst) != epoch {
-            drop(slot);
-            daemon.stop(transport.as_ref());
-            return Err(err(ErrorCode::Cancelled, "Disconnected while connecting."));
-        }
-        let model = if daemon.info.model.is_empty() {
-            device.model.clone()
-        } else {
-            daemon.info.model.clone()
-        };
-        *slot = Some(Arc::new(Conn {
-            daemon,
-            model,
-            epoch,
-        }));
-    }
+    install(inner, daemon, &device, epoch, transport.as_ref())?;
     let conn = inner.conn()?;
     if !conn.daemon.client.is_open() {
         // Lost before the callback was in place: it has already run.
@@ -101,6 +84,34 @@ pub(super) fn connect(
             .map(|d| d.display().to_string()),
         previous,
     })
+}
+
+/// Make `daemon` the connection, unless a disconnect since `epoch` means the
+/// connect was abandoned.
+fn install(
+    inner: &Inner,
+    daemon: Daemon,
+    device: &transport::Device,
+    epoch: u64,
+    transport: &dyn Transport,
+) -> CmdResult<()> {
+    let mut slot = lock(&inner.conn);
+    if inner.epoch.load(Ordering::SeqCst) != epoch {
+        drop(slot);
+        daemon.stop(transport);
+        return Err(err(ErrorCode::Cancelled, "Disconnected while connecting."));
+    }
+    let model = if daemon.info.model.is_empty() {
+        device.model.clone()
+    } else {
+        daemon.info.model.clone()
+    };
+    *slot = Some(Arc::new(Conn {
+        daemon,
+        model,
+        epoch,
+    }));
+    Ok(())
 }
 
 fn resolve_serial(inner: &Inner, serial: Option<String>) -> CmdResult<transport::Device> {
