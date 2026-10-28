@@ -4,7 +4,10 @@
 //! and says nothing cannot lock the host out. An **authenticated** new
 //! connection replaces the current session (the host reconnecting after a
 //! drop): the old connection is shut, which cancels everything it started.
-//! A connection that fails the handshake changes nothing.
+//! A connection that fails the handshake changes nothing, and neither does
+//! one that finishes its handshake after a newer connection already has: the
+//! host retries while the daemon starts, so an abandoned early attempt can
+//! complete late, and it must not shut the connection the host kept.
 
 // Abstract-namespace sockets are a Linux kernel feature, but std files the
 // extension trait under a per-OS module and Android is not `target_os = "linux"`.
@@ -42,13 +45,25 @@ fn conn_of(stream: &UnixStream) -> std::io::Result<Conn> {
 }
 
 /// The session being served: its generation and how to shut it.
-type Current = Mutex<Option<(u64, Arc<dyn Fn() + Send + Sync>)>>;
+type Active = Option<(u64, Arc<dyn Fn() + Send + Sync>)>;
+
+/// The newest generation that ever became the session, and the session being
+/// served now, if any.
+type Current = Mutex<(u64, Active)>;
+
+/// Whether a connection of generation `gen` that has just been authenticated
+/// may become the session, given the newest generation that already did.
+/// Generations count accepted connections, so a lower one is an older attempt
+/// that finished late.
+fn may_take_over(newest: u64, gen: u64) -> bool {
+    gen >= newest
+}
 
 /// Accept connections on `listener` forever, serving one session at a time.
 /// Returns when a session ends with `Shutdown`.
 pub fn serve(listener: UnixListener, cfg: SessionConfig, services: Services) {
     let cfg = Arc::new(cfg);
-    let current: Arc<Current> = Arc::new(Mutex::new(None));
+    let current: Arc<Current> = Arc::new(Mutex::new((0, None)));
     let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
 
     let accept = {
@@ -129,10 +144,17 @@ fn connection(
     let _ = stream.set_read_timeout(None);
     let _ = stream.set_write_timeout(Some(cfg.outbox.dead_after));
 
-    let previous = current
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .replace((gen, Arc::clone(&conn.shutdown)));
+    let previous = {
+        let mut slot = current.lock().unwrap_or_else(|e| e.into_inner());
+        let (newest, active) = &mut *slot;
+        if !may_take_over(*newest, gen) {
+            log!("connection {gen} authenticated after newer connection {newest}; closing it");
+            (conn.shutdown)();
+            return None;
+        }
+        *newest = gen;
+        active.replace((gen, Arc::clone(&conn.shutdown)))
+    };
     if let Some((old, shut)) = previous {
         log!("connection {gen} replaces connection {old}");
         shut();
@@ -140,9 +162,27 @@ fn connection(
     log!("connection {gen}: session started");
     let end = session::serve(conn, caps, cfg, services);
     log!("connection {gen}: {end:?}");
-    let mut cur = current.lock().unwrap_or_else(|e| e.into_inner());
-    if cur.as_ref().is_some_and(|(g, _)| *g == gen) {
-        *cur = None;
+    let mut slot = current.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.1.as_ref().is_some_and(|(g, _)| *g == gen) {
+        slot.1 = None;
     }
     Some(end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::may_take_over;
+
+    #[test]
+    fn a_newer_connection_takes_over() {
+        assert!(may_take_over(0, 1));
+        assert!(may_take_over(3, 7));
+    }
+
+    #[test]
+    fn an_older_connection_that_finishes_late_does_not() {
+        // The host gave up on attempt 2 and kept attempt 3; attempt 2's
+        // handshake completing afterwards must not shut attempt 3.
+        assert!(!may_take_over(3, 2));
+    }
 }
