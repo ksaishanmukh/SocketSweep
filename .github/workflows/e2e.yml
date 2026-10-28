@@ -2,8 +2,7 @@ name: Emulator end-to-end
 
 # Slow (an emulator boot, a 50,000-file fixture, a few dozen scans), so not on
 # every pull request: nightly, by hand from the Actions tab, and on a pull
-# request that carries the `e2e` label (manual and scheduled runs only exist
-# once this file is on the default branch).
+# request that carries the `e2e` label.
 on:
   pull_request:
     branches: [main]
@@ -42,7 +41,7 @@ jobs:
           workspaces: . -> target
 
       # Both ABIs, with the runner's NDK, exactly as the daemon job builds
-      # them; the emulator uses src-tauri/bin/daemon-x86_64.gz.
+      # them; the emulator uses the x86_64 build.
       - name: Build device daemons
         run: npm run build:daemon
 

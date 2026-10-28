@@ -69,7 +69,7 @@ jobs:
   # The Android binary is identical whatever OS bundles it, so cross-compile it
   # here with the preinstalled runner NDK (ANDROID_NDK_HOME) and share it with
   # the bundle jobs instead of rebuilding three times. The execute bit is not
-  # needed on the host: session.rs chmods the file after pushing it to the phone.
+  # needed on the host: the daemon chmods the file after it is pushed to the phone.
   daemon:
     needs: check
     runs-on: ubuntu-latest
@@ -131,7 +131,6 @@ jobs:
       # ── Toolchain setup ───────────────────────────────────────────────────
       # Rust is pre-installed on all GitHub Actions runners (ubuntu, windows,
       # macos). No need for dtolnay/rust-toolchain — saves CI time.
-      # See: https://github.com/actions/runner-images
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -188,9 +187,8 @@ jobs:
           console.log(`Bumped package.json and Cargo.toml to ${version}`);
 
       # ── Build Tauri desktop app ───────────────────────────────────────────
-      # This single command builds the React frontend (beforeBuildCommand),
-      # compiles the Rust bridge, and packages everything into native
-      # platform installers (.dmg / .deb / .AppImage / .msi / .exe).
+      # One command builds the frontend, compiles the Rust bridge and packages
+      # the installers.
       - name: Build Tauri app
         run: npm run tauri build
 
