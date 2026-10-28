@@ -10,8 +10,6 @@ use super::nodes::entry_kind;
 use super::{metric, Node, Tree, TreeError, NONE, ROOT};
 
 impl Tree {
-    // ── Queries ─────────────────────────────────────────────────────────────
-
     /// The whole tree's totals.
     pub fn totals(&self) -> gui::Totals {
         let root = &self.nodes[ROOT as usize];

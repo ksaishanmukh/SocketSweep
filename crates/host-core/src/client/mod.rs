@@ -12,10 +12,6 @@
 //!   nothing received. Closing wakes the reader, which drops every route, so
 //!   every waiting call sees its channel disconnect and reads why from
 //!   [`Client::closed_reason`].
-//!
-//! `connection` holds the shared connection state and frame routing,
-//! `handshake` opens a connection, `requests` is every call on it, and
-//! `threads` the reader and keepalive loops.
 
 mod connection;
 mod handshake;

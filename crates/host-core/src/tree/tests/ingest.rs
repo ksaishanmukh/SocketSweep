@@ -120,7 +120,7 @@ fn listing_parts_and_stats_by_position_across_parts() {
 fn interleaved_subtrees_out_of_order_need_no_reorder_buffer() {
     let mut t = tree();
     // Two subtrees progressing in an interleaved order, as parallel workers
-    // produce: legal under G1-G3.
+    // produce: legal, so no reorder buffer is needed.
     apply(
         &mut t,
         &[

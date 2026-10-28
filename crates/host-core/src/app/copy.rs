@@ -40,14 +40,12 @@ pub(super) fn copy_to_desktop(
         .map_err(|e| err(ErrorCode::Io, format!("Cannot use {}: {e}", dest.display())))?;
     let destination = dest.display().to_string();
 
-    // 1. The manifest.
     let client = conn.daemon.client.clone();
     let (root, items) = fetch_manifest(inner, &ctl, &client, path, node, &destination)?;
     if ctl.cancel.load(Ordering::SeqCst) {
         return Err(copy_err(CopyError::Cancelled));
     }
 
-    // 2. The files.
     let plan = copy::plan(&root, &items, &dest, &|p| p.exists());
     pull_files(
         inner,

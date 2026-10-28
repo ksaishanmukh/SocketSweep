@@ -24,13 +24,6 @@
 //! bumped by every disconnect, so a connect that was under way when the user
 //! disconnected does not install itself afterwards, and a lost-connection
 //! report for an old connection is ignored.
-//!
-//! # Layout
-//!
-//! `state` holds the shared state and its locks, `commands` is the
-//! [`Commands`] implementation, which hands the long operations to `connect`,
-//! `scan`, `delete` and `copy`; `errors` maps every failure to a
-//! [`CommandError`](socketsweep_gui_contract::CommandError).
 
 mod commands;
 mod connect;
@@ -95,7 +88,7 @@ impl Default for AppConfig {
     }
 }
 
-/// The host. See the [module documentation](self).
+/// The host.
 pub struct App {
     inner: Arc<Inner>,
 }

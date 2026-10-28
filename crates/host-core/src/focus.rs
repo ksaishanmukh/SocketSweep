@@ -30,7 +30,7 @@ pub enum FocusTarget {
 /// A focus message to send now: the target and its `seq`.
 pub type FocusSend = (FocusTarget, u32);
 
-/// The coalescing state machine. See the [module documentation](self).
+/// The coalescing state machine.
 #[derive(Debug)]
 pub struct Focuser {
     window: Duration,

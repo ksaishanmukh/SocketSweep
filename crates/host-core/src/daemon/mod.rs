@@ -8,10 +8,6 @@
 //!
 //! The socket name is fresh per session, so a stale daemon cannot be mistaken
 //! for the current one; the token, not the name, is the security boundary.
-//!
-//! `command` builds and reads back the launch command line, `random` makes
-//! the per-session secrets, and `lifecycle` pushes, launches, connects and
-//! tears down.
 
 mod command;
 mod lifecycle;
@@ -46,7 +42,7 @@ const LOG_EXCERPT_BYTES: usize = 2048;
 pub const MIN_SDK: u32 = 30;
 
 /// Kill any running daemon. The bracket stops the pattern matching the shell
-/// that runs it (see v3 `session.rs`), so it stays a command of its own.
+/// that runs it, which would kill the shell instead.
 const KILL_DAEMON: &str = "pkill -f '[s]ocketsweep-daemon'";
 
 /// Lets the shell user read all of shared storage under Scoped Storage.

@@ -2,7 +2,7 @@
 //!
 //! # Shape
 //!
-//! A flat `Vec<Node>` with child links held as indices, as in v3: nodes never
+//! A flat `Vec<Node>` with child links held as indices: nodes never
 //! move, a [`NodeId`] is a position, and walking to a parent is an index. Files
 //! are nodes too. A second dense vector maps each wire [`DirId`] to its node,
 //! so an event costs one index, not a path lookup.
@@ -18,14 +18,17 @@
 //! Sums climb as `Listing` and `Stats` arrive, each delta applied to every
 //! ancestor (`Partial`). `SubtreeDone` replaces a directory's sub totals with
 //! the daemon's and applies the difference up the chain (`Final`): the
-//! daemon's figure wins. See `docs/architecture.md`, section 4.
+//! daemon's figure wins.
 //!
 //! # Validation
 //!
-//! The ordering guarantees G1–G3 are checked as events arrive. A violation is
-//! a [`TreeError::Protocol`], and the caller fails the scan: a tree built from
-//! a stream it does not understand would show wrong numbers as if they were
-//! right.
+//! The daemon guarantees that a directory is introduced before anything refers
+//! to it, that each directory's events come in a fixed order (listing parts,
+//! `Stats`, each child's `SubtreeDone`, its own `SubtreeDone`), and that each
+//! directory is finished once or pruned. These are checked as events arrive. A
+//! violation is a [`TreeError::Protocol`], and the caller fails the scan: a
+//! tree built from a stream it does not understand would show wrong numbers as
+//! if they were right.
 //!
 //! # Deletes
 //!
@@ -35,13 +38,6 @@
 //! frames overtake its bulk queue, so events about directories inside a removed
 //! subtree can still arrive afterwards; those directories are remembered as
 //! gone and their events are dropped rather than treated as violations.
-//!
-//! # Layout
-//!
-//! `nodes` holds the node and directory records, `ingest` applies the event
-//! stream, `sizes` keeps sums in step up the ancestor chain, `identity` maps
-//! nodes to references and paths, and `queries` and `breakdowns` answer the
-//! GUI's questions.
 
 mod breakdowns;
 mod identity;
@@ -119,7 +115,7 @@ pub enum Ingested {
     },
 }
 
-/// One scan's tree. See the [module documentation](self).
+/// One scan's tree.
 pub struct Tree {
     session: SessionId,
     nodes: Vec<Node>,
