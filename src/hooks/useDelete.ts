@@ -66,8 +66,8 @@ export function useDelete({
         log(`[DELETE] Removed ${formatNumber(result.items)} items.`);
       } catch (err) {
         fail(err);
-        // "Stale" and "removed" mean the screen is out of step with the host;
-        // the contract says the GUI refreshes.
+        // "Stale" and "removed" mean the screen is out of step with the host,
+        // so reload it.
         const code = errorCode(err);
         if (code === "stale" || code === "removed") {
           void nav.reload();

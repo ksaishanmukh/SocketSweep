@@ -3,11 +3,10 @@ const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 /**
  * Human-readable byte count.
  *
- * Guards three cases the original inline version got wrong, all of which
- * rendered the literal string "undefined" into the UI:
- *   - sizes at or above 1 PB indexed past the end of the unit table
- *   - negative sizes (reachable if a delete over-subtracts) produced NaN
- *   - values between 0 and 1 produced a negative exponent
+ * Guards three cases that would otherwise render "undefined" or "NaN":
+ *   - sizes at or above 1 PB, which index past the end of the unit table
+ *   - negative sizes, reachable if a delete over-subtracts
+ *   - values between 0 and 1, which give a negative exponent
  */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes)) return "—";

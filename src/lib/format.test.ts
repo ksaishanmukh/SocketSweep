@@ -22,7 +22,7 @@ describe("formatBytes", () => {
     expect(formatBytes(983_355_392)).toBe("937.8 MB");
   });
 
-  // Regressions — each of these rendered "undefined" or "NaN" before.
+  // Edge cases that would otherwise render "undefined" or "NaN".
   it("clamps at the largest known unit instead of running off the table", () => {
     expect(formatBytes(1024 ** 5)).toBe("1.0 PB");
     expect(formatBytes(1024 ** 6)).toBe("1024.0 PB");

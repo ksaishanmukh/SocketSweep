@@ -41,8 +41,7 @@ export function SidePanel({
       />
 
       {/*
-        Search takes over this panel only, leaving the main canvas as the
-        context you are searching within.
+        Search takes over this panel only; the main canvas stays as context.
       */}
       <FileList
         key={searching ? "search" : nodeKey(view.node)}

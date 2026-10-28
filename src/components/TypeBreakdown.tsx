@@ -5,9 +5,8 @@ import { sizeOf } from "../lib/size";
 /**
  * Storage by kind of file.
  *
- * "24 GB of video" is a sentence someone can act on. No amount of
- * folder-by-folder browsing produces it, which is why the old UI could not
- * answer the question at all.
+ * "24 GB of video" is something a person can act on, and folder-by-folder
+ * browsing cannot produce it.
  */
 
 /** One hue per category, stable regardless of ordering. */

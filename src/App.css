@@ -1,11 +1,8 @@
 /* ── Tailwind v4 ─────────────────────────────────────────────────────── */
 @import "tailwindcss";
 
-/* Fonts are bundled, not fetched.
- *
- * index.html used to <link> these from fonts.googleapis.com, which meant a
- * network round trip on every launch of a desktop app, fallback typefaces when
- * offline, and a content security policy that could not be enabled. */
+/* Fonts are bundled rather than fetched, so the app works offline and a
+ * strict content security policy stays possible. */
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
