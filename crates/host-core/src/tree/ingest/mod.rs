@@ -1,4 +1,5 @@
-//! Applying the scan event stream to a [`Tree`], checking G1–G3 as it goes.
+//! Applying the scan event stream to a [`Tree`], checking the daemon's
+//! ordering rules as it goes.
 
 mod completion;
 mod listing;
@@ -9,8 +10,6 @@ use socketsweep_wire::{DirId, ScanEvent};
 use super::{protocol, DirRec, DirState, Ingested, Tree, TreeError};
 
 impl Tree {
-    // ── Ingest ──────────────────────────────────────────────────────────────
-
     /// Apply one event. `Started` is not accepted: it creates the tree (see
     /// [`Tree::new`]), and a second one is a protocol error.
     pub fn ingest(&mut self, event: &ScanEvent) -> Result<Ingested, TreeError> {
@@ -72,7 +71,7 @@ impl Tree {
         }
     }
 
-    /// The record for `dir`, which must have been introduced (G1).
+    /// The record for `dir`, which must have been introduced.
     fn rec(&self, dir: DirId) -> Result<&DirRec, TreeError> {
         self.dirs
             .get(dir as usize)

@@ -9,10 +9,9 @@
 //! { "R58M12345": { "/sdcard": { "size": { "apparent": 1, "disk": 2 }, "files": 2, "dirs": 3, "at": 1700000000 } } }
 //! ```
 //!
-//! Two older shapes from v3 are read too: a bare number for `size` (apparent
-//! bytes, read as both figures) and one record per serial (read as that
-//! device's `/sdcard`). Both are rewritten in the current shape on the next
-//! save.
+//! Two older shapes are read too: a bare number for `size` (apparent bytes,
+//! read as both figures) and one record per serial (read as that device's
+//! `/sdcard`). Both are rewritten in the current shape on the next save.
 //!
 //! The file is replaced atomically, written beside the original and renamed
 //! over it, so a crash mid-write leaves the previous history. Every failure is
@@ -27,7 +26,7 @@ use socketsweep_gui_contract::{ScanRecord, Size, Totals};
 
 use crate::daemon::DEFAULT_ROOT;
 
-/// A size as stored: current, or a v3 bare number.
+/// A size as stored: current, or a bare number from older files.
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum StoredSize {

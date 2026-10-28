@@ -79,7 +79,8 @@ pub(super) struct DirRec {
     pub(super) next_part: u16,
     /// Child nodes in listing order, for `Stats` positions. Dropped once done.
     pub(super) entries: Vec<NodeId>,
-    /// Walked child directories not yet done or gone, to check G2.
+    /// Walked child directories not yet done or gone, to check that a directory
+    /// finishes only after its children.
     pub(super) open: u32,
 }
 

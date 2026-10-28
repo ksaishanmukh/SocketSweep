@@ -20,15 +20,9 @@
 //! # Pulling
 //!
 //! Directories are created first, then files are pulled by [`COPY_WORKERS`]
-//! threads, as the spec's 2–3 parallel sync connections. Cancelling stops
-//! workers taking new files; a file part-way through finishes (the transport
-//! cannot be interrupted), and files already copied stay. A failed pull's
-//! partial file is removed.
-//!
-//! # Layout
-//!
-//! `names` makes names host-safe, `plan` maps a manifest onto local paths, and
-//! `pull` creates and pulls them.
+//! parallel threads. Cancelling stops workers taking new files; a file
+//! part-way through finishes (the transport cannot be interrupted), and files
+//! already copied stay. A failed pull's partial file is removed.
 
 mod names;
 mod plan;

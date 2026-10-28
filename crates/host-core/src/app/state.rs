@@ -21,8 +21,6 @@ use crate::history::History;
 use crate::lock;
 use crate::tree::Tree;
 
-// ── State ───────────────────────────────────────────────────────────────────
-
 /// Lets `cancel_copy` reach a running copy.
 #[derive(Default)]
 pub(super) struct CopyCtl {

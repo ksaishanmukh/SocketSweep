@@ -98,8 +98,6 @@ impl Tree {
     }
 }
 
-// ── File-type classification ────────────────────────────────────────────────
-
 /// Broad categories, deliberately coarse: "24 GB of video" is actionable.
 const CATEGORIES: [&str; 7] = [
     "Photos",

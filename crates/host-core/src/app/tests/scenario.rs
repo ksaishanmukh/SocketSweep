@@ -133,7 +133,6 @@ fn queries_and_history(rig: &Rig, dcim: NodeRef) {
 
 fn delete_a_file(rig: &Rig, root: NodeRef, dcim: NodeRef, a: NodeRef) {
     let app = &rig.app;
-    // Delete.
     assert_eq!(app.delete(root).unwrap_err().code, ErrorCode::Invalid);
     let deleted = app.delete(a).unwrap();
     assert_eq!(deleted.items, 1);
@@ -148,7 +147,6 @@ fn delete_a_file(rig: &Rig, root: NodeRef, dcim: NodeRef, a: NodeRef) {
 
 fn copy_folder(rig: &Rig, dcim: NodeRef) {
     let app = &rig.app;
-    // Copy.
     rig.transport.put_file(
         "P1",
         b"/storage/emulated/0/DCIM/pic.jpg",

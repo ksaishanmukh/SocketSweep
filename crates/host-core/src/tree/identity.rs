@@ -6,8 +6,6 @@ use socketsweep_wire::{DirId, ROOT_DIR};
 use super::{DirState, Node, Tree, TreeError, NONE, ROOT};
 
 impl Tree {
-    // ── Nodes and identity ──────────────────────────────────────────────────
-
     /// The node a [`NodeRef`] names, if it is from this tree and still in it.
     pub fn resolve(&self, node: NodeRef) -> Result<NodeId, TreeError> {
         if node.session != self.session {
