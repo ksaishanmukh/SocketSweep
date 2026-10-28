@@ -3,8 +3,8 @@
 // setup-bins.mjs — fetch host binaries that are deliberately not in git
 // ============================================================================
 // Downloads Google's platform-tools for the host OS and places `adb` (plus its
-// companion DLLs on Windows) into src-tauri/bin/, which tauri.<platform>.conf.json
-// declares as bundle resources.
+// companion DLLs on Windows) into src-tauri/bin/, where the app bundles them as
+// resources.
 //
 //   npm run setup            # no-op if the binaries are already present
 //   npm run setup -- --force # re-download
