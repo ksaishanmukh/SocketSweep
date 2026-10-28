@@ -1,5 +1,4 @@
-//! Dev-only simulation tools for the v4 engine (`docs/architecture.md`,
-//! section 5):
+//! Dev-only simulation tools for the v4 engine:
 //!
 //! - [`SimFs`]: seeded `/sdcard`-shaped (or random) trees implementing the
 //!   engine's `Fs`, with ground-truth totals and per-node call counters.

@@ -1,4 +1,4 @@
-//! Spec section 5 properties, over random trees and navigation scripts,
+//! Engine properties, over random trees and navigation scripts,
 //! driving `ScanState` through the discrete-event simulator.
 
 mod common;

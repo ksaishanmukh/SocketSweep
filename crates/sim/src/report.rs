@@ -1,5 +1,5 @@
 //! A small comparison report: v4 against the baseline on the standard tree
-//! for the three navigation scripts of spec section 6.
+//! for the three navigation scripts.
 
 use std::fmt::Write as _;
 

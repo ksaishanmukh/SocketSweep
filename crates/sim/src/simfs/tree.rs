@@ -27,7 +27,6 @@ impl Truth {
     }
 }
 
-/// See the module docs.
 #[derive(Debug)]
 pub struct SimFs {
     pub(super) root_path: Vec<u8>,

@@ -1,4 +1,4 @@
-//! Navigation scripts (spec section 6) and random scripts for property tests.
+//! Navigation scripts and random scripts for property tests.
 
 use socketsweep_engine::Micros;
 use socketsweep_wire::Kind;

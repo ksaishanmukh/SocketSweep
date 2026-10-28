@@ -1,5 +1,5 @@
 //! The standard `/sdcard` tree: skeleton timing, the v4-vs-baseline
-//! comparison of spec section 6, and a golden trace.
+//! comparison, and a golden trace.
 
 mod common;
 
@@ -47,7 +47,7 @@ fn skeleton_is_ready_within_a_second() {
     assert!(run.violations.is_empty(), "{:#?}", run.violations);
 }
 
-/// Spec section 6 on the simulator. Script (a): total ≤ 1.05× the baseline.
+/// The comparison on the simulator. Script (a): total ≤ 1.05× the baseline.
 /// Script (b): the folder open at the end is measured, from the click, in at
 /// most half the baseline's time (the drill target is already measured when
 /// the user gets there), and the first click's wait is well below the
@@ -86,8 +86,8 @@ fn v4_against_the_baseline() {
     }
 }
 
-/// A fixed seed, tree and script always produce the same event stream. If
-/// a scheduling change is intended, update the constant (and say why).
+/// A fixed seed, tree and script always produce the same event stream. The
+/// constant changes only when the scheduling changes on purpose.
 #[test]
 fn golden_trace() {
     let fs = SimFs::random(

@@ -1,4 +1,4 @@
-//! The engine's plain mode, the benchmark baseline of spec section 6: a
+//! The engine's plain mode, the benchmark baseline: a
 //! plain parallel walk with no skeleton, no deferred stats, and a focus that
 //! is acknowledged but does not steer the workers.
 
