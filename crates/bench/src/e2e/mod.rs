@@ -1,4 +1,4 @@
-//! The emulator end-to-end test (`docs/architecture.md`, section 5), through
+//! The emulator end-to-end test, through
 //! host-core's [`App`], the same `Commands` the GUI calls, over real adb and
 //! the real daemon:
 //!
@@ -134,10 +134,8 @@ pub fn run(
     let root = format!("{}/{FIXTURE_DIR}", cfg.parent);
     std::fs::create_dir_all(&cfg.work).map_err(|e| format!("{}: {e}", cfg.work.display()))?;
 
-    // ── The fixture ──────────────────────────────────────────────────────────
     let fixture = prepare_fixture(transport.as_ref(), cfg, &root, log)?;
 
-    // ── Connect and scan ─────────────────────────────────────────────────────
     let (tx, rx) = mpsc::channel::<HostEvent>();
     let config = AppConfig {
         daemon: crate::device::binaries(cfg.daemon.clone()),

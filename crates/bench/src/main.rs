@@ -1,4 +1,4 @@
-//! `socketsweep-bench`: see the library docs and `usage()`.
+//! `socketsweep-bench`: the command line for the benchmark, the fixture and the end-to-end test.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

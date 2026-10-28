@@ -1,4 +1,4 @@
-//! The benchmark of `docs/architecture.md`, section 6: the engine's focus
+//! The benchmark: the engine's focus
 //! mode against its plain mode (the baseline), on one connection, with the
 //! navigation scripts (a), (b) and (c), interleaved.
 

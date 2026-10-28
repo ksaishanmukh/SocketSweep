@@ -64,8 +64,7 @@ pub struct Script {
 /// scripts open: the same ones in every run and both modes.
 #[derive(Debug, Clone, Default)]
 pub struct Reference {
-    /// Top-level folders with their disk usage (subtree plus own entry is
-    /// not needed for ranking: the subtree's totals).
+    /// Top-level folders with their disk usage (the subtree's totals).
     pub top: Vec<(Vec<u8>, u64)>,
     /// For each top-level folder, its child folders with their disk usage.
     pub children: Vec<Vec<(Vec<u8>, u64)>>,
