@@ -3166,6 +3166,7 @@ dependencies = [
 name = "socketsweep-host-core"
 version = "1.0.0"
 dependencies = [
+ "flate2",
  "rand 0.9.5",
  "serde",
  "serde_json",

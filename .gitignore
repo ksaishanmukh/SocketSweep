@@ -43,6 +43,8 @@ src-tauri/bin/AdbWinUsbApi.dll
 # build them before `tauri build` or clippy.
 src-tauri/bin/daemon-arm64
 src-tauri/bin/daemon-x86_64
+src-tauri/bin/daemon-arm64.gz
+src-tauri/bin/daemon-x86_64.gz
 
 # Exclude local JSON test dumps
 out*.json

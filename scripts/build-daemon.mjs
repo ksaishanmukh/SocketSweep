@@ -13,16 +13,22 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
-import { copyFile, mkdir, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-/** Rust target -> file name under src-tauri/bin (host-core's DaemonBinaries). */
+/**
+ * Rust target -> file name under src-tauri/bin (host-core's DaemonBinaries).
+ * Gzipped: linuxdeploy scans every ELF in the AppDir and fails on an Android
+ * binary whose loader does not exist on the build host. The host decompresses
+ * before pushing.
+ */
 const TARGETS = {
-  "aarch64-linux-android": "daemon-arm64",
-  "x86_64-linux-android": "daemon-x86_64",
+  "aarch64-linux-android": "daemon-arm64.gz",
+  "x86_64-linux-android": "daemon-x86_64.gz",
 };
 const PROFILE = "release-daemon";
 /** Minimum supported Android API level. */
@@ -114,7 +120,7 @@ async function main() {
     const built = join(ROOT, "target", target, PROFILE, "socketsweep-daemon");
     const dest = join(ROOT, "src-tauri", "bin", outName);
     await mkdir(dirname(dest), { recursive: true });
-    await copyFile(built, dest);
+    await writeFile(dest, gzipSync(await readFile(built), { level: 9 }));
 
     const { size } = await stat(dest);
     console.log(`Wrote ${dest} (${(size / 1024).toFixed(0)} KB)`);

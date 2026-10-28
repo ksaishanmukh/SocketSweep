@@ -24,6 +24,11 @@ fn find_bin(name: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// The daemon build `name`: the gzipped one the app bundles, else the raw one.
+fn find_daemon(name: &str) -> Option<PathBuf> {
+    find_bin(&format!("{name}.gz")).or_else(|| find_bin(name))
+}
+
 /// The adb transport. `adb` is the binary used to start a server if none
 /// is running: the given one, the bundled one, or `adb` on `PATH`.
 pub fn transport(adb: Option<PathBuf>) -> Result<Arc<AdbTransport>, String> {
@@ -65,8 +70,8 @@ pub fn binaries(daemon: Option<PathBuf>) -> DaemonBinaries {
             x86_64: Some(p),
         },
         None => DaemonBinaries {
-            arm64: find_bin("daemon-arm64"),
-            x86_64: find_bin("daemon-x86_64"),
+            arm64: find_daemon("daemon-arm64"),
+            x86_64: find_daemon("daemon-x86_64"),
         },
     }
 }
