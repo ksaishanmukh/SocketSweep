@@ -61,10 +61,12 @@ jobs:
           disk-size: 6000M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
+          # On failure, print the daemon's own log from the phone: it is the
+          # only record of why the daemon refused or dropped a connection.
           script: |
-            ./target/release/socketsweep-bench e2e --seed 1
+            ./target/release/socketsweep-bench e2e --seed 1 || { adb shell cat /data/local/tmp/socketsweep.log; false; }
             ./target/release/socketsweep-bench fixture --seed 1
-            ./target/release/socketsweep-bench run --root /sdcard/ssfixture --runs "$BENCH_RUNS" --json socketsweep-bench.json
+            ./target/release/socketsweep-bench run --root /sdcard/ssfixture --runs "$BENCH_RUNS" --json socketsweep-bench.json || { adb shell cat /data/local/tmp/socketsweep.log; false; }
 
       - name: Upload benchmark results
         if: always()
