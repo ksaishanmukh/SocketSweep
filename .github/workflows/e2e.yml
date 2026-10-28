@@ -78,6 +78,8 @@ jobs:
             adb shell "CLASSPATH=/data/local/tmp/socketsweep-helper.dex app_process / dev.socketsweep.Helper apps" | tr -d '\r' > helper.out
             head -n 1 helper.out | grep -qx '{"v":1}'
             grep -Eq '"pkg":"com.android.settings","label":"[^"]+"' helper.out
+            # Icon rendering is still being proven on devices, so this run only reports: whether icons came back, the helper's own errors and its exit code.
+            timeout 90 adb shell "CLASSPATH=/data/local/tmp/socketsweep-helper.dex app_process / dev.socketsweep.Helper apps --icons com.android.settings,com.android.chrome 2>&1; echo helper-exit=\$?" | tr -d '\r' | awk '/"icon"/{print substr($0,1,140) "..."; next} !/^\{"pkg"/{print}' | head -60 || true
             ./target/release/socketsweep-bench e2e --seed 1 || { adb shell cat /data/local/tmp/socketsweep.log; false; }
             ./target/release/socketsweep-bench fixture --seed 1
             ./target/release/socketsweep-bench run --root /sdcard/ssfixture --runs "$BENCH_RUNS" --json socketsweep-bench.json || { adb shell cat /data/local/tmp/socketsweep.log; false; }
