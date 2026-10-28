@@ -128,7 +128,7 @@ use std::time::Duration;
 /// Sent in [`Hello`] and [`Welcome`]. The daemon refuses a host of any other
 /// version, so a stale daemon left on the phone fails loudly instead of
 /// misreading frames. Bump it whenever the wire format changes.
-pub const PROTOCOL_VERSION: u16 = 4;
+pub const PROTOCOL_VERSION: u16 = 5;
 
 /// The first four bytes of every [`Hello`], so a daemon can tell a SocketSweep
 /// host from something else that connected to its socket.

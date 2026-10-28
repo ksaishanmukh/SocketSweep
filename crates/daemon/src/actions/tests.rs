@@ -30,6 +30,7 @@ fn delete_reports_items_and_totals_of_what_it_removed() {
     assert_eq!(totals.dirs, 3);
     assert!(totals.apparent >= 6003);
     assert!(totals.disk >= 6003);
+    assert!(totals.newest_mtime > 0, "the removed entries' mtimes count");
     assert!(!target.exists());
     assert!(tmp.path().join("top.txt").exists());
 }

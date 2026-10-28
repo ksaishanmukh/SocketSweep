@@ -142,6 +142,7 @@ impl Tree {
             kind: Kind::Dir,
             dir: ROOT_DIR,
             own: Size::default(),
+            mtime: 0,
             sub: Totals::default(),
             measure: Measure::Unknown,
             stat_known: true,

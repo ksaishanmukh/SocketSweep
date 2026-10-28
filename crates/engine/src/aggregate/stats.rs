@@ -21,6 +21,7 @@ impl ScanState {
                 };
                 tot.apparent = tot.apparent.saturating_add(apparent);
                 tot.disk = tot.disk.saturating_add(disk);
+                tot.newest_mtime = tot.newest_mtime.max(st.stat.mtime);
                 if st.kind != Kind::Dir {
                     self.files_seen += 1;
                 }

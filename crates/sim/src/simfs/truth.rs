@@ -64,6 +64,11 @@ impl SimFs {
                 } else {
                     tot.files += 1;
                 }
+                if cn.fail_stat.is_none() {
+                    // Hardlink duplicates count here too: only bytes are
+                    // deduplicated, not the inode's mtime.
+                    tot.newest_mtime = tot.newest_mtime.max(cn.mtime);
+                }
                 if cn.fail_stat.is_some() {
                     tot.errors += 1;
                 } else if cn.kind == Kind::Dir || cn.nlink <= 1 || links.insert((cn.dev, cn.ino)) {

@@ -62,6 +62,10 @@ pub struct Totals {
     pub errors: u32,
     /// [`Totals::UNREADABLE`] and the like, or'ed together up the tree.
     pub flags: u8,
+    /// Newest `st_mtime` (Unix seconds) among the entries counted here,
+    /// directories included; 0 when nothing below has a known mtime. A high-water
+    /// mark: deleting entries never lowers it.
+    pub newest_mtime: i64,
 }
 
 impl Totals {
@@ -83,10 +87,12 @@ impl Totals {
         self.dirs = self.dirs.saturating_add(other.dirs);
         self.errors = self.errors.saturating_add(other.errors);
         self.flags |= other.flags;
+        self.newest_mtime = self.newest_mtime.max(other.newest_mtime);
     }
 
-    /// Remove a deleted child's totals from these. Flags stay: they say what
-    /// happened during the scan, not what is left.
+    /// Remove a deleted child's totals from these. Flags and `newest_mtime`
+    /// stay: flags say what happened during the scan, and a maximum cannot be
+    /// undone without rescanning the siblings.
     pub fn subtract(&mut self, other: &Totals) {
         self.apparent = self.apparent.saturating_sub(other.apparent);
         self.disk = self.disk.saturating_sub(other.disk);

@@ -1,6 +1,6 @@
 [package]
 name = "socketsweep-wire"
-description = "Protocol v4 between the SocketSweep desktop host and the phone daemon"
+description = "Protocol v5 between the SocketSweep desktop host and the phone daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

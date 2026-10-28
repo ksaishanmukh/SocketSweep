@@ -5,7 +5,7 @@ use crate::*;
 
 #[test]
 fn constants_match_the_specification() {
-    assert_eq!(PROTOCOL_VERSION, 4);
+    assert_eq!(PROTOCOL_VERSION, 5);
     assert_eq!(MAX_FRAME_BYTES, 16 << 20);
     assert_eq!(MAX_LISTING_PART, 4096);
     assert_eq!(MAX_SCAN_BATCH_BYTES, 64 << 10);
@@ -58,5 +58,15 @@ fn totals_add_and_subtract() {
     t.subtract(&totals());
     assert_eq!(t.apparent, 1);
     assert_eq!(t.flags, Totals::UNREADABLE, "flags are history, not sums");
+    assert_eq!(t.newest_mtime, 100, "a maximum cannot be subtracted");
+
+    let mut older = totals();
+    older.newest_mtime = 7;
+    t.add(&older);
+    assert_eq!(t.newest_mtime, 100, "add keeps the newer of the two");
+    let mut newer = totals();
+    newer.newest_mtime = 900;
+    t.add(&newer);
+    assert_eq!(t.newest_mtime, 900);
     assert_eq!(stat().disk(), 8 * BLOCK_SIZE);
 }

@@ -34,6 +34,16 @@ impl Tree {
         self.nodes.get(id as usize).map(Node::size)
     }
 
+    /// The newest modification time (Unix seconds) of this entry and, for a
+    /// directory, everything inside it; `None` when the node does not exist
+    /// or no mtime is known yet. A file's is its own; a directory's is the
+    /// maximum of its own and the running (`Partial`) or final (`Final`)
+    /// maximum below it, and is never lowered by deletes.
+    pub fn newest_mtime(&self, id: NodeId) -> Option<i64> {
+        let n = self.nodes.get(id as usize)?;
+        Some(n.newest_mtime()).filter(|m| *m != 0)
+    }
+
     fn files_of(n: &Node) -> u32 {
         if n.is_dir() {
             n.sub.files

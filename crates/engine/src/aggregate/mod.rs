@@ -10,6 +10,16 @@
 //! stat failed counts in `errors` and adds no size; a directory that could
 //! not be read is `errors: 1` with [`Totals::UNREADABLE`].
 //!
+//! **Newest mtime.** `newest_mtime` is the maximum `st_mtime` over every
+//! entry counted, directories' own entries included (a directory's mtime
+//! moves whenever something is added or removed directly in it, so it can
+//! be newer than any file left inside), merged up with `max`. Entries whose
+//! stat failed contribute nothing, and 0 means no mtime is known. Hardlink
+//! duplicates still count here: the mtime is the same inode's, and only the
+//! bytes are deduplicated. It is a high-water mark: pruning a subtree that
+//! was deleted during the scan does not lower it, since the siblings would
+//! have to be revisited to know the next-newest.
+//!
 //! **Hardlinks.** A non-directory with `nlink > 1` adds its size only the
 //! first time its `(dev, ino)` is seen in the scan; later links still count
 //! in `files` but add no bytes. The wire [`Stat`](socketsweep_wire::Stat)

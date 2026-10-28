@@ -45,6 +45,7 @@ impl ScanState {
             dirs: 1,
             errors: u32::from(own.counted && own.err),
             flags: 0,
+            newest_mtime: 0,
         };
         self.out.push(ScanEvent::Pruned { dir });
         if was_done {
