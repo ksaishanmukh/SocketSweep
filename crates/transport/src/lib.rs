@@ -1,7 +1,7 @@
 //! How the host reaches a phone: the [`Transport`] trait.
 //!
 //! Code above this trait never depends on adb, so it can be tested against
-//! [`FakeTransport`](fake::FakeTransport), an in-memory phone. The adb
+//! `FakeTransport`, an in-memory phone. The adb
 //! implementation speaks to the adb server's smart sockets directly.
 //!
 //! # What a transport does
