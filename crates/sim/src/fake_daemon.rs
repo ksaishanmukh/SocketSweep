@@ -1,6 +1,6 @@
 //! `FakeDaemon`: the real daemon session over an in-memory pipe, walking a
-//! [`SimFs`] with the real engine (`docs/architecture.md`, section 1: the
-//! fake on the host ↔ phone boundary).
+//! [`SimFs`] with the real engine. It stands in for the phone in host-side
+//! tests.
 //!
 //! Everything above the file system is the production code:
 //! `socketsweep_daemon::session` (handshake, routing, the writer's two queues,

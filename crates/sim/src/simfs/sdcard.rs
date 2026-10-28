@@ -5,7 +5,7 @@ use super::{NodeId, SimFs, TreeBuilder};
 use crate::rng::Rng;
 
 impl SimFs {
-    /// The standard `/sdcard`-shaped tree (spec section 5): 300 packages
+    /// The standard `/sdcard`-shaped tree: 300 packages
     /// under `Android/data`, a 5,000-file camera folder, one 60,000-file
     /// folder (`Movies/.thumbcache`), a 40-level chain under
     /// `Documents/deep`, 3,000 empty directories (`.leftovers`), and the

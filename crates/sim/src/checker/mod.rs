@@ -1,6 +1,6 @@
-//! An event-stream checker for the ordering guarantees G1–G3 (spec section
-//! 2), written from the host's point of view: it accepts exactly the streams
-//! a host without a reorder buffer can build its tree from.
+//! An event-stream checker for the ordering guarantees G1–G3, written from the
+//! host's point of view: it accepts exactly the streams a host without a
+//! reorder buffer can build its tree from.
 
 mod done_totals;
 mod handlers;
