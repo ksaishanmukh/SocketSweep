@@ -6,8 +6,6 @@ use specta_typescript::Number;
 
 use crate::{NodeRef, SessionId, Size};
 
-// ── Devices and sessions ────────────────────────────────────────────────────
-
 /// An attached phone, usable or not.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +65,7 @@ pub struct ScanRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanStarted {
-    /// The new tree. Every node from an earlier session is now stale.
+    /// The new tree. Every node from an earlier session is stale.
     pub session: SessionId,
     pub root: NodeRef,
     /// The root as the user knows it, for the first breadcrumb.
