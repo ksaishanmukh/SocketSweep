@@ -14,8 +14,8 @@ pub struct DeviceLine {
     /// As adb printed it, possibly several words long.
     pub state: String,
     pub model: Option<String>,
-    // Not shown in the UI today, but part of what identifies a device in a
-    // bug report, so they are parsed rather than discarded.
+    // Not shown in the UI, but they identify a device in a bug report, so they
+    // are parsed rather than discarded.
     #[allow(dead_code)]
     pub product: Option<String>,
     #[allow(dead_code)]
