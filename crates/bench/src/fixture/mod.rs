@@ -1,4 +1,4 @@
-//! The seeded fixture tree of `docs/architecture.md`, section 6: 50,000
+//! The seeded fixture tree: 50,000
 //! files in 3,000 directories, one of which holds 30,000 files, shaped like
 //! a small `/sdcard`.
 //!

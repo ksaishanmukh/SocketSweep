@@ -38,7 +38,7 @@ pub struct RunRecord {
     pub skeleton_listed: Option<u32>,
     pub clicks: Vec<ClickRecord>,
     /// Directory opens: one per listing, plus one per deferred `StatDir`
-    /// (derived from the listings: see `Recorder::deferred`).
+    /// (derived from the listings by `Recorder::deferred`).
     pub opens: u64,
     pub listed: u64,
     pub deferred: u64,

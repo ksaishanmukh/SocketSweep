@@ -1,5 +1,4 @@
-//! Medians, 90th percentiles, the table and the acceptance criteria of
-//! `docs/architecture.md`, section 6.
+//! Medians, 90th percentiles, the results table and the acceptance criteria.
 
 use std::fmt::Write as _;
 

@@ -1,6 +1,5 @@
-//! Dev-only: the benchmark and the end-to-end test of
-//! `docs/architecture.md`, sections 5 and 6, against a real phone or an
-//! emulator over adb.
+//! Dev-only: the benchmark and the end-to-end test, run against a real phone
+//! or an emulator over adb.
 //!
 //! - [`bench`]: the engine's focus mode against its plain mode (the
 //!   baseline, `ScanMode::Plain`), with navigation scripts (a), (b) and (c),
