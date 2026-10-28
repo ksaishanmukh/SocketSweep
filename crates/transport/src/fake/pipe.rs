@@ -8,8 +8,6 @@ use std::time::{Duration, Instant};
 use super::lock;
 use crate::Duplex;
 
-// ── In-memory duplex pipe ───────────────────────────────────────────────────
-
 /// Bytes buffered in each direction of a [`pipe`] before writes block.
 pub const DEFAULT_PIPE_CAPACITY: usize = 1024 * 1024;
 

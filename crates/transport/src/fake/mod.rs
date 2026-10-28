@@ -17,9 +17,6 @@
 //!
 //! [`FakeTransport::fail_next`] injects one failure into the next call of a
 //! given kind.
-//!
-//! `pipe` is the in-memory duplex pipe, `state` the devices behind a
-//! [`FakeTransport`], and `transport` the transport itself.
 
 mod pipe;
 mod state;

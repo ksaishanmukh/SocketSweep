@@ -1,10 +1,8 @@
 //! How the host reaches a phone: the [`Transport`] trait.
 //!
-//! host-core depends on this trait only, never on adb, so everything above it
-//! can be tested against [`FakeTransport`](fake::FakeTransport), an in-memory
-//! phone. The real implementation is `crates/transport-adb`, which speaks to
-//! the adb server's smart sockets directly; see `docs/architecture.md`,
-//! section 1.
+//! Code above this trait never depends on adb, so it can be tested against
+//! [`FakeTransport`](fake::FakeTransport), an in-memory phone. The adb
+//! implementation speaks to the adb server's smart sockets directly.
 //!
 //! # What a transport does
 //!
@@ -13,7 +11,7 @@
 //! - runs shell commands and reports their [`Output`];
 //! - pushes the daemon to the phone and pulls files back for copying;
 //! - opens a byte tunnel ([`Duplex`]) to the daemon's abstract socket, hiding
-//!   how: adb forwards a host port today, but no caller ever sees the port.
+//!   how: adb forwards a host port, but no caller ever sees the port.
 //!
 //! Every method names the device by serial, so two attached phones never get
 //! each other's commands, and every method may block: call them off any thread
