@@ -48,6 +48,16 @@ export default tseslint.config(
     },
   },
   {
+    // Readability limits for source; tests and generated code are exempt.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "src/test/**", "src/bindings.ts"],
+    rules: {
+      "max-lines": ["error", { max: 300, skipBlankLines: true, skipComments: true }],
+      "max-lines-per-function": ["error", { max: 60, skipBlankLines: true, skipComments: true }],
+      complexity: ["error", 15],
+    },
+  },
+  {
     files: ["scripts/**/*.mjs"],
     extends: [js.configs.recommended],
     languageOptions: {

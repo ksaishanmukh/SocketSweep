@@ -36,17 +36,6 @@ export interface Tile extends Rect {
 }
 
 /**
- * The worst aspect ratio in a row, given the row's total area and the length of
- * the side it is being laid along. Lower is squarer.
- */
-function worstRatio(rowMax: number, rowMin: number, sum: number, side: number): number {
-  if (sum <= 0 || rowMin <= 0 || side <= 0) return Infinity;
-  const s2 = sum * sum;
-  const w2 = side * side;
-  return Math.max((w2 * rowMax) / s2, s2 / (w2 * rowMin));
-}
-
-/**
  * Lay `items` out inside a `width` x `height` rectangle.
  *
  * Items with a non-positive size are dropped, having no area to occupy. Ties
@@ -66,70 +55,18 @@ export function squarify(items: TreemapItem[], width: number, height: number, de
 
   const tiles: Tile[] = [];
   // The rectangle still to be filled; shrinks as each row is placed.
-  let x = 0;
-  let y = 0;
-  let w = width;
-  let h = height;
+  let free: Rect = { x: 0, y: 0, w: width, h: height };
 
   let i = 0;
   while (i < sorted.length) {
-    const side = Math.min(w, h);
+    const side = Math.min(free.w, free.h);
     if (side <= 0) break;
 
-    // Grow the row while the worst aspect ratio keeps improving.
-    let rowSum = sorted[i].size * scale;
-    let rowMax = rowSum;
-    let rowMin = rowSum;
-    let end = i + 1;
-
-    while (end < sorted.length) {
-      const area = sorted[end].size * scale;
-      const nextSum = rowSum + area;
-      const nextMin = Math.min(rowMin, area);
-      const nextMax = Math.max(rowMax, area);
-
-      if (worstRatio(nextMax, nextMin, nextSum, side) > worstRatio(rowMax, rowMin, rowSum, side)) {
-        break;
-      }
-      rowSum = nextSum;
-      rowMin = nextMin;
-      rowMax = nextMax;
-      end++;
-    }
-
-    // Place it. `thickness` is how far the row eats into the free rectangle.
-    const horizontal = w >= h;
-    const thickness = rowSum / side;
-    let offset = 0;
-
-    for (let k = i; k < end; k++) {
-      const area = sorted[k].size * scale;
-      // Last tile in the row absorbs rounding so rows meet their edge exactly.
-      const length = k === end - 1 ? side - offset : area / thickness;
-
-      tiles.push({
-        id: sorted[k].id,
-        name: sorted[k].name,
-        size: sorted[k].size,
-        isDir: sorted[k].isDir,
-        children: sorted[k].children,
-        depth,
-        x: horizontal ? x : x + offset,
-        y: horizontal ? y + offset : y,
-        w: horizontal ? thickness : length,
-        h: horizontal ? length : thickness,
-      });
-      offset += length;
-    }
-
-    if (horizontal) {
-      x += thickness;
-      w -= thickness;
-    } else {
-      y += thickness;
-      h -= thickness;
-    }
-    i = end;
+    const row = growRow(sorted, i, scale, side);
+    const placed = placeRow(sorted, i, row, { free, side, scale, depth });
+    tiles.push(...placed.tiles);
+    free = placed.rest;
+    i = row.end;
   }
 
   return tiles;
@@ -180,4 +117,85 @@ export function squarifyNested(
 
   walk(items, { x: 0, y: 0, w: width, h: height }, 0);
   return out;
+}
+
+/** The items `start..end` that share a row, and their total area. */
+interface Row {
+  end: number;
+  sum: number;
+}
+
+/** Grow the row while the worst aspect ratio keeps improving. */
+function growRow(sorted: TreemapItem[], start: number, scale: number, side: number): Row {
+  let rowSum = sorted[start].size * scale;
+  let rowMax = rowSum;
+  let rowMin = rowSum;
+  let end = start + 1;
+
+  while (end < sorted.length) {
+    const area = sorted[end].size * scale;
+    const nextSum = rowSum + area;
+    const nextMin = Math.min(rowMin, area);
+    const nextMax = Math.max(rowMax, area);
+
+    if (worstRatio(nextMax, nextMin, nextSum, side) > worstRatio(rowMax, rowMin, rowSum, side)) {
+      break;
+    }
+    rowSum = nextSum;
+    rowMin = nextMin;
+    rowMax = nextMax;
+    end++;
+  }
+  return { end, sum: rowSum };
+}
+
+/** Place a row along the free rectangle, and return what is left of it. */
+function placeRow(
+  sorted: TreemapItem[],
+  start: number,
+  row: Row,
+  { free, side, scale, depth }: { free: Rect; side: number; scale: number; depth: number },
+): { tiles: Tile[]; rest: Rect } {
+  const { x, y, w, h } = free;
+  const horizontal = w >= h;
+  // How far the row eats into the free rectangle.
+  const thickness = row.sum / side;
+  const tiles: Tile[] = [];
+  let offset = 0;
+
+  for (let k = start; k < row.end; k++) {
+    const area = sorted[k].size * scale;
+    // Last tile in the row absorbs rounding so rows meet their edge exactly.
+    const length = k === row.end - 1 ? side - offset : area / thickness;
+
+    tiles.push({
+      id: sorted[k].id,
+      name: sorted[k].name,
+      size: sorted[k].size,
+      isDir: sorted[k].isDir,
+      children: sorted[k].children,
+      depth,
+      x: horizontal ? x : x + offset,
+      y: horizontal ? y + offset : y,
+      w: horizontal ? thickness : length,
+      h: horizontal ? length : thickness,
+    });
+    offset += length;
+  }
+
+  const rest = horizontal
+    ? { x: x + thickness, y, w: w - thickness, h }
+    : { x, y: y + thickness, w, h: h - thickness };
+  return { tiles, rest };
+}
+
+/**
+ * The worst aspect ratio in a row, given the row's total area and the length of
+ * the side it is being laid along. Lower is squarer.
+ */
+function worstRatio(rowMax: number, rowMin: number, sum: number, side: number): number {
+  if (sum <= 0 || rowMin <= 0 || side <= 0) return Infinity;
+  const s2 = sum * sum;
+  const w2 = side * side;
+  return Math.max((w2 * rowMax) / s2, s2 / (w2 * rowMin));
 }
