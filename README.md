@@ -73,6 +73,7 @@ Four layers. Each talks only to its neighbour, through a contract crate, and eac
 contract has a fake implementation so both sides can be tested on their own.
 The full specification, including the wire protocol, the scheduler and the
 acceptance criteria, is in **[docs/architecture.md](docs/architecture.md)**.
+To find your way around the code, start with the **[code tour](docs/code-tour.md)**.
 
 ```
 React GUI ──► src-tauri (thin shell) ──► host-core ──► transport-adb ──► phone daemon

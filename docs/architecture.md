@@ -4,6 +4,8 @@ This document is the specification for the v4 rebuild. Every module is built
 against it. When code and this document disagree, fix one of them in the same
 change.
 
+For a map of the code and a reading order, see [code-tour.md](code-tour.md).
+
 ## 1. Layers and contracts
 
 ```
