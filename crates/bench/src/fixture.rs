@@ -431,7 +431,9 @@ pub fn measure_on_device(
         transport,
         serial,
         &format!("measuring {path}"),
-        &format!("find '{path}' -mindepth 1 -exec stat -c '%F|%s' {{}} +"),
+        // xargs, not `-exec … +`: toybox's find does not keep its batches
+        // under the argument limit on a tree this large.
+        &format!("find '{path}' -mindepth 1 -print0 | xargs -0 stat -c '%F|%s'"),
     )?;
     let (mut files, mut dirs, mut bytes, mut file_bytes) = (0u32, 0u32, 0u64, 0u64);
     for line in out.lines() {
