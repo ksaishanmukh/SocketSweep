@@ -7,8 +7,6 @@ use super::ScanOpts;
 use super::{ErrCode, Outcome, ScanEvent, ServerMsg};
 use crate::{DirId, ReqId};
 
-// ── Host → daemon ───────────────────────────────────────────────────────────
-
 /// One request or hint from the host.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClientFrame {
@@ -33,7 +31,7 @@ pub enum ClientMsg {
     /// [`ScanEvent::FocusState`]. A `seq` lower than one already seen for the
     /// scan is stale and ignored.
     Focus { scan: ReqId, dir: DirId, seq: u32 },
-    /// The user is no longer in any directory of the scan (or is at its root):
+    /// The user is outside every directory of the scan (or at its root):
     /// schedule as a plain parallel walk. Shares `seq` numbering with `Focus`.
     ClearFocus { scan: ReqId, seq: u32 },
     /// Stop request `target`. A hint: a scan still ends with

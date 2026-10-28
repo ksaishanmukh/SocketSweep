@@ -39,16 +39,15 @@ pub struct ScanOpts {
 /// How a scan is scheduled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ScanMode {
-    /// The v4 scheduler: skeleton phase with deferred stats, then proximity
-    /// allocation around the focused folder.
+    /// Skeleton phase with deferred stats, then proximity allocation around
+    /// the focused folder.
     #[default]
     Focus,
-    /// The benchmark baseline (`docs/architecture.md`, section 6): what a
-    /// straightforward parallel walk does. No skeleton phase (so no
-    /// `SkeletonReady`) and no deferred stats (every directory is read with
-    /// `getdents` and `lstat` together), and the focus does not steer the
-    /// workers; it is still acknowledged with `FocusState`, settled when the
-    /// folder's `SubtreeDone` is sent. Workers spread over the root's
+    /// The benchmark baseline: a straightforward parallel walk. No skeleton
+    /// phase (so no `SkeletonReady`) and no deferred stats (every directory
+    /// is read with `getdents` and `lstat` together), and the focus does not
+    /// steer the workers; it is still acknowledged with `FocusState`, settled
+    /// when the folder's `SubtreeDone` is sent. Workers spread over the root's
     /// subtrees (fewest workers, then most known work) and walk each depth
     /// first.
     Plain,
@@ -91,8 +90,7 @@ impl Tier {
     }
 }
 
-/// One tier's share of the workers. See `docs/architecture.md`, section 3,
-/// "Proximity allocation".
+/// One tier's share of the workers.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct TierCfg {
     /// D'Hondt weight. The open tier's ramps from 1.0 to this.

@@ -1,4 +1,4 @@
-//! Length-prefixed postcard frames. See [framing](crate#framing).
+//! Length-prefixed postcard frames.
 
 use std::fmt;
 use std::io::{self, Read, Write};

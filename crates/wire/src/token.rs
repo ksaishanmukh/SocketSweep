@@ -1,4 +1,4 @@
-//! The per-session shared secret. See [the handshake](crate#handshake).
+//! The per-session shared secret.
 
 /// Length in bytes of the per-session token.
 pub const TOKEN_LEN: usize = 32;
