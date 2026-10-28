@@ -6,8 +6,6 @@ use specta_typescript::Number;
 
 use crate::{NodeRef, SessionId, Totals, View};
 
-// ── Events ──────────────────────────────────────────────────────────────────
-
 /// Emitted as `scan-progress` about ten times a second while a scan runs,
 /// and once more when it ends.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]

@@ -3,8 +3,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-// ── Errors ──────────────────────────────────────────────────────────────────
-
 /// How every command fails.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

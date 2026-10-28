@@ -8,8 +8,6 @@ use crate::{EntryKind, Measure, NodeRef, Size};
 #[cfg(doc)]
 use crate::SizeMetric;
 
-// ── Tree queries ────────────────────────────────────────────────────────────
-
 /// One file or folder in a list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

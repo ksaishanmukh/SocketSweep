@@ -1,5 +1,4 @@
-//! Write `src/bindings.ts` from the contract. See
-//! [`socketsweep_gui_contract::bindings`].
+//! Writes `src/bindings.ts` from the contract.
 
 use std::process::ExitCode;
 

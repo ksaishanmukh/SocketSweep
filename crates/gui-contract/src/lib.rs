@@ -2,9 +2,9 @@
 //!
 //! Every command the GUI can invoke, every event the host emits, and every
 //! value either carries is defined here as a plain Rust type, with no Tauri
-//! dependency. `src/bindings.ts` is generated from this crate (see
-//! [`bindings`]); the GUI imports nothing else from the host, and CI fails if
-//! the checked-in file is stale. See `docs/architecture.md`, section 1.
+//! dependency. `src/bindings.ts` is generated from this crate by [`bindings`];
+//! the GUI imports nothing else from the host, and CI fails if the checked-in
+//! file is stale.
 //!
 //! # Nodes, not paths
 //!
@@ -42,12 +42,6 @@
 //! A failed command rejects its promise with a [`CommandError`], never a bare
 //! string.
 
-//! # Layout
-//!
-//! The value types live in `nodes`, `devices`, `queries`, `actions`,
-//! `event_payloads` and `errors`, all re-exported here; [`Commands`] and
-//! [`Event`] list the commands and events, and [`bindings`] renders them.
-
 mod actions;
 pub mod bindings;
 mod commands;
@@ -69,8 +63,6 @@ pub use event_payloads::{
 pub use events::{event_defs, Event, EventDef, EVENT_NAMES};
 pub use nodes::{EntryKind, Measure, NodeId, NodeRef, SessionId, Size, SizeMetric};
 pub use queries::{AppUsage, Crumb, Row, TreemapNode, TypeGroup, View};
-
-// ── Defaults ────────────────────────────────────────────────────────────────
 
 /// Rows per view when `limit` is not given. Enough to fill any screen; the
 /// GUI virtualises and asks for more if it needs them.

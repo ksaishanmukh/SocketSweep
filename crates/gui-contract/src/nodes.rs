@@ -11,8 +11,8 @@ pub type SessionId = u32;
 /// A node's index within its session's tree. The scan root is 0.
 pub type NodeId = u32;
 
-/// A file or folder of one session's tree. See [nodes, not
-/// paths](crate#nodes-not-paths).
+/// A file or folder of one session's tree. The GUI refers to files and
+/// folders only by node, never by path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeRef {
@@ -32,7 +32,7 @@ pub struct Size {
     pub disk: u64,
 }
 
-/// How far a node's size is known. See [sizes](crate#sizes).
+/// How far a node's size is known.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Measure {

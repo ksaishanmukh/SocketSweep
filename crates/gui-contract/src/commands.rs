@@ -40,8 +40,8 @@ macro_rules! commands {
         $(#[doc = $doc:literal])*
         fn $name:ident($($arg:ident: $ty:ty),* $(,)?) -> $ret:ty;
     )*) => {
-        /// Everything the GUI can ask of the host. Implemented by host-core
-        /// and exposed one `#[tauri::command]` per method by the shell.
+        /// Everything the GUI can ask of the host. The shell exposes each
+        /// method as a `#[tauri::command]`.
         ///
         /// Every method may block on the phone; the shell runs them off the
         /// thread that drives the window.

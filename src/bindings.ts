@@ -273,7 +273,7 @@ export type FocusState = {
 	settled: boolean,
 };
 
-/**  How far a node's size is known. See [sizes](crate#sizes). */
+/**  How far a node's size is known. */
 export type Measure = 
 /**
  *  Not listed yet (a folder) or not stat'ed yet (a file). The GUI shows
@@ -286,8 +286,8 @@ export type Measure =
 "final";
 
 /**
- *  A file or folder of one session's tree. See [nodes, not
- *  paths](crate#nodes-not-paths).
+ *  A file or folder of one session's tree. The GUI refers to files and
+ *  folders only by node, never by path.
  */
 export type NodeRef = {
 	session: number,
@@ -372,7 +372,7 @@ export type ScanRecord = {
 
 /**  The answer to `startScan`: the scan is under way. */
 export type ScanStarted = {
-	/**  The new tree. Every node from an earlier session is now stale. */
+	/**  The new tree. Every node from an earlier session is stale. */
 	session: number,
 	root: NodeRef,
 	/**  The root as the user knows it, for the first breadcrumb. */

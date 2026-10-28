@@ -6,8 +6,6 @@ use specta_typescript::Number;
 
 use crate::{Totals, View};
 
-// ── Actions ─────────────────────────────────────────────────────────────────
-
 /// The answer to `delete`, once the phone confirms.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
