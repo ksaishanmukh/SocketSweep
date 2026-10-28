@@ -83,6 +83,27 @@ pub struct ScanOpts {
     /// How long after a focus change the open tier's weight takes to ramp
     /// from 1 to its full weight.
     pub ramp_ms: u16,
+    /// How the engine schedules the walk. Appended last, so every field
+    /// before it keeps its encoding.
+    pub mode: ScanMode,
+}
+
+/// How a scan is scheduled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ScanMode {
+    /// The v4 scheduler: skeleton phase with deferred stats, then proximity
+    /// allocation around the focused folder.
+    #[default]
+    Focus,
+    /// The benchmark baseline (`docs/architecture.md`, section 6): what a
+    /// straightforward parallel walk does. No skeleton phase (so no
+    /// `SkeletonReady`) and no deferred stats (every directory is read with
+    /// `getdents` and `lstat` together), and the focus does not steer the
+    /// workers; it is still acknowledged with `FocusState`, settled when the
+    /// folder's `SubtreeDone` is sent. Workers spread over the root's
+    /// subtrees (fewest workers, then most known work) and walk each depth
+    /// first.
+    Plain,
 }
 
 impl Default for ScanOpts {
@@ -96,6 +117,7 @@ impl Default for ScanOpts {
             one_filesystem: true,
             tiers: TierCfg::DEFAULTS,
             ramp_ms: 400,
+            mode: ScanMode::Focus,
         }
     }
 }

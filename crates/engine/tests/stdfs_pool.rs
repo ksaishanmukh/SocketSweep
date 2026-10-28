@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use socketsweep_engine::{Fs, RecordingSink, Scan, StdFs};
-use socketsweep_wire::{Outcome, ScanEvent, ScanOpts};
+use socketsweep_wire::{Outcome, ScanEvent, ScanMode, ScanOpts};
 
 struct TempTree(PathBuf);
 
@@ -86,4 +86,52 @@ fn stdfs_scan_matches_what_was_written() {
 #[test]
 fn stdfs_root_errors() {
     assert!(StdFs.root(b"/definitely/not/here/socketsweep").is_err());
+}
+
+/// The benchmark baseline: no skeleton phase, no deferred stats (every
+/// listing carries its stats), and a focus is acknowledged but changes
+/// nothing; the totals are the same as in focus mode.
+#[test]
+fn plain_mode_is_a_plain_walk() {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "socketsweep-engine-plain-{}-{nanos}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let tree = TempTree(root.clone());
+    let (dirs, files, bytes) = build(&tree.0, 3, 3, 4, 500);
+
+    let path = root.to_string_lossy().replace('\\', "/").into_bytes();
+    let rootinfo = StdFs.root(&path).unwrap();
+    let sink = Arc::new(RecordingSink::new());
+    let opts = ScanOpts {
+        workers: Some(3),
+        mode: ScanMode::Plain,
+        ..ScanOpts::default()
+    };
+    let scan = Scan::new(rootinfo, &opts, Arc::clone(&sink));
+    // A directory not yet introduced is ignored, as in focus mode.
+    assert!(!scan.focus(1, 1));
+    assert_eq!(scan.run(&StdFs), Outcome::Complete);
+
+    let events = sink.events();
+    let Some(ScanEvent::Finished { totals, .. }) = events.last() else {
+        panic!("no Finished");
+    };
+    assert_eq!((totals.files, totals.dirs, totals.errors), (files, dirs, 0));
+    assert!(totals.apparent >= bytes);
+    for e in &events {
+        match e {
+            ScanEvent::SkeletonReady { .. } => panic!("plain mode has no skeleton"),
+            ScanEvent::Stats { .. } => panic!("plain mode defers no stats: {e:?}"),
+            ScanEvent::Listing { entries, .. } => {
+                assert!(entries.iter().all(|en| en.stat.is_some()), "{e:?}")
+            }
+            _ => {}
+        }
+    }
 }

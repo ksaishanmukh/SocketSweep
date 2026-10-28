@@ -41,6 +41,7 @@ Every contract has a **fake** implementation, so each side can be tested alone.
 | `crates/daemon`        | Phone binary (lib + bin): `listener`, `session`, `outbox`, `fs_rustix` (`fswalk`), `actions`; the scan is `crates/engine` |
 | `crates/engine`        | `sched`, `aggregate`, `pool`, `trait Fs`, `trait EventSink`, `StdFs`                                                      |
 | `crates/sim`           | Dev-only: `SimFs`, discrete-event simulator, jwalk-like baseline, `FakeDaemon`                                            |
+| `crates/bench`         | Dev-only: on-device benchmark (focus vs plain mode), the seeded device fixture, the emulator end-to-end test              |
 | `src-tauri`            | Thin shell: maps generated commands to host-core and emits events                                                         |
 | `src/`                 | React features that import only `src/bindings.ts`, through `src/api/`                                                     |
 
@@ -98,7 +99,9 @@ pub enum ClientMsg {
 }
 pub struct ScanOpts { workers: Option<u8>, max_depth: u16, skeleton_budget_ms: u16,
                       skeleton_min_depth: u8, skeleton_max_depth: u8,
-                      one_filesystem: bool, tiers: [TierCfg; 3], ramp_ms: u16 }
+                      one_filesystem: bool, tiers: [TierCfg; 3], ramp_ms: u16,
+                      mode: ScanMode }
+pub enum ScanMode { Focus, Plain }   // Plain: the benchmark baseline (section 6)
 
 pub struct ServerFrame { id: ReqId, msg: ServerMsg }  // id 0 = session-level
 pub enum ServerMsg {
@@ -454,7 +457,9 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   - The latency model has separate costs for listing names and for stats,
     multiplied by a contention factor.
   - A discrete-event simulator with a virtual clock and W virtual workers.
-  - A jwalk-like baseline engine for comparison.
+  - A jwalk-like baseline engine (per-worker LIFO, stealing the oldest) to
+    check that the engine's plain mode (section 6) is a fair baseline: on
+    the standard tree it must finish within 1.10× of it.
 - **Properties (proptest):**
   - each directory is listed and stat'ed exactly once;
   - totals match the ground truth, including after deletes;
@@ -470,33 +475,67 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   - the threaded pool runs against `RealFs` and a `SlowFs` wrapper that adds
     delays;
   - host-core runs against `FakeDaemon` and `FakeTransport`;
-  - an emulator end-to-end CI job uses the x86_64 daemon and a seeded fixture
-    tree.
+  - an emulator end-to-end CI job (`.github/workflows/e2e.yml`, nightly and
+    by hand, not on pull requests) boots an API 33 x86_64 emulator, builds
+    the x86_64 daemon and runs `socketsweep-bench e2e`: it pushes the seeded
+    fixture (section 6) to `/sdcard/ssfixture` as a tar archive, then, through
+    host-core's `App` as the GUI would: connect → scan → `SkeletonReady` →
+    focus the fixture until settled → the scan completes and the fixture's
+    files, folders and bytes equal what `find`/`stat` report on the phone →
+    delete a folder (gone from the phone and from the totals) → copy a folder
+    and compare it byte for byte with the fixture → disconnect (daemon
+    stopped and removed). The same job runs a three-run benchmark and keeps
+    its JSON as an artifact.
 
 ## 6. Benchmark and acceptance criteria
 
-- **Engines:** the daemon gets `--engine {jwalk,v4}`. The jwalk engine is the
-  v3 walk, emitting v4 events with no focus.
+- **Baseline:** the engine's plain mode, `ScanOpts { mode: ScanMode::Plain }`,
+  is what a straightforward parallel walk does, run by the same daemon, pool,
+  file system code and wire, so only the v4 scheduling differs:
+  - no skeleton phase, so no `SkeletonReady`;
+  - no deferred stats: every directory is one `Full` task (`getdents` and
+    `lstat` together);
+  - the focus does not steer the workers. `Focus` is still acknowledged with
+    `FocusState`, settled when the folder's `SubtreeDone` is sent, so the
+    host works unchanged;
+  - workers spread over the root's subtrees (fewest workers, then most known
+    work) and walk each depth first, as with no focus in focus mode.
+
+  The v3 jwalk engine is gone; the simulator keeps a jwalk-like walk only to
+  check that the plain mode is not a straw man (section 5).
+
+- **Tool:** `socketsweep-bench` (`crates/bench`) runs both modes on one
+  connection over adb and prints a median/p90 table plus the criteria below,
+  and writes every run as JSON. It times events as host-core's client
+  delivers them; directory opens are derived from the stream (one per
+  listing, plus one per skeleton listing for its deferred stats).
 - **Targets:**
-  - the emulator with a fixture of 50,000 files, 3,000 directories and one
-    30,000-file directory;
+  - the emulator with the seeded fixture (`socketsweep-bench fixture`): 50,000
+    files, 3,000 directories and one 30,000-file directory;
   - a Pixel and a Samsung scanning their real `/sdcard`;
   - `SimFs` in CI.
-- **Runs:** 10 warm runs per configuration, interleaved A/B, plus one cold run.
-  Report the median and the 90th percentile.
-- **Scripts:**
+- **Runs:** 10 warm runs per configuration, interleaved A/B (alternating
+  which mode goes first), after one unmeasured warm-up per mode. A cold run
+  needs root to drop the page cache and is done by hand. Report the median
+  and the 90th percentile.
+- **Scripts:** the folders are chosen from a complete reference scan, so
+  every run opens the same ones:
   - (a) no navigation;
   - (b) open the largest top-level folder at 300 ms, then drill into its
     largest child at 2 s;
-  - (c) 10 clicks within 1 s.
+  - (c) 10 opens of random top-level folders within 1 s (seeded).
+
+  A folder's answer time is from the click to its `SubtreeDone`, in both
+  modes.
 
 Acceptance criteria:
 
 1. Directory opens and stats match the baseline, with at most 1% extra
    (handles reopened for deferred stats).
-2. Script (a): total time ≤ 1.05× jwalk at the median, ≤ 1.10× at the 90th
-   percentile.
-3. Script (c): total time ≤ 1.10× jwalk, and the Back floor always holds.
+2. Script (a): total time ≤ 1.05× the baseline at the median, ≤ 1.10× at the
+   90th percentile.
+3. Script (c): total time ≤ 1.10× the baseline, and the Back floor always
+   holds.
 4. `SkeletonReady` within 1.0 s, covering at least 2 levels.
 5. Script (b): the open folder's answer at ≤ 0.5× the baseline's time.
 6. Daemon CPU ≤ 1.2× the baseline; peak memory ≤ 32 MB at 100,000
