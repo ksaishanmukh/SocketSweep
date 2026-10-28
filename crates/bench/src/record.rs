@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use socketsweep_wire::{DirId, Outcome, ReqId, ScanEvent, ServerMsg, Totals, ROOT_DIR};
+use socketsweep_wire::{DirId, Entry, Outcome, ReqId, ScanEvent, ServerMsg, Totals, ROOT_DIR};
 
 /// The `SkeletonReady` event as received.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,45 +168,69 @@ impl Recorder {
         }
     }
 
+    fn on_listing(
+        &mut self,
+        dir: DirId,
+        entries: &[Entry],
+        last: bool,
+        t: Duration,
+    ) -> Result<(), String> {
+        let i = self.known(dir)?;
+        if dir == ROOT_DIR {
+            self.first_listing.get_or_insert(t);
+        }
+        let depth = self.depth[i];
+        let base = self.paths[i].clone();
+        let seen = self.listing.entry(dir).or_default();
+        seen.0 += entries.len() as u64;
+        seen.1 += entries.iter().filter(|e| e.stat.is_none()).count() as u64;
+        self.entries += entries.len() as u64;
+        for en in entries {
+            if let Some(id) = en.id {
+                let mut p = base.clone();
+                if p.last() != Some(&b'/') {
+                    p.push(b'/');
+                }
+                p.extend_from_slice(&en.name);
+                self.introduce(id, p, depth + 1)?;
+            }
+        }
+        if last {
+            self.listed += 1;
+            self.unlisted_by_depth[depth as usize] -= 1;
+            let (n, none) = self.listing.remove(&dir).unwrap_or_default();
+            // A skeleton (`Names`) listing has no stats at all, apart
+            // from entries `d_type` could not classify; a full one
+            // has `None` only where `lstat` failed.
+            if n > 0 && none * 2 > n {
+                self.deferred += 1;
+            }
+        }
+        Ok(())
+    }
+
+    fn on_skeleton_ready(&mut self, listed: u32, frontier: u32, elapsed_ms: u32, t: Duration) {
+        let levels = self
+            .unlisted_by_depth
+            .iter()
+            .position(|&n| n > 0)
+            .unwrap_or(self.unlisted_by_depth.len()) as u32;
+        self.skeleton = Some(Skeleton {
+            at: t,
+            listed,
+            frontier,
+            elapsed_ms,
+            levels,
+        });
+    }
+
     fn on_event(&mut self, e: &ScanEvent, t: Duration) -> Result<(), String> {
         self.events += 1;
         match e {
             ScanEvent::Started { root, .. } => self.introduce(ROOT_DIR, root.clone(), 0)?,
             ScanEvent::Listing {
                 dir, entries, last, ..
-            } => {
-                let i = self.known(*dir)?;
-                if *dir == ROOT_DIR {
-                    self.first_listing.get_or_insert(t);
-                }
-                let depth = self.depth[i];
-                let base = self.paths[i].clone();
-                let seen = self.listing.entry(*dir).or_default();
-                seen.0 += entries.len() as u64;
-                seen.1 += entries.iter().filter(|e| e.stat.is_none()).count() as u64;
-                self.entries += entries.len() as u64;
-                for en in entries {
-                    if let Some(id) = en.id {
-                        let mut p = base.clone();
-                        if p.last() != Some(&b'/') {
-                            p.push(b'/');
-                        }
-                        p.extend_from_slice(&en.name);
-                        self.introduce(id, p, depth + 1)?;
-                    }
-                }
-                if *last {
-                    self.listed += 1;
-                    self.unlisted_by_depth[depth as usize] -= 1;
-                    let (n, none) = self.listing.remove(dir).unwrap_or_default();
-                    // A skeleton (`Names`) listing has no stats at all, apart
-                    // from entries `d_type` could not classify; a full one
-                    // has `None` only where `lstat` failed.
-                    if n > 0 && none * 2 > n {
-                        self.deferred += 1;
-                    }
-                }
-            }
+            } => self.on_listing(*dir, entries, *last, t)?,
             ScanEvent::Stats { dir, .. } | ScanEvent::DirFailed { dir, .. } => {
                 self.known(*dir)?;
             }
@@ -222,20 +246,7 @@ impl Recorder {
                 listed,
                 frontier,
                 elapsed_ms,
-            } => {
-                let levels = self
-                    .unlisted_by_depth
-                    .iter()
-                    .position(|&n| n > 0)
-                    .unwrap_or(self.unlisted_by_depth.len()) as u32;
-                self.skeleton = Some(Skeleton {
-                    at: t,
-                    listed: *listed,
-                    frontier: *frontier,
-                    elapsed_ms: *elapsed_ms,
-                    levels,
-                });
-            }
+            } => self.on_skeleton_ready(*listed, *frontier, *elapsed_ms, t),
             ScanEvent::FocusState {
                 seq, settled: true, ..
             } => {

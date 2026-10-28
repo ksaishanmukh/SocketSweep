@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use socketsweep_bench::bench::{self, Config, ScriptKind};
+use socketsweep_bench::bench::{self, Config, RunRecord, ScriptKind};
 use socketsweep_bench::{fixture, summary};
 use socketsweep_host_core::{Client, ClientConfig};
 use socketsweep_sim::{FakeDaemon, RandomShape, SimFs};
@@ -22,6 +22,47 @@ fn client(fs: SimFs, per_call: Duration) -> Client {
         ClientConfig::default(),
     )
     .expect("handshake")
+}
+
+/// One record of the report: same tree as the first, and the mode's and the
+/// script's own invariants.
+fn check_record(r: &RunRecord, first: &RunRecord) {
+    assert_eq!(
+        (r.files, r.dirs, r.apparent, r.disk),
+        (first.files, first.dirs, first.apparent, first.disk),
+        "every scan measures the same tree"
+    );
+    assert_eq!(r.stats, first.stats);
+    assert!(r.first_listing_ms.is_some() && r.bytes > 0);
+    match r.mode {
+        "plain" => {
+            assert!(r.skeleton_ms.is_none(), "plain mode has no skeleton");
+            assert_eq!(r.deferred, 0, "plain mode defers no stats");
+            assert_eq!(r.opens, r.listed);
+        }
+        "focus" => {
+            let levels = r.skeleton_levels.expect("SkeletonReady");
+            assert!(levels >= 1, "{r:?}");
+            assert!(r.opens >= r.listed);
+        }
+        m => panic!("mode {m}"),
+    }
+    let want = match r.script {
+        _ if r.warmup => 0,
+        "a" => 0,
+        "b" => 2,
+        "c" => 10,
+        s => panic!("script {s}"),
+    };
+    assert_eq!(r.clicks.len(), want, "{} clicks", r.script);
+    for k in &r.clicks {
+        // A click after (or racing) the end of the scan is not sent.
+        assert!(
+            k.sent_ms.is_some() || k.at_ms + 100.0 >= r.total_ms,
+            "every click during the scan was sent: {k:?}"
+        );
+        assert!(k.wait_ms.is_some(), "every opened folder finished: {k:?}");
+    }
 }
 
 #[test]
@@ -50,42 +91,7 @@ fn the_benchmark_runs_both_modes_and_every_script() {
     assert_eq!(lines, report.records.len());
     let first = &report.records[0];
     for r in &report.records {
-        assert_eq!(
-            (r.files, r.dirs, r.apparent, r.disk),
-            (first.files, first.dirs, first.apparent, first.disk),
-            "every scan measures the same tree"
-        );
-        assert_eq!(r.stats, report.records[0].stats);
-        assert!(r.first_listing_ms.is_some() && r.bytes > 0);
-        match r.mode {
-            "plain" => {
-                assert!(r.skeleton_ms.is_none(), "plain mode has no skeleton");
-                assert_eq!(r.deferred, 0, "plain mode defers no stats");
-                assert_eq!(r.opens, r.listed);
-            }
-            "focus" => {
-                let levels = r.skeleton_levels.expect("SkeletonReady");
-                assert!(levels >= 1, "{r:?}");
-                assert!(r.opens >= r.listed);
-            }
-            m => panic!("mode {m}"),
-        }
-        let want = match r.script {
-            _ if r.warmup => 0,
-            "a" => 0,
-            "b" => 2,
-            "c" => 10,
-            s => panic!("script {s}"),
-        };
-        assert_eq!(r.clicks.len(), want, "{} clicks", r.script);
-        for k in &r.clicks {
-            // A click after (or racing) the end of the scan is not sent.
-            assert!(
-                k.sent_ms.is_some() || k.at_ms + 100.0 >= r.total_ms,
-                "every click during the scan was sent: {k:?}"
-            );
-            assert!(k.wait_ms.is_some(), "every opened folder finished: {k:?}");
-        }
+        check_record(r, first);
     }
     for r in &report.records {
         sent += r.clicks.iter().filter(|k| k.sent_ms.is_some()).count();
