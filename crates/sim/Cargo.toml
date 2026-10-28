@@ -16,3 +16,6 @@ postcard = { workspace = true }
 
 [dev-dependencies]
 proptest = "1.5"
+
+[lints.clippy]
+too_many_lines = "warn"
