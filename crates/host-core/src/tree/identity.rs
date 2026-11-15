@@ -1,5 +1,7 @@
 //! Nodes and identity: references, liveness, parents and paths.
 
+use std::collections::HashSet;
+
 use socketsweep_gui_contract::{NodeId, NodeRef};
 use socketsweep_wire::{DirId, ROOT_DIR};
 
@@ -134,6 +136,27 @@ impl Tree {
         }
         names.reverse();
         names
+    }
+
+    /// `ids` in their order, without repeats and without any node inside
+    /// another of them: acting on the outer one covers it.
+    pub fn outermost(&self, ids: &[NodeId]) -> Vec<NodeId> {
+        let asked: HashSet<NodeId> = ids.iter().copied().collect();
+        let mut seen = HashSet::new();
+        ids.iter()
+            .copied()
+            .filter(|id| seen.insert(*id))
+            .filter(|id| {
+                let mut cur = self.parent(*id);
+                while let Some(p) = cur {
+                    if asked.contains(&p) {
+                        return false;
+                    }
+                    cur = self.parent(p);
+                }
+                true
+            })
+            .collect()
     }
 
     /// Remove `id` and everything below it, once the phone confirms the

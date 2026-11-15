@@ -103,13 +103,7 @@ impl Tree {
         if self.dirs[i].is_some() {
             return Err(protocol(format!("directory {dir} was introduced twice")));
         }
-        self.dirs[i] = Some(DirRec {
-            node,
-            state,
-            next_part: 0,
-            entries: Vec::new(),
-            open: 0,
-        });
+        self.dirs[i] = Some(DirRec::new(node, state));
         Ok(())
     }
 }

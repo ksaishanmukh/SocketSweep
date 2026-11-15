@@ -20,6 +20,7 @@ impl Tree {
                     ..Totals::default()
                 };
                 self.add_up(node, &delta);
+                self.unreadable.push(node);
                 Ok(())
             }
         }

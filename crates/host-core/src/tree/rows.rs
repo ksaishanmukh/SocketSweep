@@ -1,0 +1,121 @@
+//! Turning nodes into what the GUI shows: rows and treemap tiles.
+
+use socketsweep_gui_contract::{Category, NodeId, Row, SizeMetric, TreemapNode, ViewSort};
+use socketsweep_wire::Totals;
+
+use super::category::dominant;
+use super::nodes::entry_kind;
+use super::{metric, Node, Tree, TreeError, NONE};
+
+impl Tree {
+    pub(super) fn files_of(n: &Node) -> u32 {
+        if n.is_dir() {
+            n.sub.files
+        } else {
+            1
+        }
+    }
+
+    /// A file's category from its name; a walked folder's from the bytes
+    /// below it, by `by`.
+    pub fn category(&self, id: NodeId, by: SizeMetric) -> Category {
+        let n = &self.nodes[id as usize];
+        if !n.is_dir() {
+            return n.own_category();
+        }
+        match self.dirs.get(n.dir as usize) {
+            Some(Some(rec)) => dominant(&rec.cats, by),
+            _ => Category::Other,
+        }
+    }
+
+    pub(super) fn row(&self, id: NodeId, by: SizeMetric) -> Row {
+        let n = &self.nodes[id as usize];
+        Row {
+            node: self.node_ref(id),
+            name: String::from_utf8_lossy(&n.name).into_owned(),
+            kind: entry_kind(n.kind),
+            size: n.size(),
+            measure: n.measure,
+            files: Self::files_of(n),
+            unreadable: n.sub.flags & Totals::UNREADABLE != 0,
+            changed: self.newest_mtime(id),
+            category: self.category(id, by),
+            app: self.app_tag(id),
+            parent: None,
+            parent_node: None,
+        }
+    }
+
+    /// A row that also says which folder it is in, for results that span the
+    /// tree.
+    pub(super) fn row_with_parent(&self, id: NodeId, by: SizeMetric) -> Row {
+        let mut row = self.row(id, by);
+        let parent = self.nodes[id as usize].parent;
+        if parent != NONE {
+            row.parent = Some(self.display_path(parent));
+            row.parent_node = Some(self.node_ref(parent));
+        }
+        row
+    }
+
+    pub(super) fn children_of(&self, id: NodeId) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        let mut cur = self.nodes[id as usize].first_child;
+        while cur != NONE {
+            if !self.nodes[cur as usize].removed {
+                out.push(cur);
+            }
+            cur = self.nodes[cur as usize].next_sibling;
+        }
+        out
+    }
+
+    /// `id` and its descendants down to `depth` levels, largest first, with
+    /// a per-level cap: past it, tiles are too small to read.
+    pub fn treemap(
+        &self,
+        id: NodeId,
+        depth: u32,
+        by: SizeMetric,
+    ) -> Result<TreemapNode, TreeError> {
+        self.live(id)?;
+        const CAPS: [usize; 3] = [48, 12, 6];
+        let depth = (depth as usize).min(CAPS.len());
+        Ok(self.treemap_at(id, depth, &CAPS, 0, by))
+    }
+
+    fn treemap_at(
+        &self,
+        id: NodeId,
+        remaining: usize,
+        caps: &[usize],
+        level: usize,
+        by: SizeMetric,
+    ) -> TreemapNode {
+        let n = &self.nodes[id as usize];
+        let mut out = TreemapNode {
+            node: self.node_ref(id),
+            name: String::from_utf8_lossy(&n.name).into_owned(),
+            kind: entry_kind(n.kind),
+            size: n.size(),
+            measure: n.measure,
+            changed: self.newest_mtime(id),
+            category: self.category(id, by),
+            app: self.app_tag(id),
+            children: Vec::new(),
+        };
+        if remaining == 0 || !n.is_dir() {
+            return out;
+        }
+        let mut kids = self.children_of(id);
+        self.order(&mut kids, ViewSort::default(), by);
+        kids.truncate(caps.get(level).copied().unwrap_or(0));
+        out.children = kids
+            .into_iter()
+            .filter(|k| metric(self.nodes[*k as usize].size(), by) > 0)
+            .map(|k| self.treemap_at(k, remaining - 1, caps, level + 1, by))
+            .collect();
+        out
+    }
+}
