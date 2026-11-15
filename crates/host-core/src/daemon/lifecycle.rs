@@ -12,12 +12,16 @@ use super::{
     check_root, launch_command, Daemon, DaemonBinaries, LaunchError, LaunchOptions, DEVICE_BIN,
     DEVICE_LOG, GRANT_STORAGE, KILL_DAEMON, LOG_EXCERPT_BYTES,
 };
+use crate::apps::helper::KILL_HELPER;
+use crate::apps::DEVICE_HELPER;
 use crate::client::Client;
 
-/// Kill the daemon and remove its binary. Best effort: the phone may be gone.
+/// Kill the daemon and any app helper run, and remove both from the phone.
+/// Best effort: the phone may be gone.
 pub fn tear_down(transport: &dyn Transport, serial: &str) {
     let _ = transport.shell(serial, KILL_DAEMON);
-    let _ = transport.shell(serial, &format!("rm -f {DEVICE_BIN}"));
+    let _ = transport.shell(serial, KILL_HELPER);
+    let _ = transport.shell(serial, &format!("rm -f {DEVICE_BIN} {DEVICE_HELPER}"));
 }
 
 impl Daemon {

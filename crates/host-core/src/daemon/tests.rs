@@ -93,6 +93,7 @@ fn the_binary_is_picked_by_abi_and_old_phones_are_refused() {
     let bins = DaemonBinaries {
         arm64: Some("arm".into()),
         x86_64: None,
+        helper: None,
     };
     let info = |sdk, abi: &str| DeviceInfo {
         sdk,

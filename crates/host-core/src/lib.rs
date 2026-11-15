@@ -1,7 +1,8 @@
 //! The desktop host's logic, with no Tauri dependency.
 //!
 //! The Tauri shell builds one [`App`] with a [`Transport`](socketsweep_transport::Transport),
-//! an [`AppConfig`] (bundled daemon paths, history file, desktop folder) and an
+//! an [`AppConfig`] (bundled daemon and app helper paths, history file, desktop
+//! folder) and an
 //! event callback, exposes each [`Commands`](socketsweep_gui_contract::Commands)
 //! method as a command of the same name, and emits each [`HostEvent`] under
 //! [`HostEvent::name`].
@@ -11,6 +12,7 @@
 //! name) and serve tunnels to that socket name.
 
 pub mod app;
+pub mod apps;
 pub mod client;
 pub mod copy;
 pub mod daemon;
