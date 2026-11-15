@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use socketsweep_gui_contract::{ConnectionLost, CopyProgress, Event, ScanProgress};
+use socketsweep_gui_contract::{AppsUpdated, ConnectionLost, CopyProgress, Event, ScanProgress};
 
 /// An event for the GUI. The shell emits the payload under [`HostEvent::name`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,6 +10,7 @@ pub enum HostEvent {
     ScanProgress(ScanProgress),
     CopyProgress(CopyProgress),
     ConnectionLost(ConnectionLost),
+    AppsUpdated(AppsUpdated),
 }
 
 impl HostEvent {
@@ -19,6 +20,7 @@ impl HostEvent {
             HostEvent::ScanProgress(_) => ScanProgress::NAME,
             HostEvent::CopyProgress(_) => CopyProgress::NAME,
             HostEvent::ConnectionLost(_) => ConnectionLost::NAME,
+            HostEvent::AppsUpdated(_) => AppsUpdated::NAME,
         }
     }
 }

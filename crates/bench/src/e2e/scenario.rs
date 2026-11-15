@@ -53,9 +53,9 @@ impl Scenario<'_> {
         ));
 
         // The fixture folder is in the root's listing, which the skeleton covers.
-        let top = cmd("get_view", app.get_view(None, Some(1000), None))?;
+        let top = cmd("get_view", app.get_view(None, Some(1000), None, None, None))?;
         let node = row(&top, FIXTURE_DIR)?;
-        cmd("focus", app.focus(Some(node), None, None))?;
+        cmd("focus", app.focus(Some(node), None, None, None, None))?;
         if finished.is_none() {
             let p = wait_progress(rx, t, "the fixture to settle", |p| {
                 p.focus.is_some_and(|f| f.node == node && f.settled) || p.finished.is_some()
@@ -81,7 +81,10 @@ impl Scenario<'_> {
             format!("the scan ended {:?}: {:?}", fin.outcome, fin.message)
         })?;
         log(&format!("scan complete in {} ms", fin.elapsed_ms));
-        let view = cmd("get_view", app.get_view(Some(node), Some(1000), None))?;
+        let view = cmd(
+            "get_view",
+            app.get_view(Some(node), Some(1000), None, None, None),
+        )?;
         check_view(&view, want, apparent, "the fixture")?;
         log(&format!(
             "fixture sizes final and exact: {} files, {} dirs, {} bytes",
@@ -128,7 +131,10 @@ impl Scenario<'_> {
         })?;
         fs.delete(vpath.as_bytes());
         let after = fixture::expected(fs);
-        let view = cmd("get_view", self.app.get_view(Some(node), Some(1000), None))?;
+        let view = cmd(
+            "get_view",
+            self.app.get_view(Some(node), Some(1000), None, None, None),
+        )?;
         check_view(
             &view,
             after,

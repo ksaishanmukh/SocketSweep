@@ -1,3 +1,6 @@
+mod android;
+mod apps;
+mod batch;
 mod failures;
 mod phone;
 mod rig;

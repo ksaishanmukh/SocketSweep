@@ -1,6 +1,6 @@
 //! Mapping a copy manifest onto local paths.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use socketsweep_wire::{CopyItem, Kind};
@@ -61,6 +61,41 @@ pub fn plan(
     }
     plan.dirs.sort_by_key(|d| d.local.components().count());
     plan
+}
+
+/// Map several manifests, each a `(root, items)` pair, onto `dest_dir` as
+/// one copy. Each root lands beside the others, numbered past anything
+/// already there and past the roots before it, so two folders with the same
+/// name never merge. With one manifest this is [`plan`]; with several, the
+/// plan's `top` is `dest_dir`.
+pub fn plan_many(
+    manifests: &[(Vec<u8>, Vec<CopyItem>)],
+    dest_dir: &Path,
+    exists: &dyn Fn(&Path) -> bool,
+) -> CopyPlan {
+    // Lowercased, because Windows and macOS compare names case-insensitively.
+    let mut taken: HashSet<String> = HashSet::new();
+    let key = |p: &Path| p.to_string_lossy().to_lowercase();
+    let mut all = CopyPlan {
+        top: dest_dir.to_path_buf(),
+        ..CopyPlan::default()
+    };
+    for (root, items) in manifests {
+        let one = plan(root, items, dest_dir, &|p| {
+            exists(p) || taken.contains(&key(p))
+        });
+        taken.insert(key(&one.top));
+        if manifests.len() == 1 {
+            all.top = one.top;
+        }
+        all.dirs.extend(one.dirs);
+        all.files.extend(one.files);
+        all.skipped += one.skipped;
+        all.renamed += one.renamed;
+        all.bytes += one.bytes;
+    }
+    all.dirs.sort_by_key(|d| d.local.components().count());
+    all
 }
 
 /// Where the copy of `root` lands in `dest_dir`, numbered past anything

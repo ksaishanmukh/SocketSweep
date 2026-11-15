@@ -37,7 +37,7 @@ use socketsweep_wire::Kind;
 use socketsweep_transport::Transport;
 
 pub use names::host_safe_name;
-pub use plan::plan;
+pub use plan::{plan, plan_many};
 pub use pull::execute;
 
 /// Files pulled at once.

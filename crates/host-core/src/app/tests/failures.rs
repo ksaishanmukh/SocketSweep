@@ -44,7 +44,7 @@ fn a_protocol_violation_fails_the_scan_and_cancels_it() {
     // The tree so far stays queryable.
     assert_eq!(
         rig.app
-            .get_view(Some(started.root), None, None)
+            .get_view(Some(started.root), None, None, None, None)
             .unwrap()
             .rows
             .len(),
@@ -101,10 +101,10 @@ fn progress_shows_the_view_asked_for_by_focus_and_get_view_does_not_change_it() 
     let app = &rig.app;
     app.connect(None, None).unwrap();
     app.start_scan(None).unwrap();
-    let dcim = row(&app.get_view(None, None, None).unwrap(), "DCIM");
+    let dcim = row(&app.get_view(None, None, None, None, None).unwrap(), "DCIM");
 
     // The row cap comes from `focus`.
-    app.focus(Some(dcim), Some(0), None).unwrap();
+    app.focus(Some(dcim), Some(0), None, None, None).unwrap();
     let progress = rig.wait_finished();
     let view = progress.view.unwrap();
     assert_eq!(view.node, dcim);
@@ -112,9 +112,14 @@ fn progress_shows_the_view_asked_for_by_focus_and_get_view_does_not_change_it() 
 
     // Reading a view, whatever its cap, leaves that alone: `delete` answers
     // with the focused folder under the same cap.
-    let full = app.get_view(Some(dcim), Some(10), None).unwrap();
+    let full = app
+        .get_view(Some(dcim), Some(10), None, None, None)
+        .unwrap();
     assert_eq!(full.rows.len(), 1);
-    let a = row(&app.get_view(None, None, None).unwrap(), "a.txt");
+    let a = row(
+        &app.get_view(None, None, None, None, None).unwrap(),
+        "a.txt",
+    );
     let deleted = app.delete(a).unwrap();
     assert_eq!(deleted.view.node, dcim);
     assert!(deleted.view.rows.is_empty(), "{:?}", deleted.view);
