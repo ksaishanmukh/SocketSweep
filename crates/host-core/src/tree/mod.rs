@@ -20,6 +20,19 @@
 //! the daemon's and applies the difference up the chain (`Final`): the
 //! daemon's figure wins.
 //!
+//! Each walked directory also keeps the bytes below it per content category,
+//! which the daemon does not send, so they are summed here from the same
+//! listings and stats and taken out again on deletes; a folder's category is
+//! whichever holds the most.
+//!
+//! # What else rows carry
+//!
+//! Change times are each node's newest `mtime`, bucketed by age from when the
+//! scan started. A folder directly under `Android/data`, `Android/media` or
+//! `Android/obb` named like a package is an app folder, tagged from the
+//! [`AppCatalog`] the app helper filled in. Folders that reported `DirFailed`
+//! are remembered for the overview.
+//!
 //! # Validation
 //!
 //! The daemon guarantees that a directory is introduced before anything refers
@@ -39,12 +52,19 @@
 //! subtree can still arrive afterwards; those directories are remembered as
 //! gone and their events are dropped rather than treated as violations.
 
+mod apps;
 mod breakdowns;
+mod category;
 mod identity;
 mod ingest;
 mod nodes;
+mod order;
 mod queries;
+mod rows;
+mod search;
 mod sizes;
+
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use socketsweep_gui_contract::{Measure, NodeId, SessionId, Size, SizeMetric};
 use socketsweep_wire::{Kind, Outcome, Totals, ROOT_DIR};
@@ -52,7 +72,12 @@ use socketsweep_wire::{Kind, Outcome, Totals, ROOT_DIR};
 #[cfg(doc)]
 use socketsweep_wire::DirId;
 
+use crate::apps::AppCatalog;
 use nodes::{DirRec, DirState, Node, NONE};
+
+pub use category::category_of;
+pub use order::{bucket_of, ViewQuery};
+pub use search::SearchQuery;
 
 /// The scan root's node.
 pub const ROOT: NodeId = 0;
@@ -127,6 +152,13 @@ pub struct Tree {
     /// built from.
     root_label: String,
     finished: Option<Outcome>,
+    /// Folders that reported `DirFailed`, in the order they did.
+    unreadable: Vec<NodeId>,
+    /// Unix seconds when the scan started: what "changed 3 months ago" counts
+    /// back from.
+    scan_time: i64,
+    /// What the phone has said about installed apps.
+    apps: AppCatalog,
 }
 
 impl Tree {
@@ -152,17 +184,27 @@ impl Tree {
         Tree {
             session,
             nodes: vec![root],
-            dirs: vec![Some(DirRec {
-                node: ROOT,
-                state: DirState::Introduced,
-                next_part: 0,
-                entries: Vec::new(),
-                open: 0,
-            })],
+            dirs: vec![Some(DirRec::new(ROOT, DirState::Introduced))],
             root_path: resolved_root.to_vec(),
             root_label: label.to_string(),
             finished: None,
+            unreadable: Vec::new(),
+            scan_time: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
+            apps: AppCatalog::default(),
         }
+    }
+
+    /// Unix seconds when the scan started.
+    pub fn scan_time(&self) -> i64 {
+        self.scan_time
+    }
+
+    /// Count change times back from `unix_seconds` instead of the moment the
+    /// tree was made.
+    pub fn set_scan_time(&mut self, unix_seconds: i64) {
+        self.scan_time = unix_seconds;
     }
 
     pub fn session(&self) -> SessionId {

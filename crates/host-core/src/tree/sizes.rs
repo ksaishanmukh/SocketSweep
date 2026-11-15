@@ -1,8 +1,10 @@
-//! Keeping sub totals in step up the ancestor chain, and detaching subtrees.
+//! Keeping sub totals and category sizes in step up the ancestor chain, and
+//! detaching subtrees.
 
 use socketsweep_gui_contract::NodeId;
 use socketsweep_wire::Totals;
 
+use super::category::{self, CatSizes};
 use super::{DirState, Tree, NONE};
 
 impl Tree {
@@ -26,6 +28,39 @@ impl Tree {
             n.sub.add(delta);
             cur = n.parent;
         }
+    }
+
+    /// Add `delta` to the category sizes of `from` and every ancestor. Every
+    /// ancestor of a node is a walked directory, so each has a record.
+    pub(super) fn add_cats_up(&mut self, from: NodeId, delta: &CatSizes) {
+        self.each_ancestor_cats(from, |cats| category::add(cats, delta));
+    }
+
+    fn sub_cats_up(&mut self, from: NodeId, delta: &CatSizes) {
+        self.each_ancestor_cats(from, |cats| category::subtract(cats, delta));
+    }
+
+    fn each_ancestor_cats(&mut self, from: NodeId, mut f: impl FnMut(&mut CatSizes)) {
+        let mut cur = from;
+        while cur != NONE {
+            let n = &self.nodes[cur as usize];
+            let (dir, parent) = (n.dir, n.parent);
+            if let Some(Some(rec)) = self.dirs.get_mut(dir as usize) {
+                f(&mut rec.cats);
+            }
+            cur = parent;
+        }
+    }
+
+    /// Everything `node` contributes to its parent's category sizes.
+    fn cat_contribution(&self, node: NodeId) -> CatSizes {
+        let n = &self.nodes[node as usize];
+        let mut cats = match self.dirs.get(n.dir as usize) {
+            Some(Some(rec)) if n.dir != NONE => rec.cats,
+            _ => CatSizes::default(),
+        };
+        category::put(&mut cats, n.own_category(), n.own);
+        cats
     }
 
     /// Subtract `delta` from the sub totals of `from` and every ancestor.
@@ -56,6 +91,7 @@ impl Tree {
             return;
         }
         let contribution = self.nodes[node as usize].contribution();
+        let cats = self.cat_contribution(node);
         let parent = self.nodes[node as usize].parent;
         let was_open = self.nodes[node as usize].dir != NONE
             && self
@@ -86,6 +122,7 @@ impl Tree {
             }
         }
         self.sub_up(parent, &contribution);
+        self.sub_cats_up(parent, &cats);
         if was_open {
             self.close_in_parent(node);
         }

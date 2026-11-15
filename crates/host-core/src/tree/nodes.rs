@@ -1,7 +1,9 @@
 //! The node and directory records a [`Tree`](super::Tree) is built from.
 
-use socketsweep_gui_contract::{EntryKind, Measure, NodeId, Size};
+use socketsweep_gui_contract::{Category, EntryKind, Measure, NodeId, Size};
 use socketsweep_wire::{DirId, Kind, Stat, Totals};
+
+use super::category::{own_category, CatSizes};
 
 /// "No node" in a link. The root is 0, so 0 cannot mean absent.
 pub(super) const NONE: u32 = u32::MAX;
@@ -34,6 +36,11 @@ pub(super) struct Node {
 impl Node {
     pub(super) fn is_dir(&self) -> bool {
         self.kind == Kind::Dir
+    }
+
+    /// The category this entry's own size counts under.
+    pub(super) fn own_category(&self) -> Category {
+        own_category(self.kind, &self.name)
     }
 
     /// What the GUI shows: own plus everything below.
@@ -93,6 +100,21 @@ pub(super) struct DirRec {
     /// Walked child directories not yet done or gone, to check that a directory
     /// finishes only after its children.
     pub(super) open: u32,
+    /// Bytes strictly below, per category.
+    pub(super) cats: CatSizes,
+}
+
+impl DirRec {
+    pub(super) fn new(node: NodeId, state: DirState) -> Self {
+        DirRec {
+            node,
+            state,
+            next_part: 0,
+            entries: Vec::new(),
+            open: 0,
+            cats: CatSizes::default(),
+        }
+    }
 }
 
 pub(super) fn size_of(stat: &Stat) -> Size {

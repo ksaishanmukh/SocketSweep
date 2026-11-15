@@ -3,6 +3,7 @@
 use socketsweep_gui_contract::{Measure, NodeId, Size};
 use socketsweep_wire::{DirId, Entry, Kind, Stat, Totals};
 
+use crate::tree::category::{self, CatSizes};
 use crate::tree::nodes::size_of;
 use crate::tree::{protocol, DirState, Node, Tree, TreeError, NONE};
 
@@ -35,7 +36,7 @@ impl Tree {
         }
         let parent = rec.node;
 
-        let (delta, added, opened) = self.add_entries(dir, parent, entries)?;
+        let (delta, cats, added, opened) = self.add_entries(dir, parent, entries)?;
 
         let rec = self.rec_mut(dir)?;
         rec.entries.extend(added);
@@ -52,19 +53,21 @@ impl Tree {
             n.measure = Measure::Partial;
         }
         self.add_up(parent, &delta);
+        self.add_cats_up(parent, &cats);
         Ok(())
     }
 
     /// Add a listing part's entries under `parent`, introducing the walked
-    /// directories among them. Returns what they add to `parent`'s sums, the
-    /// new nodes, and how many directories they open.
+    /// directories among them. Returns what they add to `parent`'s sums and
+    /// categories, the new nodes, and how many directories they open.
     fn add_entries(
         &mut self,
         dir: DirId,
         parent: NodeId,
         entries: &[Entry],
-    ) -> Result<(Totals, Vec<NodeId>, u32), TreeError> {
+    ) -> Result<(Totals, CatSizes, Vec<NodeId>, u32), TreeError> {
         let mut delta = Totals::default();
+        let mut cats = CatSizes::default();
         let mut added = Vec::with_capacity(entries.len());
         let mut opened = 0u32;
         for entry in entries {
@@ -97,9 +100,10 @@ impl Tree {
             delta.apparent += own.apparent;
             delta.disk += own.disk;
             delta.newest_mtime = delta.newest_mtime.max(mtime);
+            category::put(&mut cats, self.nodes[id as usize].own_category(), own);
             added.push(id);
         }
-        Ok((delta, added, opened))
+        Ok((delta, cats, added, opened))
     }
 
     fn push_node(
@@ -168,6 +172,7 @@ impl Tree {
         let targets: Vec<NodeId> = rec.entries[start as usize..end].to_vec();
 
         let mut delta = Totals::default();
+        let mut cats = CatSizes::default();
         for (node, stat) in targets.into_iter().zip(stats) {
             let n = &mut self.nodes[node as usize];
             if n.stat_known {
@@ -189,6 +194,7 @@ impl Tree {
                     delta.apparent += n.own.apparent;
                     delta.disk += n.own.disk;
                     delta.newest_mtime = delta.newest_mtime.max(stat.mtime);
+                    category::put(&mut cats, n.own_category(), n.own);
                 }
                 None => {
                     n.stat_failed = true;
@@ -197,6 +203,7 @@ impl Tree {
             }
         }
         self.add_up(parent, &delta);
+        self.add_cats_up(parent, &cats);
         Ok(())
     }
 }

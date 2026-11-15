@@ -1,13 +1,13 @@
-//! The GUI's queries: totals, rows, views, breadcrumbs, the treemap, the
-//! largest files and search.
+//! The GUI's queries: totals, folder views, breadcrumbs, the largest files
+//! and unreadable folders.
 
 use socketsweep_gui_contract::{
-    self as gui, Crumb, Measure, NodeId, Row, Size, SizeMetric, TreemapNode, View,
+    self as gui, Crumb, Measure, NodeId, Row, Size, SizeMetric, UnreadableFolder, View, ViewSort,
 };
 use socketsweep_wire::Totals;
 
-use super::nodes::entry_kind;
-use super::{metric, Node, Tree, TreeError, NONE, ROOT};
+use super::order::{Matcher, ViewQuery};
+use super::{Node, Tree, TreeError, NONE, ROOT};
 
 impl Tree {
     /// The whole tree's totals.
@@ -44,73 +44,39 @@ impl Tree {
         Some(n.newest_mtime()).filter(|m| *m != 0)
     }
 
-    fn files_of(n: &Node) -> u32 {
-        if n.is_dir() {
-            n.sub.files
-        } else {
-            1
-        }
-    }
-
-    pub(super) fn row(&self, id: NodeId) -> Row {
-        let n = &self.nodes[id as usize];
-        Row {
-            node: self.node_ref(id),
-            name: String::from_utf8_lossy(&n.name).into_owned(),
-            kind: entry_kind(n.kind),
-            size: n.size(),
-            measure: n.measure,
-            files: Self::files_of(n),
-            unreadable: n.sub.flags & Totals::UNREADABLE != 0,
-            parent: None,
-            parent_node: None,
-        }
-    }
-
-    fn row_with_parent(&self, id: NodeId) -> Row {
-        let mut row = self.row(id);
-        let parent = self.nodes[id as usize].parent;
-        if parent != NONE {
-            row.parent = Some(self.display_path(parent));
-            row.parent_node = Some(self.node_ref(parent));
-        }
-        row
-    }
-
-    pub(super) fn children_of(&self, id: NodeId) -> Vec<NodeId> {
-        let mut out = Vec::new();
-        let mut cur = self.nodes[id as usize].first_child;
-        while cur != NONE {
-            if !self.nodes[cur as usize].removed {
-                out.push(cur);
-            }
-            cur = self.nodes[cur as usize].next_sibling;
-        }
-        out
-    }
-
-    /// Largest first by `by`, then by name so equal rows do not swap places
-    /// between refreshes.
-    pub(super) fn sort(&self, ids: &mut [NodeId], by: SizeMetric) {
-        ids.sort_unstable_by(|a, b| {
-            let (x, y) = (&self.nodes[*a as usize], &self.nodes[*b as usize]);
-            metric(y.size(), by)
-                .cmp(&metric(x.size(), by))
-                .then_with(|| x.name.cmp(&y.name))
-                .then_with(|| a.cmp(b))
-        });
-    }
-
-    /// One folder's rows (a file shows as an empty folder of itself).
+    /// One folder's rows, largest first, unfiltered (a file shows as an empty
+    /// folder of itself).
     pub fn view(&self, id: NodeId, limit: u32, by: SizeMetric) -> Result<View, TreeError> {
+        self.view_query(
+            id,
+            &ViewQuery {
+                limit,
+                by,
+                ..ViewQuery::default()
+            },
+        )
+    }
+
+    /// One folder's rows as `q` asks: filtered over every child, then sorted,
+    /// then cut to the limit.
+    pub fn view_query(&self, id: NodeId, q: &ViewQuery) -> Result<View, TreeError> {
         let n = self.live(id)?;
-        let mut kids = self.children_of(id);
-        self.sort(&mut kids, by);
-        let hidden = kids.len().saturating_sub(limit as usize) as u32;
-        let rows = kids
+        let kids = self.children_of(id);
+        let total_children = kids.len() as u32;
+        let matcher = Matcher::view(&q.filter, q.by);
+        let mut kept: Vec<NodeId> = if matcher.is_empty() {
+            kids
+        } else {
+            kids.into_iter()
+                .filter(|k| self.matches(*k, &matcher))
+                .collect()
+        };
+        let total_matching = kept.len() as u32;
+        self.order(&mut kept, q.sort, q.by);
+        let rows: Vec<Row> = kept
             .iter()
-            .take(limit as usize)
-            .map(|k| self.row(*k))
+            .take(q.limit as usize)
+            .map(|k| self.row(*k, q.by))
             .collect();
         Ok(View {
             node: self.node_ref(id),
@@ -120,8 +86,13 @@ impl Tree {
             files: Self::files_of(n),
             dirs: n.sub.dirs,
             unreadable: n.sub.flags & Totals::UNREADABLE != 0,
+            changed: self.newest_mtime(id),
+            category: self.category(id, q.by),
+            app: self.app_tag(id),
+            hidden: total_matching - rows.len() as u32,
             rows,
-            hidden,
+            total_matching,
+            total_children,
         })
     }
 
@@ -141,51 +112,6 @@ impl Tree {
         Ok(out)
     }
 
-    /// `id` and its descendants down to `depth` levels, largest first, with
-    /// a per-level cap: past it, tiles are too small to read.
-    pub fn treemap(
-        &self,
-        id: NodeId,
-        depth: u32,
-        by: SizeMetric,
-    ) -> Result<TreemapNode, TreeError> {
-        self.live(id)?;
-        const CAPS: [usize; 3] = [48, 12, 6];
-        let depth = (depth as usize).min(CAPS.len());
-        Ok(self.treemap_at(id, depth, &CAPS, 0, by))
-    }
-
-    fn treemap_at(
-        &self,
-        id: NodeId,
-        remaining: usize,
-        caps: &[usize],
-        level: usize,
-        by: SizeMetric,
-    ) -> TreemapNode {
-        let n = &self.nodes[id as usize];
-        let mut out = TreemapNode {
-            node: self.node_ref(id),
-            name: String::from_utf8_lossy(&n.name).into_owned(),
-            kind: entry_kind(n.kind),
-            size: n.size(),
-            measure: n.measure,
-            children: Vec::new(),
-        };
-        if remaining == 0 || !n.is_dir() {
-            return out;
-        }
-        let mut kids = self.children_of(id);
-        self.sort(&mut kids, by);
-        kids.truncate(caps.get(level).copied().unwrap_or(0));
-        out.children = kids
-            .into_iter()
-            .filter(|k| metric(self.nodes[*k as usize].size(), by) > 0)
-            .map(|k| self.treemap_at(k, remaining - 1, caps, level + 1, by))
-            .collect();
-        out
-    }
-
     /// The largest files anywhere in the tree.
     pub fn largest_files(&self, limit: u32, by: SizeMetric) -> Vec<Row> {
         let mut files: Vec<NodeId> = self
@@ -195,33 +121,21 @@ impl Tree {
             .filter(|(_, n)| !n.is_dir() && !n.removed)
             .map(|(i, _)| i as NodeId)
             .collect();
-        self.sort(&mut files, by);
+        self.order(&mut files, ViewSort::default(), by);
         files.truncate(limit as usize);
-        files.iter().map(|f| self.row_with_parent(*f)).collect()
+        files.iter().map(|f| self.row_with_parent(*f, by)).collect()
     }
 
-    /// Files and folders whose name contains `query`, case-insensitively,
-    /// largest first by `by`.
-    pub fn search(&self, query: &str, limit: u32, by: SizeMetric) -> Vec<Row> {
-        if query.is_empty() {
-            return Vec::new();
-        }
-        let needle = query.to_lowercase();
-        let mut hits: Vec<NodeId> = self
-            .nodes
+    /// Folders that could not be read and are still in the tree, in the order
+    /// the phone reported them.
+    pub fn unreadable_folders(&self) -> Vec<UnreadableFolder> {
+        self.unreadable
             .iter()
-            .enumerate()
-            .skip(1)
-            .filter(|(_, n)| {
-                !n.removed
-                    && String::from_utf8_lossy(&n.name)
-                        .to_lowercase()
-                        .contains(&needle)
+            .filter(|id| self.exists(**id))
+            .map(|id| UnreadableFolder {
+                node: self.node_ref(*id),
+                path: self.display_path(*id),
             })
-            .map(|(i, _)| i as NodeId)
-            .collect();
-        self.sort(&mut hits, by);
-        hits.truncate(limit as usize);
-        hits.iter().map(|h| self.row_with_parent(*h)).collect()
+            .collect()
     }
 }
