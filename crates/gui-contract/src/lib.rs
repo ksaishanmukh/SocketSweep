@@ -49,19 +49,27 @@ mod devices;
 mod errors;
 mod event_payloads;
 mod events;
+mod filters;
 mod nodes;
+mod overview;
 mod queries;
 
-pub use actions::{CopyResult, Deleted};
+pub use actions::{CopyResult, DeleteFailure, Deleted, DeletedMany};
 pub use commands::{command_defs, CommandDef, Commands, COMMAND_NAMES};
 pub use devices::{Connected, Device, DeviceState, ScanRecord, ScanStarted, Totals};
 pub use errors::{CommandError, ErrorCode};
 pub use event_payloads::{
-    ConnectionLost, CopyProgress, FocusState, ScanFinished, ScanOutcome, ScanPhase, ScanProgress,
-    SkeletonReady,
+    AppsUpdated, ConnectionLost, CopyProgress, FocusState, ScanFinished, ScanOutcome, ScanPhase,
+    ScanProgress, SkeletonReady,
 };
 pub use events::{event_defs, Event, EventDef, EVENT_NAMES};
-pub use nodes::{EntryKind, Measure, NodeId, NodeRef, SessionId, Size, SizeMetric};
+pub use filters::{ChangedBucket, KindFilter, SearchFilter, SortKey, ViewFilter, ViewSort};
+pub use nodes::{
+    AppTag, Category, EntryKind, Measure, NodeId, NodeRef, SessionId, Size, SizeMetric,
+};
+pub use overview::{
+    AppsStatus, CategoryUsage, Leftover, Leftovers, Overview, SinceLastScan, UnreadableFolder,
+};
 pub use queries::{AppUsage, Crumb, Row, TreemapNode, TypeGroup, View};
 
 /// Rows per view when `limit` is not given. Enough to fill any screen; the
@@ -75,5 +83,9 @@ pub const DEFAULT_LARGEST_LIMIT: u32 = 100;
 pub const DEFAULT_APPS_LIMIT: u32 = 50;
 /// Results from `search` when `limit` is not given.
 pub const DEFAULT_SEARCH_LIMIT: u32 = 200;
+/// Files in `overview`'s `biggestFiles`.
+pub const OVERVIEW_BIGGEST_FILES: u32 = 10;
+/// Apps in `overview`'s `apps`.
+pub const OVERVIEW_APPS: u32 = 8;
 /// How often `scan-progress` is emitted while a scan runs.
 pub const SCAN_PROGRESS_INTERVAL_MS: u32 = 100;

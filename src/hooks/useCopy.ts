@@ -103,7 +103,7 @@ function useCopyProgress(
 ) {
   useEffect(() => {
     const pending = events.copyProgress((p) => {
-      if (!sameNode(p.node, copying.current)) return;
+      if (p.nodes.length !== 1 || !sameNode(p.nodes[0], copying.current)) return;
       setCopy((c) => (c ? { ...c, progress: p } : c));
     });
     return () => {

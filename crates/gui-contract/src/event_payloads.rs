@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use specta_typescript::Number;
 
-use crate::{NodeRef, SessionId, Totals, View};
+use crate::{AppsStatus, NodeRef, SessionId, Totals, View};
 
 /// Emitted as `scan-progress` about ten times a second while a scan runs,
 /// and once more when it ends.
@@ -26,9 +26,10 @@ pub struct ScanProgress {
     /// Set on the last event of a scan.
     pub finished: Option<ScanFinished>,
     /// The focused folder, refreshed. Only that one, so the payload does not
-    /// grow with the tree. Its sort and row cap are the `by` and `limit` of
-    /// the last `focus` (defaults: disk, 500 rows); `getView` never changes
-    /// them, so a GUI that wants more rows or another sort calls `focus` again.
+    /// grow with the tree. Its size metric, row cap, sort and filter are those
+    /// of the last `focus` (defaults: disk, 500 rows, largest first,
+    /// unfiltered); `getView` never changes them, so a GUI that wants more
+    /// rows or another order calls `focus` again.
     pub view: Option<View>,
 }
 
@@ -77,12 +78,15 @@ pub enum ScanOutcome {
     Failed,
 }
 
-/// Emitted as `copy-progress` while `copyToDesktop` runs.
+/// Emitted as `copy-progress` while `copyToDesktop` or `copyMany` runs. The
+/// counts cover every node of the copy together.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CopyProgress {
-    /// What is being copied.
-    pub node: NodeRef,
+    /// What is being copied, as asked for.
+    pub nodes: Vec<NodeRef>,
+    /// The copied file or folder for one node, the destination folder for
+    /// several.
     pub destination: String,
     pub files_done: u32,
     pub files_total: u32,
@@ -95,6 +99,18 @@ pub struct CopyProgress {
     pub totals_known: bool,
     /// The file being copied, relative to what was asked for.
     pub current: Option<String>,
+}
+
+/// Emitted as `apps-updated` when the phone reports app names or icons for
+/// the scan of `session`. Rows, views and the overview fetched before it
+/// lack them; the GUI fetches again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppsUpdated {
+    pub session: SessionId,
+    pub status: AppsStatus,
+    /// Packages with an icon so far.
+    pub icons: u32,
 }
 
 /// Emitted as `connection-lost` when the phone stops answering or is

@@ -96,15 +96,29 @@ commands! {
 
     /// The user opened folder `node` (by click, breadcrumb, treemap or "go
     /// to"); a file means its folder. The phone measures it first, and
-    /// `scan-progress` carries this folder's view, sorted by `by` (default
-    /// disk) and capped at `limit` rows (default 500). Call it again for the
-    /// same folder to change those; `getView` does not. `null` means the root.
-    /// Hover and scrolling are not focus.
-    fn focus(node: Option<NodeRef>, limit: Option<u32>, by: Option<SizeMetric>) -> ();
+    /// `scan-progress` carries this folder's view, sized by `by` (default
+    /// disk), in order `sort` (default largest first), narrowed by `filter`
+    /// (default none) and capped at `limit` rows (default 500). Call it again
+    /// for the same folder to change those; `getView` does not. `null` means
+    /// the root. Hover and scrolling are not focus.
+    fn focus(
+        node: Option<NodeRef>,
+        limit: Option<u32>,
+        by: Option<SizeMetric>,
+        sort: Option<ViewSort>,
+        filter: Option<ViewFilter>,
+    ) -> ();
 
-    /// A folder's rows, largest first by `by` (default disk). `node`
-    /// defaults to the root, `limit` to 500.
-    fn get_view(node: Option<NodeRef>, limit: Option<u32>, by: Option<SizeMetric>) -> View;
+    /// A folder's rows, sized by `by` (default disk), in order `sort`
+    /// (default largest first), narrowed by `filter` (default none), at most
+    /// `limit` (default 500). `node` defaults to the root.
+    fn get_view(
+        node: Option<NodeRef>,
+        limit: Option<u32>,
+        by: Option<SizeMetric>,
+        sort: Option<ViewSort>,
+        filter: Option<ViewFilter>,
+    ) -> View;
 
     /// The path from the root to `node`, root first.
     fn get_breadcrumbs(node: NodeRef) -> Vec<Crumb>;
@@ -122,19 +136,49 @@ commands! {
     /// Storage per app package (default 50).
     fn app_breakdown(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<AppUsage>;
 
-    /// Files and folders whose name contains `query`, case-insensitively
-    /// (default 200 results), largest first by `by` (default disk).
-    fn search(query: String, limit: Option<u32>, by: Option<SizeMetric>) -> Vec<Row>;
+    /// Files and folders whose name contains `query`, case-insensitively, and
+    /// that pass `filter` (default none): inside folder `within`, or anywhere
+    /// when it is `null`. At most `limit` results (default 200), in order
+    /// `sort` (default largest first by `by`, default disk). An empty query
+    /// with no filter finds nothing.
+    fn search(
+        query: String,
+        limit: Option<u32>,
+        by: Option<SizeMetric>,
+        filter: Option<SearchFilter>,
+        sort: Option<ViewSort>,
+        within: Option<NodeRef>,
+    ) -> Vec<Row>;
+
+    /// The summary of the whole scan so far, sized by `by` (default disk).
+    fn overview(by: Option<SizeMetric>) -> Overview;
+
+    /// The launcher icon of package `app` as a base64 PNG, once the phone has
+    /// reported it; `null` until then, or if it has none. Rows say whether
+    /// one exists with `hasIcon`.
+    fn app_icon(app: String) -> Option<String>;
 
     /// Delete `node` and everything below it from the phone. Refused for a
     /// stale node and for the scan root. Allowed during a scan, which skips
     /// the deleted part.
     fn delete(node: NodeRef) -> Deleted;
 
+    /// Delete several nodes, one after another. Refused as a whole, before
+    /// anything is deleted, if any node is stale, already deleted or the
+    /// scan root. A node inside another one listed goes with it. One node the
+    /// phone will not delete does not stop the others; it is reported in
+    /// `failures`.
+    fn delete_many(nodes: Vec<NodeRef>) -> DeletedMany;
+
     /// Copy `node` (a file, or a folder and everything in it) to this
     /// computer, into `destination` (default: the desktop). Progress arrives
     /// as `copy-progress` events; resolves when the copy is complete.
     fn copy_to_desktop(node: NodeRef, destination: Option<String>) -> CopyResult;
+
+    /// Copy several nodes into `destination` (default: the desktop) as one
+    /// copy, with one `copy-progress` stream and one result. A node inside
+    /// another one listed goes with it. Refused as a whole for a stale node.
+    fn copy_many(nodes: Vec<NodeRef>, destination: Option<String>) -> CopyResult;
 
     /// Stop the running copy. Files already copied stay.
     fn cancel_copy() -> ();

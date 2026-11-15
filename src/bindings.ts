@@ -45,19 +45,21 @@ export const commands = {
   /**
    * The user opened folder `node` (by click, breadcrumb, treemap or "go
    * to"); a file means its folder. The phone measures it first, and
-   * `scan-progress` carries this folder's view, sorted by `by` (default
-   * disk) and capped at `limit` rows (default 500). Call it again for the
-   * same folder to change those; `getView` does not. `null` means the root.
-   * Hover and scrolling are not focus.
+   * `scan-progress` carries this folder's view, sized by `by` (default
+   * disk), in order `sort` (default largest first), narrowed by `filter`
+   * (default none) and capped at `limit` rows (default 500). Call it again
+   * for the same folder to change those; `getView` does not. `null` means
+   * the root. Hover and scrolling are not focus.
    */
-  focus: (node?: NodeRef | null, limit?: number | null, by?: SizeMetric | null): Promise<void> =>
-    invoke<void>("focus", { node, limit, by }),
+  focus: (node?: NodeRef | null, limit?: number | null, by?: SizeMetric | null, sort?: ViewSort | null, filter?: ViewFilter | null): Promise<void> =>
+    invoke<void>("focus", { node, limit, by, sort, filter }),
   /**
-   * A folder's rows, largest first by `by` (default disk). `node`
-   * defaults to the root, `limit` to 500.
+   * A folder's rows, sized by `by` (default disk), in order `sort`
+   * (default largest first), narrowed by `filter` (default none), at most
+   * `limit` (default 500). `node` defaults to the root.
    */
-  getView: (node?: NodeRef | null, limit?: number | null, by?: SizeMetric | null): Promise<View> =>
-    invoke<View>("get_view", { node, limit, by }),
+  getView: (node?: NodeRef | null, limit?: number | null, by?: SizeMetric | null, sort?: ViewSort | null, filter?: ViewFilter | null): Promise<View> =>
+    invoke<View>("get_view", { node, limit, by, sort, filter }),
   /**
    * The path from the root to `node`, root first.
    */
@@ -85,11 +87,26 @@ export const commands = {
   appBreakdown: (limit?: number | null, by?: SizeMetric | null): Promise<AppUsage[]> =>
     invoke<AppUsage[]>("app_breakdown", { limit, by }),
   /**
-   * Files and folders whose name contains `query`, case-insensitively
-   * (default 200 results), largest first by `by` (default disk).
+   * Files and folders whose name contains `query`, case-insensitively, and
+   * that pass `filter` (default none): inside folder `within`, or anywhere
+   * when it is `null`. At most `limit` results (default 200), in order
+   * `sort` (default largest first by `by`, default disk). An empty query
+   * with no filter finds nothing.
    */
-  search: (query: string, limit?: number | null, by?: SizeMetric | null): Promise<Row[]> =>
-    invoke<Row[]>("search", { query, limit, by }),
+  search: (query: string, limit?: number | null, by?: SizeMetric | null, filter?: SearchFilter | null, sort?: ViewSort | null, within?: NodeRef | null): Promise<Row[]> =>
+    invoke<Row[]>("search", { query, limit, by, filter, sort, within }),
+  /**
+   * The summary of the whole scan so far, sized by `by` (default disk).
+   */
+  overview: (by?: SizeMetric | null): Promise<Overview> =>
+    invoke<Overview>("overview", { by }),
+  /**
+   * The launcher icon of package `app` as a base64 PNG, once the phone has
+   * reported it; `null` until then, or if it has none. Rows say whether
+   * one exists with `hasIcon`.
+   */
+  appIcon: (app: string): Promise<string | null> =>
+    invoke<string | null>("app_icon", { app }),
   /**
    * Delete `node` and everything below it from the phone. Refused for a
    * stale node and for the scan root. Allowed during a scan, which skips
@@ -98,12 +115,28 @@ export const commands = {
   delete: (node: NodeRef): Promise<Deleted> =>
     invoke<Deleted>("delete", { node }),
   /**
+   * Delete several nodes, one after another. Refused as a whole, before
+   * anything is deleted, if any node is stale, already deleted or the
+   * scan root. A node inside another one listed goes with it. One node the
+   * phone will not delete does not stop the others; it is reported in
+   * `failures`.
+   */
+  deleteMany: (nodes: NodeRef[]): Promise<DeletedMany> =>
+    invoke<DeletedMany>("delete_many", { nodes }),
+  /**
    * Copy `node` (a file, or a folder and everything in it) to this
    * computer, into `destination` (default: the desktop). Progress arrives
    * as `copy-progress` events; resolves when the copy is complete.
    */
   copyToDesktop: (node: NodeRef, destination?: string | null): Promise<CopyResult> =>
     invoke<CopyResult>("copy_to_desktop", { node, destination }),
+  /**
+   * Copy several nodes into `destination` (default: the desktop) as one
+   * copy, with one `copy-progress` stream and one result. A node inside
+   * another one listed goes with it. Refused as a whole for a stale node.
+   */
+  copyMany: (nodes: NodeRef[], destination?: string | null): Promise<CopyResult> =>
+    invoke<CopyResult>("copy_many", { nodes, destination }),
   /**
    * Stop the running copy. Files already copied stay.
    */
@@ -121,19 +154,99 @@ export const events = {
     listen<CopyProgress>("copy-progress", (e) => handler(e.payload)),
   connectionLost: (handler: (payload: ConnectionLost) => void): Promise<UnlistenFn> =>
     listen<ConnectionLost>("connection-lost", (e) => handler(e.payload)),
+  appsUpdated: (handler: (payload: AppsUpdated) => void): Promise<UnlistenFn> =>
+    listen<AppsUpdated>("apps-updated", (e) => handler(e.payload)),
 };
+/**
+ *  The app a folder belongs to: a folder directly under `Android/data`,
+ *  `Android/media` or `Android/obb` named like a package.
+ */
+export type AppTag = {
+	/**  Android package name, e.g. `com.whatsapp`. */
+	package: string,
+	/**  The name the launcher shows, once the phone has reported it. */
+	label: string | null,
+	/**
+	 *  False only once the phone has reported its apps and this package is
+	 *  not among them: the folder is left over from an uninstalled app.
+	 */
+	installed: boolean,
+	/**  `appIcon` has an icon for this package. */
+	hasIcon: boolean,
+};
+
 /**  Storage owned by one app, summed across its data, obb and media folders. */
 export type AppUsage = {
-	/**
-	 *  Android package name, e.g. `com.example.game`. Not a display label:
-	 *  adb's shell has no access to app labels.
-	 */
+	/**  Android package name, e.g. `com.example.game`. */
 	package: string,
+	/**  The name the launcher shows, once the phone has reported it. */
+	label: string | null,
+	/**  As on [`AppTag`]. */
+	installed: boolean,
+	hasIcon: boolean,
 	size: Size,
 	files: number,
 	/**  The largest folder the package owns, for navigating to it. */
 	node: NodeRef,
 };
+
+/**
+ *  Whether the phone has said which apps are installed. App names, icons and
+ *  leftovers depend on it.
+ */
+export type AppsStatus = 
+/**  Still asking; package names only for now. */
+"pending" | 
+/**  The phone answered. */
+"ready" | 
+/**
+ *  The phone could not say (the helper failed or is not bundled). Package
+ *  names only, and no leftovers, for this scan.
+ */
+"unavailable";
+
+/**
+ *  Emitted as `apps-updated` when the phone reports app names or icons for
+ *  the scan of `session`. Rows, views and the overview fetched before it
+ *  lack them; the GUI fetches again.
+ */
+export type AppsUpdated = {
+	session: number,
+	status: AppsStatus,
+	/**  Packages with an icon so far. */
+	icons: number,
+};
+
+/**
+ *  A broad kind of content, for colouring and filtering. A file's comes from
+ *  its extension; a folder's is the one holding the most bytes inside it, by
+ *  the [`SizeMetric`] of the query.
+ */
+export type Category = "audio" | "video" | "photo" | 
+/**  Archives and app packages (`.zip`, `.apk`, `.obb`, …). */
+"archive" | "doc" | 
+/**  Everything else: app data, caches, unknown extensions. */
+"other";
+
+export type CategoryUsage = {
+	category: Category,
+	size: Size,
+};
+
+/**
+ *  How long ago something last changed, counted back from when the scan
+ *  started rather than from now, so results do not drift while the app
+ *  stays open. Something whose change time is unknown is in no bucket.
+ */
+export type ChangedBucket = 
+/**  Within 30 days (or dated after the scan started). */
+"last30d" | 
+/**  More than 30 days, up to 182 days. */
+"months1To6" | 
+/**  More than 182 days, up to 365 days. */
+"months6To12" | 
+/**  More than 365 days. */
+"overYear";
 
 /**  How every command fails. */
 export type CommandError = {
@@ -170,10 +283,17 @@ export type ConnectionLost = {
 	message: string,
 };
 
-/**  Emitted as `copy-progress` while `copyToDesktop` runs. */
+/**
+ *  Emitted as `copy-progress` while `copyToDesktop` or `copyMany` runs. The
+ *  counts cover every node of the copy together.
+ */
 export type CopyProgress = {
-	/**  What is being copied. */
-	node: NodeRef,
+	/**  What is being copied, as asked for. */
+	nodes: NodeRef[],
+	/**
+	 *  The copied file or folder for one node, the destination folder for
+	 *  several.
+	 */
 	destination: string,
 	filesDone: number,
 	filesTotal: number,
@@ -188,9 +308,12 @@ export type CopyProgress = {
 	current: string | null,
 };
 
-/**  The answer to `copyToDesktop`, once every file is copied. */
+/**  The answer to `copyToDesktop` and `copyMany`, once every file is copied. */
 export type CopyResult = {
-	/**  Where the copy is, on this computer. */
+	/**
+	 *  Where the copy is, on this computer: the copied file or folder for one
+	 *  node, the destination folder for several.
+	 */
 	destination: string,
 	files: number,
 	bytes: number,
@@ -209,6 +332,13 @@ export type Crumb = {
 	name: string,
 };
 
+export type DeleteFailure = {
+	node: NodeRef,
+	/**  Display path. */
+	path: string,
+	error: CommandError,
+};
+
 /**  The answer to `delete`, once the phone confirms. */
 export type Deleted = {
 	/**  Files and folders removed. */
@@ -219,6 +349,25 @@ export type Deleted = {
 	 *  The focused folder, refreshed; its nearest surviving ancestor if it
 	 *  was inside what was deleted.
 	 */
+	view: View,
+};
+
+/**  The answer to `deleteMany`, once the phone has answered for every node. */
+export type DeletedMany = {
+	/**
+	 *  Nodes deleted, of those asked for (a node inside another one asked
+	 *  for counts with it, not on its own).
+	 */
+	deleted: number,
+	/**  Files and folders removed, everything inside included. */
+	items: number,
+	/**  What the phone freed. */
+	size: Size,
+	/**  Nodes the phone could not delete; the rest are gone. */
+	failures: DeleteFailure[],
+	/**  The whole tree's totals afterwards. */
+	totals: Totals,
+	/**  As on [`Deleted`]. */
 	view: View,
 };
 
@@ -273,6 +422,23 @@ export type FocusState = {
 	settled: boolean,
 };
 
+/**  Folders or files. Symbolic links and special files count as files. */
+export type KindFilter = "folder" | "file";
+
+/**  One uninstalled package's folders. */
+export type Leftover = {
+	package: string,
+	size: Size,
+	/**  Each of its folders, largest first, for selecting or deleting them. */
+	folders: NodeRef[],
+};
+
+export type Leftovers = {
+	total: Size,
+	/**  Largest first. */
+	apps: Leftover[],
+};
+
 /**  How far a node's size is known. */
 export type Measure = 
 /**
@@ -294,6 +460,36 @@ export type NodeRef = {
 	id: number,
 };
 
+/**  The whole scan at a glance. Every figure is as far as the scan has got. */
+export type Overview = {
+	totals: Totals,
+	/**
+	 *  Bytes per category over the whole tree, largest first, empty ones left
+	 *  out.
+	 */
+	categories: CategoryUsage[],
+	/**  The ten largest files, with their folders. */
+	biggestFiles: Row[],
+	/**
+	 *  The eight apps using the most storage under `Android/data`,
+	 *  `Android/media` and `Android/obb`.
+	 */
+	apps: AppUsage[],
+	appsStatus: AppsStatus,
+	/**
+	 *  Folders of apps that are no longer installed. Empty until
+	 *  `appsStatus` is `ready`.
+	 */
+	leftovers: Leftovers,
+	/**
+	 *  Folders the phone would not let the scan read, so their sizes are
+	 *  missing.
+	 */
+	unreadable: UnreadableFolder[],
+	/**  Compared with the last finished scan of this phone and root. */
+	sinceLastScan: SinceLastScan | null,
+};
+
 /**  One file or folder in a list. */
 export type Row = {
 	node: NodeRef,
@@ -306,6 +502,15 @@ export type Row = {
 	files: number,
 	/**  Some folder in the subtree could not be read, so the size is low. */
 	unreadable: boolean,
+	/**
+	 *  The newest change, in Unix seconds: a file's modification time, a
+	 *  folder's newest anywhere inside (it climbs as the scan goes on, and
+	 *  deletes never lower it). `null` while unknown.
+	 */
+	changed: number | null,
+	category: Category,
+	/**  Set on a folder that belongs to an app. */
+	app: AppTag | null,
 	/**
 	 *  The containing folder's path, on results that span the tree (search
 	 *  hits, largest files), where the name alone does not say where the thing
@@ -354,9 +559,10 @@ export type ScanProgress = {
 	finished: ScanFinished | null,
 	/**
 	 *  The focused folder, refreshed. Only that one, so the payload does not
-	 *  grow with the tree. Its sort and row cap are the `by` and `limit` of
-	 *  the last `focus` (defaults: disk, 500 rows); `getView` never changes
-	 *  them, so a GUI that wants more rows or another sort calls `focus` again.
+	 *  grow with the tree. Its size metric, row cap, sort and filter are those
+	 *  of the last `focus` (defaults: disk, 500 rows, largest first,
+	 *  unfiltered); `getView` never changes them, so a GUI that wants more
+	 *  rows or another order calls `focus` again.
 	 */
 	view: View | null,
 };
@@ -379,6 +585,21 @@ export type ScanStarted = {
 	path: string,
 };
 
+/**  What a search keeps besides its query. */
+export type SearchFilter = {
+	categories: Category[],
+	kinds: KindFilter[],
+	changed: ChangedBucket[],
+};
+
+/**  The difference from the previous scan: positive means more now. */
+export type SinceLastScan = {
+	previous: ScanRecord,
+	apparentDelta: number,
+	diskDelta: number,
+	filesDelta: number,
+};
+
 /**  A size in bytes, both ways of counting it. */
 export type Size = {
 	/**  The sum of file lengths, what a file manager shows. */
@@ -398,6 +619,20 @@ export type SkeletonReady = {
 	elapsedMs: number,
 };
 
+/**  What rows are ordered by. */
+export type SortKey = 
+/**  Case-insensitively. */
+"name" | 
+/**  By the query's [`SizeMetric`]. */
+"size" | 
+/**  Files inside a folder. Files count as fewer than any folder. */
+"count" | 
+/**
+ *  The newest change: a file's own, a folder's anywhere inside. Unknown
+ *  counts as oldest.
+ */
+"changed";
+
 /**  Sums over a tree or subtree. */
 export type Totals = {
 	size: Size,
@@ -414,18 +649,33 @@ export type TreemapNode = {
 	kind: EntryKind,
 	size: Size,
 	measure: Measure,
+	/**  As on [`Row`]. */
+	changed: number | null,
+	category: Category,
+	app: AppTag | null,
 	/**  Largest first; empty below the requested depth. */
 	children: TreemapNode[],
 };
 
 /**  Total size of one broad file category (images, video, …). */
 export type TypeGroup = {
+	category: Category,
 	label: string,
 	size: Size,
 	files: number,
 };
 
-/**  One folder's contents, largest first by the requested [`SizeMetric`]. */
+export type UnreadableFolder = {
+	node: NodeRef,
+	/**  The full display path, e.g. `/sdcard/Android/data/com.example`. */
+	path: string,
+};
+
+/**
+ *  One folder's contents, in the requested [`ViewSort`] (largest first by
+ *  the requested [`SizeMetric`] unless asked otherwise), narrowed by the
+ *  requested [`ViewFilter`].
+ */
 export type View = {
 	node: NodeRef,
 	/**  Display path. */
@@ -435,7 +685,36 @@ export type View = {
 	files: number,
 	dirs: number,
 	unreadable: boolean,
+	/**  As on [`Row`]. */
+	changed: number | null,
+	category: Category,
+	app: AppTag | null,
 	rows: Row[],
-	/**  Rows beyond the requested limit, so the GUI can say "and 412 more". */
+	/**
+	 *  Matching rows beyond the requested limit, so the GUI can say "and
+	 *  412 more".
+	 */
 	hidden: number,
+	/**  Children that pass the filter, shown or not. */
+	totalMatching: number,
+	/**  Children before filtering, so the GUI can say "7 of 20 shown". */
+	totalChildren: number,
+};
+
+/**  What a folder view keeps. */
+export type ViewFilter = {
+	/**  Names containing this, case-insensitively. `null` or empty keeps all. */
+	query: string | null,
+	categories: Category[],
+	kinds: KindFilter[],
+	changed: ChangedBucket[],
+};
+
+/**
+ *  A sort order. Equal rows fall back to their names, so they do not swap
+ *  places between refreshes.
+ */
+export type ViewSort = {
+	key: SortKey,
+	descending: boolean,
 };

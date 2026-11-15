@@ -97,7 +97,7 @@ describe("copy to computer", () => {
       void result.current.start(row(2));
     });
 
-    act(() => emit.copyProgress(copyProgress({ node: node(77), filesDone: 9 })));
+    act(() => emit.copyProgress(copyProgress({ nodes: [node(77)], filesDone: 9 })));
 
     expect(result.current.copy?.progress).toBeNull();
   });
