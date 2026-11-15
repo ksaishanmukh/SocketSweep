@@ -451,6 +451,50 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   first change is sent immediately; later changes are combined over 150 ms.
   Hover and scrolling never change focus. `FocusState.settled` clears the
   folder's spinner.
+- **What a row carries:** besides its size and measure, every row, view and
+  treemap tile has `changed` (a file's `mtime`; a folder's newest change
+  anywhere inside, from `Totals.newest_mtime`), a `category` (audio, video,
+  photo, archive, doc or other) and, for an app folder, an `app` tag.
+  - A file's category comes from its extension. Each walked directory keeps
+    the bytes below it per category, summed by the host from listings and
+    stats (the daemon does not send them) and subtracted again on prune and
+    delete; directories' own sizes count as other. A folder's category is the
+    one holding the most bytes by the query's size metric.
+  - An app folder is a folder directly under `Android/data`, `Android/media`
+    or `Android/obb` whose name looks like a package. Its tag carries the
+    package, and once the app helper has answered, the label, whether the app
+    is still installed, and whether an icon is available (`appIcon` serves
+    the PNG, so rows stay small).
+- **Views and search:** `getView` (and `focus`, for the view inside
+  `scan-progress`) takes a sort (name, size, file count or change time, either
+  direction) and a filter (name substring, categories, folders or files,
+  change-time buckets). The filter runs over every child before the row
+  limit; options within a group are alternatives, groups must all match.
+  Change-time buckets (30 days, 1–6 months, 6–12 months, over a year) count
+  back from when the scan started. A view reports `totalMatching` and
+  `totalChildren`. `search` takes the same filter without the name, the same
+  sort, and a folder to search inside (or the whole tree).
+- **Overview:** `overview` returns the tree's bytes per category, the ten
+  largest files, the eight largest apps, leftovers (folders of packages the
+  phone says are not installed; only once the helper has answered), the
+  folders that reported `DirFailed`, and the change in total size since the
+  previous finished scan of the same phone and root, from the history file.
+- **App helper:** after a scan has started, a thread pushes the bundled
+  `socketsweep-helper.dex` to `/data/local/tmp` (once per connection) and runs
+  it with `app_process` to list installed apps and their labels. Icons follow
+  in separate runs of at most 30 packages, only for installed packages that
+  own folders, largest first, because drawing icons crashes the helper on some
+  phones and a crash should cost only that run. Every run is given up after
+  20 s and the helper is killed. Any failure is logged and the scan goes on
+  with package names only. Labels and icons are kept for the connection, so a
+  rescan shows them at once; each arrival emits `apps-updated`. Disconnecting
+  kills the helper and removes it with the daemon.
+- **Batch actions:** `deleteMany` checks every node first (any stale,
+  removed or root node refuses the whole batch), drops nodes inside another
+  one listed, then deletes the rest one by one; a node the phone refuses is
+  reported in `failures` without stopping the others. `copyMany` copies
+  several nodes into one destination as one copy, with one `copy-progress`
+  stream. `delete` and `copyToDesktop` are the one-node case of each.
 
 ## 5. Testing
 
