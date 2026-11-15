@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type Row } from "../api";
+import { searchFilter } from "../lib/viewOptions";
 import type { SessionDeps } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 150;
@@ -11,21 +12,23 @@ interface Hits {
   rows: Row[];
 }
 
+interface Deps extends Pick<SessionDeps, "sessionRef" | "metricRef" | "optionsRef"> {
+  sessionId: number | null;
+  /** What to search the whole phone for; empty when not searching everywhere. */
+  query: string;
+}
+
 /**
- * Name search over the host's tree.
+ * Name search over the whole tree, narrowed by the list's filters and in its
+ * order.
  *
  * Hits are shown only for the query and the session they answered, so a late
  * or old answer can never be presented as the answer to what is in the box
  * now, nor after a rescan.
  */
-export function useSearch({
-  sessionRef,
-  metricRef,
-  sessionId,
-}: Pick<SessionDeps, "sessionRef" | "metricRef"> & { sessionId: number | null }) {
-  const [query, setQuery] = useState("");
+export function useSearch({ sessionRef, metricRef, optionsRef, sessionId, query }: Deps) {
   const [hits, setHits] = useState<Hits | null>(null);
-  /** Bumped to re-run the current search, e.g. after a delete or when the scan finishes. */
+  /** Bumped to re-run the current search: after a delete, a new sort or filter, or the scan finishing. */
   const [nonce, setNonce] = useState(0);
 
   const trimmed = query.trim();
@@ -33,17 +36,8 @@ export function useSearch({
   const results =
     trimmed && hits?.query === trimmed && hits.session === sessionId ? hits.rows : null;
 
-  const updateQuery = useCallback((next: string) => {
-    setQuery(next);
-    if (!next.trim()) setHits(null);
-  }, []);
-
   const rerun = useCallback(() => setNonce((n) => n + 1), []);
-
-  const clear = useCallback(() => {
-    setQuery("");
-    setHits(null);
-  }, []);
+  const clear = useCallback(() => setHits(null), []);
 
   /** Drops hits the caller knows are gone, without waiting for a fresh answer. */
   const dropHits = useCallback((gone: (row: Row) => boolean) => {
@@ -60,8 +54,16 @@ export function useSearch({
       // Drop a slow response that a newer query, a rescan or a disconnect has
       // already superseded.
       const current = () => seq === seqRef.current && sessionId === sessionRef.current;
+      const { sort, filter } = optionsRef.current;
       try {
-        const rows = await commands.search(trimmed, undefined, metricRef.current);
+        const rows = await commands.search(
+          trimmed,
+          undefined,
+          metricRef.current,
+          searchFilter(filter),
+          sort,
+          null,
+        );
         if (current()) setHits({ query: trimmed, session: sessionId, rows });
       } catch {
         if (current()) setHits({ query: trimmed, session: sessionId, rows: [] });
@@ -69,7 +71,7 @@ export function useSearch({
     }, SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [trimmed, nonce, sessionId, sessionRef, metricRef]);
+  }, [trimmed, nonce, sessionId, sessionRef, metricRef, optionsRef]);
 
-  return { query, setQuery: updateQuery, results, rerun, clear, dropHits };
+  return { results, rerun, clear, dropHits };
 }

@@ -1,28 +1,57 @@
-export function IconFolder({ className = "" }: { className?: string }) {
+import type { ReactNode } from "react";
+
+/** A 16px line icon in the current text colour. Every icon is decorative; its button carries the name. */
+function Line({ children, size = 16 }: { children: ReactNode; size?: number }) {
   return (
-    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {children}
+    </svg>
+  );
+}
+
+/** A filled folder shape, tinted by the caller. */
+export function IconFolder({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden>
       <path
-        d="M1.5 3C1.5 2.44772 1.94772 2 2.5 2H6.29289L7.64645 3.35355L7.85355 3.5H8H13.5C14.0523 3.5 14.5 3.94772 14.5 4.5V12.5C14.5 13.0523 14.0523 13.5 13.5 13.5H2.5C1.94772 13.5 1.5 13.0523 1.5 12.5V3Z"
+        d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3.2l1.5 1.5H13A1.5 1.5 0 0 1 14.5 5v7.5A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5v-9Z"
         fill="currentColor"
-        opacity="0.2"
-        stroke="currentColor"
-        strokeWidth="1"
       />
     </svg>
   );
 }
 
-export function IconFile({ className = "" }: { className?: string }) {
+/** An outlined page, so a file never reads as a folder even in the same colour. */
+export function IconFile({ size = 18 }: { size?: number }) {
   return (
-    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden>
       <path
-        d="M4 1.5h5.586L13 4.914V14a.5.5 0 01-.5.5h-8A.5.5 0 014 14V2a.5.5 0 01.5-.5z"
+        d="M4 1.75h5.25L12.5 5v9.25H4a.5.5 0 0 1-.5-.5V2.25a.5.5 0 0 1 .5-.5Z"
         stroke="currentColor"
-        strokeWidth="1"
-        fill="none"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
       />
-      <path d="M9.5 1.5V5H13" stroke="currentColor" strokeWidth="1" fill="none" />
+      <path d="M9 1.75V5.25h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+export function IconPhone({ size = 20 }: { size?: number }) {
+  return (
+    <Line size={size}>
+      <rect x="4" y="1.5" width="8" height="13" rx="1.6" />
+      <path d="M7 12.2h2" />
+    </Line>
   );
 }
 
@@ -49,37 +78,68 @@ export function IconUsb() {
 
 export function IconTrash() {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <path d="M2 3.5h10M5.5 3.5V2.5a1 1 0 011-1h1a1 1 0 011 1v1M3.5 3.5l.5 8.5a1 1 0 001 1h4a1 1 0 001-1l.5-8.5" />
-      <path d="M5.5 6v4M8.5 6v4" />
-    </svg>
+    <Line>
+      <path d="M2.5 4h11M6 4V2.75A.75.75 0 0 1 6.75 2h2.5a.75.75 0 0 1 .75.75V4M4 4l.6 9.1a1 1 0 0 0 1 .9h4.8a1 1 0 0 0 1-.9L12 4" />
+      <path d="M6.5 7v4M9.5 7v4" />
+    </Line>
+  );
+}
+
+export function IconCopy() {
+  return (
+    <Line>
+      <path d="M8 2v8M5 7l3 3 3-3M2.5 12.5v1h11v-1" />
+    </Line>
   );
 }
 
 export function IconSearch() {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <circle cx="6" cy="6" r="4.25" />
-      <path d="M9.2 9.2 12.5 12.5" />
-    </svg>
+    <Line size={14}>
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="m10.5 10.5 3 3" />
+    </Line>
+  );
+}
+
+export function IconFilter() {
+  return (
+    <Line>
+      <path d="M2 3h12l-4.5 5.5V13l-3 1.5v-6L2 3Z" />
+    </Line>
+  );
+}
+
+export function IconBack() {
+  return (
+    <Line>
+      <path d="M10 3 5 8l5 5" />
+    </Line>
+  );
+}
+
+export function IconForward() {
+  return (
+    <Line>
+      <path d="m6 3 5 5-5 5" />
+    </Line>
+  );
+}
+
+export function IconClose({ size = 12 }: { size?: number }) {
+  return (
+    <Line size={size}>
+      <path d="m4 4 8 8M12 4l-8 8" />
+    </Line>
+  );
+}
+
+export function IconRescan() {
+  return (
+    <Line>
+      <path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1" />
+      <path d="M13.5 2v3h-3" />
+    </Line>
   );
 }
 
@@ -100,24 +160,6 @@ export function Spinner({ size = 20, className = "" }: { size?: number; classNam
         strokeWidth="2.5"
         strokeLinecap="round"
       />
-    </svg>
-  );
-}
-
-export function IconDownload() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M7 1.5v7M4 6l3 3 3-3M2 11.5h10" />
     </svg>
   );
 }

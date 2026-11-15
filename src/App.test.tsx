@@ -1,22 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { commands } from "./api";
-import {
-  connected,
-  emit,
-  node,
-  progress,
-  resetApi,
-  row,
-  size,
-  started,
-  totals,
-  treemapNode,
-  view,
-} from "./test/api";
-import App from "./App";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { commands, type CopyResult } from "./api";
+import { renderBrowsing, stubLayout } from "./test/app";
+import { deferred, emit, node, resetApi, row, size, totals, view } from "./test/api";
 
 vi.mock("./api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api")>()),
@@ -25,19 +12,19 @@ vi.mock("./api", async (importOriginal) => ({
 
 const api = vi.mocked(commands);
 
+const ROOT = view(
+  0,
+  [
+    row(1, { name: "Movies", kind: "dir", size: size(4096), measure: "partial", files: 12 }),
+    row(2, { name: "Pending", kind: "dir", size: size(0), measure: "unknown" }),
+    row(3, { name: "notes.txt", size: size(2048), measure: "final" }),
+  ],
+  { path: "/sdcard" },
+);
+
 beforeEach(() => {
   resetApi();
-  // jsdom has no layout: give the virtual list and the treemap a size.
-  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(500);
-  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(500);
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  stubLayout();
 });
 afterEach(() => {
   cleanup();
@@ -45,78 +32,64 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function browse() {
-  const user = userEvent.setup();
-  api.connect.mockResolvedValue(connected());
-  api.startScan.mockResolvedValue(started());
-  api.getView.mockResolvedValue(
-    view(
-      0,
-      [
-        row(1, { name: "Movies", kind: "dir", size: size(4096), measure: "partial" }),
-        row(2, { name: "Pending", kind: "dir", size: size(0), measure: "unknown" }),
-        row(3, { name: "notes.txt", size: size(2048), measure: "final" }),
-      ],
-      { path: "/sdcard" },
-    ),
-  );
-  api.getBreadcrumbs.mockResolvedValue([{ node: node(0), name: "sdcard" }]);
-  api.getTreemap.mockResolvedValue(treemapNode(0));
-  api.largestFiles.mockResolvedValue([]);
-  api.typeBreakdown.mockResolvedValue([]);
-  api.appBreakdown.mockResolvedValue([]);
-
-  render(<App />);
-  await user.click(await screen.findByRole("button", { name: /Connect Device/ }));
-  await act(async () => emit.scanProgress(progress({ totals: totals({ files: 3 }) })));
-  await screen.findByRole("navigation", { name: "Breadcrumb" });
-  return user;
-}
-
 describe("App", () => {
-  it("is browsable while the scan runs, with measure states in the list", async () => {
-    await browse();
+  it("opens on the Overview with the totals and scan progress in the header", async () => {
+    await renderBrowsing({ view: ROOT });
 
-    expect(screen.getByText("Measuring sizes…")).toBeTruthy();
-    expect(screen.getByText("measuring…")).toBeTruthy();
-    expect(screen.getByTitle(/still counting/i)).toBeTruthy();
-    expect(screen.getByText("2.0 KB")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText(/Measuring ·/)).toBeTruthy();
+    expect(screen.getByText("5 of 20 folders")).toBeTruthy();
+    expect(screen.getByText(/Connected over USB · \/sdcard/)).toBeTruthy();
     // Disk usage is the default; the toggle switches to what a file manager shows.
     expect(screen.getByRole("radio", { name: "Disk usage" }).getAttribute("aria-checked")).toBe(
       "true",
     );
   });
 
-  it("deletes the confirmed row by NodeRef, showing the full path first", async () => {
-    const user = await browse();
-    api.delete.mockResolvedValue({ items: 1, totals: totals(), view: view(0, [row(1)]) });
+  it("is browsable in the Explorer while the scan runs, with measure states in the list", async () => {
+    await renderBrowsing({ view: ROOT, tab: "explorer" });
+
+    expect(screen.getByText("measuring…")).toBeTruthy();
+    expect(screen.getByTitle(/still counting/i).textContent).toContain("4.0 KB");
+    expect(screen.getByText("2.0 KB")).toBeTruthy();
+    expect(screen.getByText("12 files")).toBeTruthy();
+    expect(screen.getByText("TXT file")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Phone storage" })).toBeTruthy();
+  });
+
+  it("deletes a row by NodeRef after showing its full path", async () => {
+    const user = await renderBrowsing({ view: ROOT, tab: "explorer" });
+    api.deleteMany.mockResolvedValue({
+      deleted: 1,
+      items: 1,
+      size: size(2048),
+      failures: [],
+      totals: totals(),
+      view: view(0, [row(1)]),
+    });
 
     await user.click(screen.getByRole("button", { name: /^Delete notes\.txt/ }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("/sdcard/notes.txt")).toBeTruthy();
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(api.delete).toHaveBeenCalledWith(node(3)));
+    await waitFor(() => expect(api.deleteMany).toHaveBeenCalledWith([node(3)]));
+    expect(await screen.findByText(/Deleted notes\.txt, freeing 2\.0 KB/)).toBeTruthy();
   });
 
   it("copies a row to the computer and shows the progress bar", async () => {
-    const user = await browse();
-    let finish!: (v: {
-      destination: string;
-      files: number;
-      bytes: number;
-      skipped: number;
-      renamed: number;
-    }) => void;
-    api.copyToDesktop.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const user = await renderBrowsing({ view: ROOT, tab: "explorer" });
+    const copying = deferred<CopyResult>();
+    api.copyToDesktop.mockReturnValue(copying.promise);
 
     await user.click(screen.getByRole("button", { name: "Copy notes.txt to Desktop" }));
 
     expect(api.copyToDesktop).toHaveBeenCalledWith(node(3));
     expect(await screen.findByText(/Copying notes\.txt/)).toBeTruthy();
-
     await act(async () =>
-      finish({
+      copying.resolve({
         destination: "C:\\Desktop\\notes.txt",
         files: 1,
         bytes: 2048,
@@ -129,12 +102,12 @@ describe("App", () => {
   });
 
   it("returns to the setup screen with a toast when the connection is lost", async () => {
-    await browse();
+    await renderBrowsing({ view: ROOT });
 
     act(() => emit.connectionLost({ serial: "s", message: "The phone stopped answering." }));
 
     expect(await screen.findByRole("button", { name: /Connect Device/ })).toBeTruthy();
     expect(screen.getByText(/The phone stopped answering\./)).toBeTruthy();
-    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Overview" })).toBeNull();
   });
 });

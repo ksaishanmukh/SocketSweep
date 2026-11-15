@@ -18,9 +18,23 @@ import {
   totals,
   treemapNode,
   view,
+  overview,
+  DEFAULT_SORT,
+  NO_FILTER,
 } from "../test/api";
-import type { Row, ScanStarted, View } from "../api";
+import type { DeletedMany, Row, ScanStarted, View } from "../api";
+import { targetOfRow } from "../lib/selection";
 import { useScanSession } from "./useScanSession";
+
+const target = (r: Row) => targetOfRow(r, "/dir0");
+
+type Hook = { current: ReturnType<typeof useScanSession> };
+
+/** Types into the search box with "Everywhere" ticked. */
+function searchEverywhere(result: Hook, query: string) {
+  act(() => result.current.options.setEverywhere(true));
+  act(() => result.current.options.setText(query));
+}
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
@@ -36,9 +50,7 @@ async function browse(root: View = view(0, [row(1), row(2)])) {
   api.getView.mockResolvedValue(root);
   api.getBreadcrumbs.mockResolvedValue([{ node: root.node, name: "root" }]);
   api.getTreemap.mockResolvedValue(treemapNode(root.node.id));
-  api.largestFiles.mockResolvedValue([]);
-  api.typeBreakdown.mockResolvedValue([]);
-  api.appBreakdown.mockResolvedValue([]);
+  api.overview.mockResolvedValue(overview());
 
   const notify = vi.fn();
   const hook = renderHook(() => useScanSession(notify));
@@ -46,6 +58,18 @@ async function browse(root: View = view(0, [row(1), row(2)])) {
   await act(async () => emit.scanProgress(progress()));
   await waitFor(() => expect(hook.result.current.phase).toBe("browsing"));
   return { result: hook.result, notify, unmount: hook.unmount };
+}
+
+function deleted(over: Partial<DeletedMany> = {}): DeletedMany {
+  return {
+    deleted: 1,
+    items: 1,
+    size: size(10),
+    failures: [],
+    totals: totals(),
+    view: view(0),
+    ...over,
+  };
 }
 
 beforeEach(() => resetApi());
@@ -56,7 +80,7 @@ describe("connecting and scanning", () => {
     const { result } = await browse();
 
     expect(result.current.phase).toBe("browsing");
-    expect(result.current.view?.rows).toHaveLength(2);
+    expect(result.current.nav.view?.rows).toHaveLength(2);
     expect(result.current.scanInfo?.running).toBe(true);
     expect(result.current.totals?.files).toBe(3);
     expect(api.startScan).toHaveBeenCalledOnce();
@@ -77,8 +101,20 @@ describe("connecting and scanning", () => {
   it("opens the root with focus, so the phone measures it first", async () => {
     await browse();
 
-    expect(api.focus).toHaveBeenCalledWith({ session: SESSION, id: 0 }, undefined, "disk");
-    expect(api.getView).toHaveBeenCalledWith({ session: SESSION, id: 0 }, undefined, "disk");
+    expect(api.focus).toHaveBeenCalledWith(
+      { session: SESSION, id: 0 },
+      undefined,
+      "disk",
+      DEFAULT_SORT,
+      NO_FILTER,
+    );
+    expect(api.getView).toHaveBeenCalledWith(
+      { session: SESSION, id: 0 },
+      undefined,
+      "disk",
+      DEFAULT_SORT,
+      NO_FILTER,
+    );
   });
 
   it("keeps an event that beats startScan's own reply", async () => {
@@ -88,9 +124,7 @@ describe("connecting and scanning", () => {
     api.getView.mockResolvedValue(view(0, [row(1)]));
     api.getBreadcrumbs.mockResolvedValue([]);
     api.getTreemap.mockResolvedValue(treemapNode(0));
-    api.largestFiles.mockResolvedValue([]);
-    api.typeBreakdown.mockResolvedValue([]);
-    api.appBreakdown.mockResolvedValue([]);
+    api.overview.mockResolvedValue(overview());
     const { result } = renderHook(() => useScanSession(vi.fn()));
 
     let connecting!: Promise<void>;
@@ -122,10 +156,10 @@ describe("connecting and scanning", () => {
     const { result } = await browse();
 
     act(() => emit.scanProgress(progress({ view: view(0, [row(1), row(2), row(3)]) })));
-    expect(result.current.view?.rows).toHaveLength(3);
+    expect(result.current.nav.view?.rows).toHaveLength(3);
 
     act(() => emit.scanProgress(progress({ view: view(7, [row(70)]) })));
-    expect(result.current.view?.node.id).toBe(0);
+    expect(result.current.nav.view?.node.id).toBe(0);
   });
 
   it("says the scan ended, and with what outcome", async () => {
@@ -146,7 +180,7 @@ describe("connecting and scanning", () => {
       elapsedMs: 4200,
     });
     // Everything is redrawn from final numbers.
-    await waitFor(() => expect(api.largestFiles.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() => expect(api.overview.mock.calls.length).toBeGreaterThan(1));
   });
 
   it("keeps browsing when the scan fails after the skeleton, and flags the outcome", async () => {
@@ -233,14 +267,20 @@ describe("navigation", () => {
     api.getBreadcrumbs.mockResolvedValue([{ node: node(9), name: "nine" }]);
 
     await act(async () => {
-      await result.current.open(node(9));
+      await result.current.nav.open(node(9));
     });
 
-    expect(api.focus).toHaveBeenCalledWith(node(9), undefined, "disk");
-    expect(api.getView).toHaveBeenLastCalledWith(node(9), undefined, "disk");
+    expect(api.focus).toHaveBeenCalledWith(node(9), undefined, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(api.getView).toHaveBeenLastCalledWith(
+      node(9),
+      undefined,
+      "disk",
+      DEFAULT_SORT,
+      NO_FILTER,
+    );
     expect(api.getBreadcrumbs).toHaveBeenLastCalledWith(node(9));
-    await waitFor(() => expect(api.getTreemap).toHaveBeenLastCalledWith(node(9), 2, "disk"));
-    expect(result.current.view?.node).toEqual(node(9));
+    await waitFor(() => expect(api.getTreemap).toHaveBeenLastCalledWith(node(9), 1, "disk"));
+    expect(result.current.nav.view?.node).toEqual(node(9));
   });
 
   it("re-focuses with the new row count when it loads more, so live views keep them", async () => {
@@ -251,20 +291,29 @@ describe("navigation", () => {
     api.getView.mockResolvedValue(view(0, rows, { hidden: 0 }));
 
     await act(async () => {
-      await result.current.loadMore();
+      await result.current.nav.loadMore();
     });
 
-    expect(api.focus).toHaveBeenCalledWith(node(0), 503, "disk");
-    expect(api.getView).toHaveBeenCalledWith(node(0), 503, "disk");
+    expect(api.focus).toHaveBeenCalledWith(node(0), 503, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(api.getView).toHaveBeenCalledWith(node(0), 503, "disk", DEFAULT_SORT, NO_FILTER);
   });
 
-  it("searches by the chosen metric", async () => {
+  it("searches everywhere by the chosen metric, sort and filters", async () => {
     const { result } = await browse();
     api.search.mockResolvedValue([]);
 
-    act(() => result.current.setQuery("pic"));
+    searchEverywhere(result, "pic");
 
-    await waitFor(() => expect(api.search).toHaveBeenCalledWith("pic", undefined, "disk"));
+    await waitFor(() =>
+      expect(api.search).toHaveBeenCalledWith(
+        "pic",
+        undefined,
+        "disk",
+        { categories: [], kinds: [], changed: [] },
+        DEFAULT_SORT,
+        null,
+      ),
+    );
   });
 
   it("keeps what Connect reported about the copy destination", async () => {
@@ -279,11 +328,11 @@ describe("navigation", () => {
     api.getView.mockResolvedValue(view(5, []));
 
     await act(async () => {
-      await result.current.reveal(row(8, { parent: "/dir5", parentNode: node(5) }));
+      await result.current.actions.reveal(row(8, { parent: "/dir5", parentNode: node(5) }));
     });
 
-    expect(api.focus).toHaveBeenCalledWith(node(5), undefined, "disk");
-    expect(result.current.mode).toBe("treemap");
+    expect(api.focus).toHaveBeenCalledWith(node(5), undefined, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(result.current.mode).toBe("explorer");
   });
 
   it("lets the latest click win when replies arrive out of order", async () => {
@@ -295,18 +344,18 @@ describe("navigation", () => {
 
     let first!: Promise<boolean>;
     act(() => {
-      first = result.current.open(node(1));
+      first = result.current.nav.open(node(1));
     });
     await act(async () => {
-      await result.current.open(node(2));
+      await result.current.nav.open(node(2));
     });
-    expect(result.current.view?.node.id).toBe(2);
+    expect(result.current.nav.view?.node.id).toBe(2);
 
     await act(async () => {
       slow.resolve(view(1));
       await first;
     });
-    expect(result.current.view?.node.id).toBe(2);
+    expect(result.current.nav.view?.node.id).toBe(2);
   });
 
   it("refuses to open a node from another session, without asking the host", async () => {
@@ -316,7 +365,7 @@ describe("navigation", () => {
 
     let opened = true;
     await act(async () => {
-      opened = await result.current.open(node(3, SESSION + 1));
+      opened = await result.current.nav.open(node(3, SESSION + 1));
     });
 
     expect(opened).toBe(false);
@@ -331,7 +380,7 @@ describe("navigation", () => {
     api.getView.mockReturnValueOnce(late.promise);
     let opening!: Promise<boolean>;
     act(() => {
-      opening = result.current.open(node(4));
+      opening = result.current.nav.open(node(4));
     });
 
     // Rescan: a new session, so node 4 of the old tree names nothing now.
@@ -342,7 +391,7 @@ describe("navigation", () => {
       late.resolve(view(4, [row(40)]));
       expect(await opening).toBe(false);
     });
-    expect(result.current.view).toBeNull();
+    expect(result.current.nav.view).toBeNull();
   });
 
   it("asks the host for the next page and keeps the folder's rows", async () => {
@@ -350,10 +399,10 @@ describe("navigation", () => {
     const { result } = await browse(view(0, many, { hidden: 4 }));
 
     api.getView.mockResolvedValue(view(0, [...many, row(4)], { hidden: 3 }));
-    await act(() => result.current.loadMore());
+    await act(() => result.current.nav.loadMore());
 
-    expect(api.getView).toHaveBeenLastCalledWith(node(0), 503, "disk");
-    expect(result.current.view?.rows).toHaveLength(4);
+    expect(api.getView).toHaveBeenLastCalledWith(node(0), 503, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(result.current.nav.view?.rows).toHaveLength(4);
   });
 });
 
@@ -364,17 +413,21 @@ describe("sizes", () => {
 
     api.getView.mockClear();
     api.getTreemap.mockClear();
-    api.largestFiles.mockClear();
-    api.typeBreakdown.mockClear();
-    api.appBreakdown.mockClear();
-    act(() => result.current.setMetric("apparent"));
+    api.overview.mockClear();
+    act(() => result.current.controls.setMetric("apparent"));
 
     expect(result.current.metric).toBe("apparent");
-    await waitFor(() => expect(api.getView).toHaveBeenCalledWith(node(0), 2, "apparent"));
-    await waitFor(() => expect(api.getTreemap).toHaveBeenCalledWith(node(0), 2, "apparent"));
-    await waitFor(() => expect(api.largestFiles).toHaveBeenCalledWith(100, "apparent"));
-    expect(api.typeBreakdown).toHaveBeenCalledWith("apparent");
-    expect(api.appBreakdown).toHaveBeenCalledWith(50, "apparent");
+    await waitFor(() =>
+      expect(api.getView).toHaveBeenCalledWith(
+        node(0),
+        undefined,
+        "apparent",
+        DEFAULT_SORT,
+        NO_FILTER,
+      ),
+    );
+    await waitFor(() => expect(api.getTreemap).toHaveBeenCalledWith(node(0), 1, "apparent"));
+    await waitFor(() => expect(api.overview).toHaveBeenCalledWith("apparent"));
   });
 });
 
@@ -383,16 +436,16 @@ describe("search", () => {
     const { result } = await browse();
 
     api.search.mockResolvedValueOnce([row(1, { name: "old-hit" })]);
-    act(() => result.current.setQuery("foo"));
+    searchEverywhere(result, "foo");
     await waitFor(() => expect(result.current.searchResults?.[0]?.name).toBe("old-hit"));
 
     api.startScan.mockResolvedValue(started(SESSION + 1));
     await act(() => result.current.scan());
-    expect(result.current.query).toBe("");
+    expect(result.current.options.text).toBe("");
 
     // The next search never answers; whatever is shown must not be left over.
     api.search.mockReturnValueOnce(new Promise(() => {}));
-    act(() => result.current.setQuery("foo"));
+    searchEverywhere(result, "foo");
     await act(() => new Promise((r) => setTimeout(r, 250)));
     expect(result.current.searchResults).toBeNull();
   });
@@ -402,7 +455,7 @@ describe("search", () => {
 
     const late = deferred<Row[]>();
     api.search.mockReturnValueOnce(late.promise);
-    act(() => result.current.setQuery("foo"));
+    searchEverywhere(result, "foo");
     await waitFor(() => expect(api.search).toHaveBeenCalledTimes(1));
 
     api.startScan.mockResolvedValue(started(SESSION + 1));
@@ -415,7 +468,7 @@ describe("search", () => {
     await waitFor(() => expect(result.current.phase).toBe("browsing"));
 
     api.search.mockReturnValueOnce(new Promise(() => {}));
-    act(() => result.current.setQuery("foo"));
+    searchEverywhere(result, "foo");
     await waitFor(() => expect(api.search).toHaveBeenCalledTimes(2));
 
     await act(async () => late.resolve([row(1, { name: "old-hit" })]));
@@ -426,18 +479,16 @@ describe("search", () => {
 describe("delete", () => {
   it("deletes by the row's NodeRef and shows the totals and view the host returns", async () => {
     const { result } = await browse();
-    const target = row(2, { node: node(2) });
-    api.delete.mockResolvedValue({
-      items: 1,
-      totals: totals({ files: 2, size: size(90) }),
-      view: view(0, [row(1)]),
-    });
+    const victim = row(2, { node: node(2) });
+    api.deleteMany.mockResolvedValue(
+      deleted({ items: 1, totals: totals({ files: 2, size: size(90) }), view: view(0, [row(1)]) }),
+    );
 
-    await act(() => result.current.remove(target));
+    await act(() => result.current.remove([target(victim)]));
 
-    expect(api.delete).toHaveBeenCalledWith(node(2));
+    expect(api.deleteMany).toHaveBeenCalledWith([node(2)]);
     expect(result.current.totals?.files).toBe(2);
-    expect(result.current.view?.rows).toHaveLength(1);
+    expect(result.current.nav.view?.rows).toHaveLength(1);
   });
 
   it("moves to the surviving view when an ancestor of the open folder is deleted", async () => {
@@ -445,35 +496,35 @@ describe("delete", () => {
 
     api.getView.mockResolvedValue(view(9, [row(10)]));
     await act(async () => {
-      await result.current.open(node(9));
+      await result.current.nav.open(node(9));
     });
-    expect(result.current.view?.node.id).toBe(9);
+    expect(result.current.nav.view?.node.id).toBe(9);
 
-    api.delete.mockResolvedValue({ items: 5, totals: totals(), view: view(0, [row(1)]) });
+    api.deleteMany.mockResolvedValue(deleted({ items: 5, view: view(0, [row(1)]) }));
     api.getBreadcrumbs.mockResolvedValue([{ node: node(0), name: "root" }]);
-    await act(() => result.current.remove(row(5, { kind: "dir" })));
+    await act(() => result.current.remove([target(row(5, { kind: "dir" }))]));
 
-    expect(result.current.view?.node.id).toBe(0);
-    await waitFor(() => expect(result.current.crumbs).toEqual([{ node: node(0), name: "root" }]));
+    expect(result.current.nav.view?.node.id).toBe(0);
+    await waitFor(() =>
+      expect(result.current.nav.crumbs).toEqual([{ node: node(0), name: "root" }]),
+    );
     expect(api.getBreadcrumbs).toHaveBeenLastCalledWith(node(0));
-    expect(api.getTreemap).toHaveBeenLastCalledWith(node(0), 2, "disk");
+    expect(api.getTreemap).toHaveBeenLastCalledWith(node(0), 1, "disk");
   });
 
   it("re-fetches the rows that were loaded when the host returns a capped view", async () => {
     const many = Array.from({ length: 4 }, (_, i) => row(i + 1));
     const { result } = await browse(view(0, many, { hidden: 6 }));
-    expect(result.current.view?.rows).toHaveLength(4);
+    expect(result.current.nav.view?.rows).toHaveLength(4);
 
-    api.delete.mockResolvedValue({
-      items: 1,
-      totals: totals(),
-      view: view(0, many.slice(1, 3), { hidden: 7 }),
-    });
+    api.deleteMany.mockResolvedValue(
+      deleted({ items: 1, view: view(0, many.slice(1, 3), { hidden: 7 }) }),
+    );
     api.getView.mockResolvedValue(view(0, many.slice(1), { hidden: 6 }));
-    await act(() => result.current.remove(many[0]));
+    await act(() => result.current.remove([target(many[0])]));
 
-    await waitFor(() => expect(result.current.view?.rows).toHaveLength(3));
-    expect(api.getView).toHaveBeenLastCalledWith(node(0), 4, "disk");
+    await waitFor(() => expect(result.current.nav.view?.rows).toHaveLength(3));
+    expect(api.getView).toHaveBeenLastCalledWith(node(0), 4, "disk", DEFAULT_SORT, NO_FILTER);
   });
 
   it("drops search hits inside a deleted folder, but not look-alike siblings", async () => {
@@ -484,16 +535,13 @@ describe("delete", () => {
       row(9, { name: "c", parent: "/dir0/photos-old" }),
       row(10, { name: "photos", kind: "dir", parent: "/dir0" }),
     ]);
-    act(() => result.current.setQuery("a"));
+    searchEverywhere(result, "a");
     await waitFor(() => expect(result.current.searchResults).toHaveLength(4));
 
-    api.delete.mockResolvedValue({ items: 3, totals: totals(), view: view(0, [row(1)]) });
+    api.deleteMany.mockResolvedValue(deleted({ items: 3, view: view(0, [row(1)]) }));
     api.search.mockReturnValue(new Promise(() => {}));
     await act(() =>
-      result.current.remove(
-        row(10, { name: "photos", kind: "dir", parent: "/dir0" }),
-        "/dir0/photos",
-      ),
+      result.current.remove([target(row(10, { name: "photos", kind: "dir", parent: "/dir0" }))]),
     );
 
     expect(result.current.searchResults?.map((r) => r.node.id)).toEqual([9]);
@@ -501,10 +549,10 @@ describe("delete", () => {
 
   it("reports a stale refusal and refreshes what is on screen", async () => {
     const { result, notify } = await browse();
-    api.delete.mockRejectedValue(commandError("stale", "Results are out of date — rescan."));
+    api.deleteMany.mockRejectedValue(commandError("stale", "Results are out of date — rescan."));
     api.getView.mockClear();
 
-    await act(() => result.current.remove(row(2)));
+    await act(() => result.current.remove([target(row(2))]));
 
     expect(notify).toHaveBeenCalledWith("Results are out of date — rescan.", "error");
     await waitFor(() => expect(api.getView).toHaveBeenCalled());
@@ -513,9 +561,9 @@ describe("delete", () => {
   it("does not even ask the host to delete a row from another session", async () => {
     const { result, notify } = await browse();
 
-    await act(() => result.current.remove(row(2, { node: node(2, SESSION + 1) })));
+    await act(() => result.current.remove([target(row(2, { node: node(2, SESSION + 1) }))]));
 
-    expect(api.delete).not.toHaveBeenCalled();
+    expect(api.deleteMany).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(expect.stringMatching(/out of date/), "error");
   });
 });
@@ -553,9 +601,9 @@ describe("disconnect and connection loss", () => {
     expect(api.disconnect).toHaveBeenCalled();
     expect(result.current.phase).toBe("setup");
     expect(result.current.sessionId).toBeNull();
-    expect(result.current.view).toBeNull();
+    expect(result.current.nav.view).toBeNull();
     expect(result.current.totals).toBeNull();
-    expect(result.current.mode).toBe("treemap");
+    expect(result.current.mode).toBe("overview");
   });
 
   it("goes back to setup with a toast when the connection is lost", async () => {
@@ -564,7 +612,7 @@ describe("disconnect and connection loss", () => {
     act(() => emit.connectionLost({ serial: "s", message: "The phone stopped answering." }));
 
     expect(result.current.phase).toBe("setup");
-    expect(result.current.view).toBeNull();
+    expect(result.current.nav.view).toBeNull();
     expect(result.current.sessionId).toBeNull();
     expect(notify).toHaveBeenCalledWith(
       expect.stringContaining("The phone stopped answering."),
@@ -578,7 +626,7 @@ describe("disconnect and connection loss", () => {
     api.getView.mockReturnValueOnce(slow.promise);
     let opening!: Promise<boolean>;
     act(() => {
-      opening = result.current.open(node(6));
+      opening = result.current.nav.open(node(6));
     });
 
     act(() => emit.connectionLost({ serial: "s", message: "unplugged" }));
@@ -587,7 +635,7 @@ describe("disconnect and connection loss", () => {
       await opening;
     });
 
-    expect(result.current.view).toBeNull();
+    expect(result.current.nav.view).toBeNull();
     expect(result.current.phase).toBe("setup");
   });
 

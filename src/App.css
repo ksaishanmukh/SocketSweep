@@ -1,4 +1,3 @@
-/* ── Tailwind v4 ─────────────────────────────────────────────────────── */
 @import "tailwindcss";
 
 /* Fonts are bundled rather than fetched, so the app works offline and a
@@ -6,34 +5,85 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
-/* ── Design Tokens ───────────────────────────────────────────────────── */
-@theme {
+/* ── Theme ────────────────────────────────────────────────────────────────
+ * Follows the OS. Every colour is a custom property so light and dark differ
+ * in one place. Text colours (text, muted, faint) and the coloured text
+ * (accent, danger, ok, warn) keep at least 4.5:1 against both bg and panel.
+ * Category colours also differ in lightness, not only in hue, so the map and
+ * legends stay readable for people who do not tell the hues apart. */
+:root {
+  color-scheme: light dark;
+
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --sunk: #eef0f3;
+  --line: #dfe2e7;
+  --text: #191c22;
+  --muted: #4f5664;
+  --faint: #626a79;
+  --accent: #2b55c9;
+  --on-accent: #ffffff;
+  --danger: #b42318;
+  --on-danger: #ffffff;
+  --ok: #18794e;
+  --warn: #965800;
+
+  --cat-audio: #2a5bd7;
+  --cat-video: #e58a2e;
+  --cat-photo: #14a092;
+  --cat-archive: #6240c8;
+  --cat-doc: #d0437c;
+  --cat-other: #8590a2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --panel: #171a20;
+    --sunk: #121419;
+    --line: #2a2f39;
+    --text: #e8eaef;
+    --muted: #a8aebb;
+    --faint: #8f97a6;
+    --accent: #8ba7ff;
+    --on-accent: #0b1020;
+    --danger: #ff8a80;
+    --on-danger: #1d0605;
+    --ok: #5fd39a;
+    --warn: #f2b45a;
+
+    --cat-audio: #5b8cff;
+    --cat-video: #ffb46b;
+    --cat-photo: #45d3c2;
+    --cat-archive: #a98bff;
+    --cat-doc: #ff86b6;
+    --cat-other: #9ba7b9;
+  }
+}
+
+/* Tailwind utilities on top of the properties: bg-panel, text-muted,
+ * border-line and so on. `inline` keeps them as var() references, so the OS
+ * theme switches them live. */
+@theme inline {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
 
-  /* Accent palette — electric cyan/teal */
-  --color-accent-50: oklch(0.97 0.02 180);
-  --color-accent-100: oklch(0.92 0.04 180);
-  --color-accent-200: oklch(0.85 0.08 180);
-  --color-accent-300: oklch(0.76 0.12 180);
-  --color-accent-400: oklch(0.68 0.16 180);
-  --color-accent-500: oklch(0.6 0.18 180);
-  --color-accent-600: oklch(0.5 0.16 180);
-  --color-accent-700: oklch(0.42 0.12 180);
-
-  /* Danger palette — vivid rose/red */
-  --color-danger-400: oklch(0.68 0.19 15);
-  --color-danger-500: oklch(0.6 0.22 15);
-  --color-danger-600: oklch(0.5 0.2 15);
-
-  /* Surface layers */
-  --color-surface-0: #09090b;
-  --color-surface-50: #18181b;
-  --color-surface-100: #27272a;
-  --color-surface-200: #3f3f46;
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-sunk: var(--sunk);
+  --color-line: var(--line);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
 }
 
-/* ── Base resets ─────────────────────────────────────────────────────── */
+/* ── Base ─────────────────────────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -51,154 +101,123 @@ body,
 
 body {
   font-family: var(--font-sans);
-  background: var(--color-surface-0);
-  color: #e4e4e7;
+  background: var(--bg);
+  color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Scrollbar styling ───────────────────────────────────────────────── */
-::-webkit-scrollbar {
-  width: 6px;
+/* One focus ring for everything, visible only for keyboard focus. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
-}
-
-/* ── Glow keyframes ──────────────────────────────────────────────────── */
-@keyframes pulse-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 20px oklch(0.6 0.18 180 / 0.15);
-  }
-  50% {
-    box-shadow: 0 0 40px oklch(0.6 0.18 180 / 0.3);
-  }
-}
-@keyframes scan-sweep {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(100%);
-  }
+  background: var(--line);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
-/* ── Utility classes ─────────────────────────────────────────────────── */
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-.animate-fade-in-up {
-  animation: fade-in-up 0.4s ease-out both;
-}
-.animate-toast-in {
-  animation: toast-in 0.3s ease-out both;
-}
-.animate-toast-out {
-  animation: toast-out 0.25s ease-in both;
-}
-
-/* Scan progress shimmer */
-.scan-shimmer {
-  position: relative;
-  overflow: hidden;
-}
-.scan-shimmer::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    oklch(0.6 0.18 180 / 0.08) 50%,
-    transparent 100%
-  );
-  animation: scan-sweep 1.5s ease-in-out infinite;
-}
-
-/* Glass card effect */
-.glass-card {
-  background: linear-gradient(145deg, oklch(0.2 0.005 240 / 0.8), oklch(0.14 0.005 240 / 0.6));
-  backdrop-filter: blur(12px);
-  border: 1px solid oklch(1 0 0 / 0.06);
-}
-
-/* File row hover */
-.file-row {
+/* ── The category bar ─────────────────────────────────────────────────── */
+.cat-segment {
+  border-radius: 6px;
+  transform-origin: center;
   transition:
-    background-color 0.15s ease,
-    transform 0.15s ease;
+    transform 180ms ease,
+    filter 180ms ease;
 }
-.file-row:hover {
-  background-color: oklch(1 0 0 / 0.04);
-}
-
-/* Size bar animation */
-.size-bar-inner {
-  transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+.cat-segment:hover,
+.cat-segment:focus-visible {
+  transform: scaleY(1.22);
+  filter: brightness(1.08);
 }
 
-/* Nuke button glow */
-.btn-nuke {
-  transition: all 0.2s ease;
+/* ── The map ──────────────────────────────────────────────────────────── */
+.map-frame {
+  transition: height 180ms ease;
 }
-.btn-nuke:hover {
-  box-shadow: 0 0 16px oklch(0.6 0.22 15 / 0.4);
-  transform: scale(1.05);
-}
-
-.treemap-tile:focus {
-  outline: none;
-}
-.treemap-tile:focus-visible > rect {
-  stroke: #fff;
-  stroke-width: 3;
+.map-frame[data-dragging="true"] {
+  transition: none;
 }
 
-/* ── Sizes still being measured ──────────────────────────────────────── */
+.map-tile {
+  transition:
+    opacity 160ms ease,
+    background-color 160ms ease;
+}
+
+.map-grip {
+  cursor: ns-resize;
+  touch-action: none;
+}
+.map-grip > span {
+  transition:
+    width 140ms ease,
+    height 140ms ease,
+    background-color 140ms ease;
+}
+.map-grip:hover > span,
+.map-grip:focus-visible > span,
+.map-grip[data-dragging="true"] > span {
+  width: 64px;
+  height: 6px;
+  background: var(--muted);
+}
+
+/* ── List rows ────────────────────────────────────────────────────────── */
+.row-actions {
+  opacity: 0;
+}
+.list-row:hover .row-actions,
+.list-row:focus-within .row-actions,
+.list-row[data-hovered="true"] .row-actions {
+  opacity: 1;
+}
+
+/* ── Sizes still being measured ───────────────────────────────────────── */
 @keyframes measuring-pulse {
   0%,
   100% {
-    opacity: 0.35;
+    opacity: 0.4;
   }
   50% {
-    opacity: 0.9;
+    opacity: 1;
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
   }
 }
 @keyframes indeterminate {
@@ -209,20 +228,36 @@ body {
     transform: translateX(250%);
   }
 }
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
-/* A folder or file whose size has not arrived yet: shimmering placeholder text. */
+/* A size that has not arrived yet: placeholder text with a moving sheen. */
 .measuring {
-  animation: measuring-pulse 1.4s ease-in-out infinite;
+  color: var(--muted);
+  background: linear-gradient(90deg, var(--muted) 30%, var(--line) 50%, var(--muted) 70%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 1.6s linear infinite;
 }
 
 /* The dot beside a number that is still a lower bound. */
 .counting-dot {
   display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-right: 5px;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
   border-radius: 9999px;
-  background: oklch(0.75 0.15 80);
+  background: var(--warn);
   vertical-align: middle;
   animation: measuring-pulse 1.4s ease-in-out infinite;
 }
@@ -232,10 +267,24 @@ body {
   animation: indeterminate 1.4s ease-in-out infinite;
 }
 
+.rise-in {
+  animation: rise-in 0.25s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .measuring,
   .counting-dot,
-  .indeterminate-bar {
+  .indeterminate-bar,
+  .rise-in {
     animation: none;
+  }
+  .measuring {
+    -webkit-text-fill-color: currentColor;
+  }
+  .cat-segment,
+  .map-frame,
+  .map-tile,
+  .map-grip > span {
+    transition: none;
   }
 }

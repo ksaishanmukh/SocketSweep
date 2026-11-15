@@ -1,12 +1,13 @@
 import type { ScanInfo } from "../hooks/useScanSession";
 import { formatNumber } from "../lib/format";
+import { IconRescan } from "./icons";
 
 /**
- * The scan, as a slim strip above the browser rather than a screen of its own.
+ * The scan, in one line beside the totals rather than a screen of its own.
  *
  * While it runs the user can already open folders, so this only says how far
- * along the phone is. After it ends it stays only if it did not finish, to
- * explain why the sizes shown are incomplete.
+ * along the phone is. After it ends it says how long it took, or, if it did
+ * not finish, why the sizes shown are incomplete.
  */
 export function ScanStatus({
   scan,
@@ -18,7 +19,13 @@ export function ScanStatus({
   onRescan: () => void;
 }) {
   if (scan.running) return <RunningStatus scan={scan} onStop={onStop} />;
-  if (scan.outcome === "complete" || scan.outcome === null) return null;
+  if (scan.outcome === "complete" || scan.outcome === null) {
+    return (
+      <span className="text-[13px] text-muted" role="status">
+        Scan complete in <span className="num">{(scan.elapsedMs / 1000).toFixed(1)} s</span>
+      </span>
+    );
+  }
   return <IncompleteStatus scan={scan} onRescan={onRescan} />;
 }
 
@@ -28,34 +35,32 @@ function RunningStatus({ scan, onStop }: { scan: ScanInfo; onStop: () => void })
   const fraction = scan.known > 0 ? Math.min(1, scan.listed / scan.known) : 0;
   const skeleton = scan.phase === "skeleton";
   return (
-    <div className="shrink-0 border-b border-zinc-800/60" role="status">
-      <div className="flex items-center gap-3 px-5 py-1.5 text-[11px] text-zinc-400">
-        <span className="font-medium text-zinc-300">
-          {skeleton ? "Listing top levels…" : "Measuring sizes…"}
+    <div className="flex items-center gap-3 min-w-0" role="status">
+      <div className="flex flex-col gap-1 min-w-0">
+        <span className="text-[13px] text-muted whitespace-nowrap">
+          {skeleton ? "Listing top levels" : "Measuring"} ·{" "}
+          <span className="num" aria-live="off">
+            {formatNumber(scan.listed)} of {formatNumber(scan.known)} folders
+          </span>
         </span>
-        <span className="tabular-nums text-zinc-500" aria-live="off">
-          {formatNumber(scan.listed)} of {formatNumber(scan.known)} folders
-        </span>
-        <span className="tabular-nums text-zinc-600">{(scan.elapsedMs / 1000).toFixed(1)}s</span>
-        <span className="flex-1" />
-        <button
-          onClick={onStop}
-          className="px-2 py-0.5 rounded border border-zinc-700/60 text-zinc-400 hover:text-zinc-100
-              hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-accent-500"
-        >
-          Stop
-        </button>
+        <div className="h-1 w-56 max-w-full rounded-full bg-sunk overflow-hidden" aria-hidden>
+          {skeleton || scan.known === 0 ? (
+            <div className="h-full rounded-full bg-accent indeterminate-bar" />
+          ) : (
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-300"
+              style={{ width: `${Math.max(2, fraction * 100)}%` }}
+            />
+          )}
+        </div>
       </div>
-      <div className="h-0.5 bg-zinc-800 overflow-hidden" aria-hidden>
-        {skeleton || scan.known === 0 ? (
-          <div className="h-full bg-accent-500 indeterminate-bar" />
-        ) : (
-          <div
-            className="h-full bg-accent-500 transition-[width] duration-300"
-            style={{ width: `${Math.max(2, fraction * 100)}%` }}
-          />
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={onStop}
+        className="min-h-9 px-3 rounded-lg border border-line text-[13px] font-medium hover:bg-sunk"
+      >
+        Stop
+      </button>
     </div>
   );
 }
@@ -63,24 +68,18 @@ function RunningStatus({ scan, onStop }: { scan: ScanInfo; onStop: () => void })
 function IncompleteStatus({ scan, onRescan }: { scan: ScanInfo; onRescan: () => void }) {
   const failed = scan.outcome === "failed";
   return (
-    <div
-      className={`shrink-0 flex items-center gap-3 px-5 py-1.5 text-[11px] border-b ${
-        failed
-          ? "bg-red-950/40 border-red-900/50 text-red-300"
-          : "bg-amber-950/30 border-amber-900/40 text-amber-300"
-      }`}
-      role="status"
-    >
-      <span className="min-w-0 flex-1 truncate">
+    <div className="flex items-center gap-3 min-w-0" role="status">
+      <span className={`text-[13px] min-w-0 truncate ${failed ? "text-danger" : "text-warn"}`}>
         {failed ? "The scan failed" : "The scan was stopped"}
         {scan.message ? `: ${scan.message}` : ""}. Sizes shown are incomplete.
       </span>
       <button
+        type="button"
         onClick={onRescan}
-        className="px-2 py-0.5 rounded border border-current/30 hover:bg-white/5 shrink-0
-          focus-visible:outline-2 focus-visible:outline-accent-500"
+        className="min-h-9 px-3 rounded-lg border border-line text-[13px] font-medium hover:bg-sunk inline-flex items-center gap-1.5 shrink-0"
       >
-        ↻ Rescan
+        <IconRescan />
+        Rescan
       </button>
     </div>
   );

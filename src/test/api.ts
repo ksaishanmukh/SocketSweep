@@ -21,6 +21,7 @@ import type {
   CopyProgress,
   ErrorCode,
   NodeRef,
+  Overview,
   Row,
   ScanProgress,
   ScanStarted,
@@ -122,7 +123,12 @@ export function resetApi() {
   commands.cancelScan.mockResolvedValue(undefined);
   commands.cancelCopy.mockResolvedValue(undefined);
   commands.disconnect.mockResolvedValue(undefined);
+  commands.appIcon.mockResolvedValue(null);
 }
+
+/** What the view queries send while the list is unsorted and unfiltered. */
+export const DEFAULT_SORT = { key: "size" as const, descending: true };
+export const NO_FILTER = { query: null, categories: [], kinds: [], changed: [] };
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -189,6 +195,20 @@ export function treemapNode(id: number, over: Partial<TreemapNode> = {}): Treema
     category: "other",
     app: null,
     children: [],
+    ...over,
+  };
+}
+
+export function overview(over: Partial<Overview> = {}): Overview {
+  return {
+    totals: totals(),
+    categories: [],
+    biggestFiles: [],
+    apps: [],
+    appsStatus: "ready",
+    leftovers: { total: size(0), apps: [] },
+    unreadable: [],
+    sinceLastScan: null,
     ...over,
   };
 }

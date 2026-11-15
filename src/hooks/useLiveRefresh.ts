@@ -1,7 +1,7 @@
 import { useEffect, type MutableRefObject } from "react";
 import type { Mode } from "./useDisplayChoice";
 
-/** How often the treemap and analyses are re-read while sizes are still arriving. */
+/** How often the map or the overview is re-read while sizes are still arriving. */
 const LIVE_REFRESH_MS = 1500;
 
 interface Options {
@@ -11,15 +11,16 @@ interface Options {
   settled: boolean;
   modeRef: MutableRefObject<Mode>;
   refreshTreemap: () => void;
-  refreshAnalyses: () => Promise<void>;
+  refreshOverview: () => Promise<void>;
 }
 
 /**
  * Keeps the snapshots fresh while a scan runs.
  *
- * Sizes keep climbing while the scan runs, and the treemap and analyses are
- * snapshots: re-read them on a slow tick. The open folder's rows need no
- * tick, because the host pushes them with every `scan-progress`.
+ * Sizes keep climbing while the scan runs, and the map and overview are
+ * snapshots: re-read whichever tab is showing on a slow tick. The open
+ * folder's rows need no tick, because the host pushes them with every
+ * `scan-progress`.
  */
 export function useLiveRefresh({
   browsing,
@@ -27,16 +28,16 @@ export function useLiveRefresh({
   settled,
   modeRef,
   refreshTreemap,
-  refreshAnalyses,
+  refreshOverview,
 }: Options) {
   useEffect(() => {
     if (!browsing || !running) return;
     const timer = setInterval(() => {
-      refreshTreemap();
-      if (modeRef.current !== "treemap") void refreshAnalyses();
+      if (modeRef.current === "explorer") refreshTreemap();
+      else void refreshOverview();
     }, LIVE_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [browsing, running, modeRef, refreshAnalyses, refreshTreemap]);
+  }, [browsing, running, modeRef, refreshOverview, refreshTreemap]);
 
   // A folder the phone has just finished measuring is worth redrawing at once.
   useEffect(() => {

@@ -1,15 +1,20 @@
 import { useCallback, useRef, useState } from "react";
-import type { Row, SizeMetric, Totals } from "../api";
+import { commands, type AppsUpdated, type Totals } from "../api";
+import { createIconStore } from "../lib/iconStore";
 import type { Notify, SessionDeps } from "./types";
-import { useAnalyses } from "./useAnalyses";
+import { useAppsUpdated } from "./useAppsUpdated";
 import { useCopy } from "./useCopy";
 import { useDelete } from "./useDelete";
-import { useDisplayChoice, type Mode } from "./useDisplayChoice";
+import { useDisplayChoice } from "./useDisplayChoice";
 import { useLiveRefresh } from "./useLiveRefresh";
 import { useNavigation } from "./useNavigation";
+import { useOverview } from "./useOverview";
 import { useSearch } from "./useSearch";
+import { useSelection } from "./useSelection";
 import { useSessionLifecycle } from "./useSessionLifecycle";
 import { useSessionLog } from "./useSessionLog";
+import { useBrowseActions, useViewControls } from "./useViewControls";
+import { useViewOptions, type ViewOptionsState } from "./useViewOptions";
 
 export { VIEW_PAGE_SIZE } from "./useNavigation";
 export type { CopyState } from "./useCopy";
@@ -17,15 +22,17 @@ export type { Mode } from "./useDisplayChoice";
 export type { Phase, ScanInfo } from "./useSessionLifecycle";
 
 /**
- * The whole GUI-side session: connect, scan, browse, search, delete, copy.
+ * The whole GUI-side session: connect, scan, browse, search, select, delete,
+ * copy.
  *
  * A composition of smaller hooks, each owning one concern:
  *
  * - `useSessionLifecycle`: connect / scan / disconnect, the `scan-progress` and
  *   `connection-lost` events, and the session id.
- * - `useNavigation`: the open folder, its path and treemap, and `focus`.
- * - `useSearch`, `useAnalyses`: queries over the whole tree.
- * - `useDelete`, `useCopy`: actions on a node.
+ * - `useNavigation`: the open folder, its path, map and history, and `focus`.
+ * - `useViewOptions`: the list's sort, filters and search box.
+ * - `useSearch`, `useOverview`: queries over the whole tree.
+ * - `useSelection`, `useDelete`, `useCopy`: batch actions on picked nodes.
  *
  * What ties them together is the session id (`NodeRef.session`): anything that
  * began under an older session is dropped when it replies, because the node
@@ -37,15 +44,23 @@ export function useScanSession(notify: Notify) {
   const [totals, setTotals] = useState<Totals | null>(null);
   const { logs, log, fail } = useSessionLog(notify);
   const display = useDisplayChoice();
+  const options = useViewOptions();
 
-  const deps: SessionDeps = { sessionRef, metricRef: display.metricRef, log, fail };
-  const parts = useTreeParts(deps, notify, sessionId);
-  const { nav, analyses, search, copier } = parts;
+  const deps: SessionDeps = {
+    sessionRef,
+    metricRef: display.metricRef,
+    optionsRef: options.optionsRef,
+    log,
+    fail,
+  };
+  const parts = useTreeParts(deps, notify, sessionId, options);
+  const { nav, overview, search, copier, selection } = parts;
 
   const lifecycle = useSessionLifecycle({ ...deps, ...parts, notify, setSessionId, setTotals });
-  const remove = useDelete({ ...deps, notify, nav, analyses, search, setTotals });
-  const setMetric = useSetMetric(display.storeMetric, display.metricRef, parts);
-  const reveal = useReveal(display.setMode, parts);
+  const remove = useDelete({ ...deps, notify, nav, overview, search, selection, setTotals });
+  const controls = useViewControls({ options, parts, storeMetric: display.storeMetric, deps });
+  const actions = useBrowseActions({ display, options, parts, rootNode: lifecycle.rootNode });
+  useAppsUpdated(useOnAppsUpdated(sessionRef, parts));
 
   useLiveRefresh({
     browsing: lifecycle.phase === "browsing",
@@ -53,7 +68,7 @@ export function useScanSession(notify: Notify) {
     settled: lifecycle.scanInfo?.focusSettled ?? false,
     modeRef: display.modeRef,
     refreshTreemap: nav.refreshTreemap,
-    refreshAnalyses: analyses.refresh,
+    refreshOverview: overview.refresh,
   });
 
   return {
@@ -62,22 +77,15 @@ export function useScanSession(notify: Notify) {
     totals,
     logs,
     metric: display.metric,
-    setMetric,
     mode: display.mode,
-    setMode: display.setMode,
-    view: nav.view,
-    crumbs: nav.crumbs,
-    treemap: nav.treemap,
-    loadingMore: nav.loadingMore,
-    open: nav.open,
-    loadMore: nav.loadMore,
-    reveal,
-    query: search.query,
-    setQuery: search.setQuery,
+    nav,
+    overview: overview.overview,
     searchResults: search.results,
-    largest: analyses.largest,
-    types: analyses.types,
-    apps: analyses.apps,
+    options,
+    controls,
+    actions,
+    selection,
+    icons: parts.icons,
     remove,
     copy: copier.copy,
     startCopy: copier.start,
@@ -87,68 +95,59 @@ export function useScanSession(notify: Notify) {
 
 export type ScanSession = ReturnType<typeof useScanSession>;
 
-type TreeParts = ReturnType<typeof useTreeParts>;
+export type TreeParts = ReturnType<typeof useTreeParts>;
 
 /** The hooks that hold nodes of the current tree, and the one call that forgets them all. */
-function useTreeParts(deps: SessionDeps, notify: Notify, sessionId: number | null) {
+function useTreeParts(
+  deps: SessionDeps,
+  notify: Notify,
+  sessionId: number | null,
+  options: ViewOptionsState,
+) {
   const nav = useNavigation(deps);
-  const analyses = useAnalyses(deps);
+  const overview = useOverview(deps);
   const search = useSearch({
-    sessionRef: deps.sessionRef,
-    metricRef: deps.metricRef,
+    ...deps,
     sessionId,
+    query: options.everywhere ? options.text : "",
   });
   const copier = useCopy({ sessionRef: deps.sessionRef, log: deps.log, notify });
+  const selection = useSelection(sessionId);
+  const [icons] = useState(() => createIconStore((pkg) => commands.appIcon(pkg)));
 
   const { clear: clearNav } = nav;
-  const { clear: clearAnalyses } = analyses;
+  const { clear: clearOverview } = overview;
   const { clear: clearSearch } = search;
   const { reset: resetCopy } = copier;
+  const { clear: clearSelection } = selection;
+  const { clearText } = options;
   const reset = useCallback(() => {
     clearNav();
-    clearAnalyses();
+    clearOverview();
     clearSearch();
+    clearText();
     resetCopy();
-  }, [clearAnalyses, clearNav, clearSearch, resetCopy]);
+    clearSelection();
+    icons.clear();
+  }, [clearNav, clearOverview, clearSearch, clearSelection, clearText, icons, resetCopy]);
 
-  return { nav, analyses, search, copier, reset };
-}
-
-/** Changing the size re-sorts everything the host sorted for us, so ask again. */
-function useSetMetric(
-  storeMetric: (next: SizeMetric) => void,
-  metricRef: SessionDeps["metricRef"],
-  { nav, analyses, search }: TreeParts,
-) {
-  const { reload } = nav;
-  const { refresh: refreshAnalyses } = analyses;
-  const { rerun: rerunSearch } = search;
-  return useCallback(
-    (next: SizeMetric) => {
-      if (metricRef.current === next) return;
-      storeMetric(next);
-      void reload();
-      void refreshAnalyses();
-      rerunSearch();
-    },
-    [metricRef, refreshAnalyses, reload, rerunSearch, storeMetric],
-  );
+  return { nav, overview, search, copier, selection, icons, reset };
 }
 
 /**
- * Jump to the folder containing a cross-tree result, and back to the treemap
- * so the destination has context. Finding a huge file is only half the job.
+ * Names and icons arrived: everything fetched before lacks them, so fetch it
+ * again. Rows already on screen keep their place; only their labels change.
  */
-function useReveal(setMode: (mode: Mode) => void, { nav, search }: TreeParts) {
-  const { open } = nav;
-  const { clear: clearSearch } = search;
+function useOnAppsUpdated(sessionRef: SessionDeps["sessionRef"], parts: TreeParts) {
+  const { nav, overview, search, icons } = parts;
   return useCallback(
-    async (row: Row) => {
-      if (!row.parentNode) return;
-      setMode("treemap");
-      clearSearch();
-      await open(row.parentNode);
+    (update: AppsUpdated) => {
+      if (update.session !== sessionRef.current) return;
+      icons.retryMisses();
+      void overview.refresh();
+      void nav.reload();
+      search.rerun();
     },
-    [clearSearch, open, setMode],
+    [icons, nav, overview, search, sessionRef],
   );
 }

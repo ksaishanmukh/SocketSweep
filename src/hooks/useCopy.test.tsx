@@ -12,7 +12,11 @@ import {
   resetApi,
   row,
 } from "../test/api";
+import { targetOfRow } from "../lib/selection";
+import type { Row } from "../api";
 import { useCopy } from "./useCopy";
+
+const pick = (r: Row) => targetOfRow(r, "/sdcard");
 
 vi.mock("../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api")>()),
@@ -45,7 +49,7 @@ describe("copy to computer", () => {
     const { result } = setup();
     api.copyToDesktop.mockResolvedValue(RESULT);
 
-    await act(() => result.current.start(row(2)));
+    await act(() => result.current.start([pick(row(2))]));
 
     expect(api.copyToDesktop).toHaveBeenCalledWith(node(2));
   });
@@ -57,7 +61,7 @@ describe("copy to computer", () => {
 
     let copying!: Promise<void>;
     act(() => {
-      copying = result.current.start(row(2, { name: "DCIM" }));
+      copying = result.current.start([pick(row(2, { name: "DCIM" }))]);
     });
     expect(result.current.copy).toMatchObject({ name: "DCIM", progress: null, cancelling: false });
 
@@ -82,7 +86,7 @@ describe("copy to computer", () => {
     const { result, notify } = setup();
     api.copyToDesktop.mockResolvedValue({ ...RESULT, skipped: 2, renamed: 1 });
 
-    await act(() => result.current.start(row(2)));
+    await act(() => result.current.start([pick(row(2))]));
 
     expect(notify).toHaveBeenCalledWith(
       expect.stringMatching(/2 links not copied, 1 renamed/),
@@ -94,7 +98,7 @@ describe("copy to computer", () => {
     const { result } = setup();
     api.copyToDesktop.mockReturnValue(new Promise(() => {}));
     act(() => {
-      void result.current.start(row(2));
+      void result.current.start([pick(row(2))]);
     });
 
     act(() => emit.copyProgress(copyProgress({ nodes: [node(77)], filesDone: 9 })));
@@ -108,7 +112,7 @@ describe("copy to computer", () => {
     api.copyToDesktop.mockReturnValue(running.promise);
     let copying!: Promise<void>;
     act(() => {
-      copying = result.current.start(row(2));
+      copying = result.current.start([pick(row(2))]);
     });
 
     act(() => result.current.cancel());
@@ -129,7 +133,7 @@ describe("copy to computer", () => {
     const { result, notify } = setup();
     api.copyToDesktop.mockRejectedValue(commandError("io", "Cannot use C:\\Desktop: disk full"));
 
-    await act(() => result.current.start(row(2)));
+    await act(() => result.current.start([pick(row(2))]));
 
     expect(result.current.copy).toBeNull();
     expect(notify).toHaveBeenCalledWith("Copy failed: Cannot use C:\\Desktop: disk full", "error");
@@ -139,10 +143,10 @@ describe("copy to computer", () => {
     const { result, notify } = setup();
     api.copyToDesktop.mockReturnValue(new Promise(() => {}));
     act(() => {
-      void result.current.start(row(2));
+      void result.current.start([pick(row(2))]);
     });
 
-    await act(() => result.current.start(row(3)));
+    await act(() => result.current.start([pick(row(3))]));
 
     expect(api.copyToDesktop).toHaveBeenCalledOnce();
     expect(notify).toHaveBeenCalledWith(expect.stringMatching(/already running/), "info");
@@ -151,17 +155,38 @@ describe("copy to computer", () => {
   it("refuses a row from another session without asking the host", async () => {
     const { result, notify } = setup();
 
-    await act(() => result.current.start(row(2, { node: node(2, SESSION + 1) })));
+    await act(() => result.current.start([pick(row(2, { node: node(2, SESSION + 1) }))]));
 
     expect(api.copyToDesktop).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(expect.stringMatching(/out of date/), "error");
+  });
+
+  it("copies several picks as one copyMany, followed by its single progress stream", async () => {
+    const { result, notify } = setup();
+    const running = deferred<CopyResult>();
+    api.copyMany.mockReturnValue(running.promise);
+    let copying!: Promise<void>;
+    act(() => {
+      copying = result.current.start([pick(row(2)), pick(row(3))]);
+    });
+
+    expect(api.copyMany).toHaveBeenCalledWith([node(2), node(3)]);
+    expect(result.current.copy?.name).toBe("2 items");
+    act(() => emit.copyProgress(copyProgress({ nodes: [node(2), node(3)], filesDone: 2 })));
+    expect(result.current.copy?.progress?.filesDone).toBe(2);
+
+    await act(async () => {
+      running.resolve({ ...RESULT, destination: "C:\\Users\\me\\Desktop" });
+      await copying;
+    });
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Copied 2 items to"), "success");
   });
 
   it("forgets the copy when the session is torn down", async () => {
     const { result } = setup();
     api.copyToDesktop.mockReturnValue(new Promise(() => {}));
     act(() => {
-      void result.current.start(row(2));
+      void result.current.start([pick(row(2))]);
     });
     expect(result.current.copy).not.toBeNull();
 

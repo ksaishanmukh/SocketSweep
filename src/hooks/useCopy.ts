@@ -15,15 +15,16 @@ import {
   type CopyProgress,
   type CopyResult,
   type NodeRef,
-  type Row,
 } from "../api";
 import { formatBytes, formatNumber } from "../lib/format";
-import { sameNode } from "../lib/size";
+import { inSession, type Target } from "../lib/selection";
+import { nodeKey } from "../lib/size";
 import type { Notify, SessionDeps } from "./types";
 
 /** A copy to this computer in flight. */
 export interface CopyState {
-  node: NodeRef;
+  nodes: NodeRef[];
+  /** What is being copied, for the bar: one name, or "3 items". */
   name: string;
   /** The latest `copy-progress`; null until the first arrives. */
   progress: CopyProgress | null;
@@ -32,7 +33,8 @@ export interface CopyState {
 }
 
 /**
- * "Copy to computer": one copy at a time, by `NodeRef`.
+ * "Copy to computer": one copy at a time, of one thing or several, by
+ * `NodeRef`.
  *
  * The host chooses the destination (the desktop) and reports it in
  * `copy-progress` and in the result. `copy` holds the live progress for the
@@ -44,9 +46,8 @@ export function useCopy({
   notify,
 }: Pick<SessionDeps, "sessionRef" | "log"> & { notify: Notify }) {
   const [copy, setCopy] = useState<CopyState | null>(null);
-  /** The node being copied, for matching `copy-progress` without a stale closure. */
-  const copying = useRef<NodeRef | null>(null);
-
+  /** The copy's nodes, as one key, for matching `copy-progress` without a stale closure. */
+  const copying = useRef<string | null>(null);
   useCopyProgress(copying, setCopy);
 
   /** Forgets a copy whose session is gone (the host stops it with the connection). */
@@ -56,9 +57,10 @@ export function useCopy({
   }, []);
 
   const start = useCallback(
-    async (row: Row) => {
-      const session = sessionRef.current;
-      if (session === null || row.node.session !== session) {
+    async (targets: Target[]) => {
+      const nodes = targets.flatMap((t) => t.nodes);
+      if (nodes.length === 0) return;
+      if (!targets.every((t) => inSession(t, sessionRef.current))) {
         notify("Results are out of date — rescan.", "error");
         return;
       }
@@ -66,23 +68,22 @@ export function useCopy({
         notify("A copy is already running.", "info");
         return;
       }
-      copying.current = row.node;
-      setCopy({ node: row.node, name: row.name, progress: null, cancelling: false });
-      log(`[COPY] ${row.name}…`);
+      const key = keyOf(nodes);
+      const name = targets.length === 1 ? targets[0].name : `${formatNumber(targets.length)} items`;
+      copying.current = key;
+      setCopy({ nodes, name, progress: null, cancelling: false });
+      log(`[COPY] ${name}…`);
       try {
-        const done = await commands.copyToDesktop(row.node);
-        notify(copiedMessage(row.name, done), "success");
+        const done =
+          nodes.length === 1
+            ? await commands.copyToDesktop(nodes[0])
+            : await commands.copyMany(nodes);
+        notify(copiedMessage(name, done), "success");
         log(`[COPY] ${formatNumber(done.files)} files to ${done.destination}.`);
       } catch (err) {
-        if (errorCode(err) === "cancelled") {
-          notify("Copy cancelled. Files already copied stay on this computer.", "info");
-          log("[COPY] Cancelled.");
-        } else {
-          notify(`Copy failed: ${errorMessage(err)}`, "error");
-          log(`[ERROR] ${errorMessage(err)}`);
-        }
+        reportFailure(err, notify, log);
       } finally {
-        if (sameNode(copying.current, row.node)) reset();
+        if (copying.current === key) reset();
       }
     },
     [log, notify, reset, sessionRef],
@@ -96,20 +97,34 @@ export function useCopy({
   return { copy, start, cancel, reset };
 }
 
+function keyOf(nodes: NodeRef[]): string {
+  return nodes.map(nodeKey).join(",");
+}
+
 /** Feeds the host's `copy-progress` events into the copy in flight. */
 function useCopyProgress(
-  copying: MutableRefObject<NodeRef | null>,
+  copying: MutableRefObject<string | null>,
   setCopy: Dispatch<SetStateAction<CopyState | null>>,
 ) {
   useEffect(() => {
     const pending = events.copyProgress((p) => {
-      if (p.nodes.length !== 1 || !sameNode(p.nodes[0], copying.current)) return;
+      if (copying.current === null || keyOf(p.nodes) !== copying.current) return;
       setCopy((c) => (c ? { ...c, progress: p } : c));
     });
     return () => {
       pending.then((off) => off());
     };
   }, [copying, setCopy]);
+}
+
+function reportFailure(err: unknown, notify: Notify, log: (msg: string) => void) {
+  if (errorCode(err) === "cancelled") {
+    notify("Copy cancelled. Files already copied stay on this computer.", "info");
+    log("[COPY] Cancelled.");
+  } else {
+    notify(`Copy failed: ${errorMessage(err)}`, "error");
+    log(`[ERROR] ${errorMessage(err)}`);
+  }
 }
 
 function copiedMessage(name: string, done: CopyResult): string {

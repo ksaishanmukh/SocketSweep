@@ -28,7 +28,7 @@ export function SetupScreen({
   const showPicker = usable.length > 1;
 
   return (
-    <div className="flex flex-col items-center justify-center flex-1 gap-8 animate-fade-in-up px-6">
+    <div className="flex flex-col items-center justify-center flex-1 gap-8 rise-in px-6">
       <Hero loading={loading} />
 
       {/* With more than one device attached, the choice has to be explicit. */}
@@ -47,7 +47,7 @@ export function SetupScreen({
         <>
           <DeviceProblems devices={problems} />
           {problem && (
-            <p role="alert" className="max-w-sm text-center text-xs text-amber-400/80">
+            <p role="alert" className="max-w-sm text-center text-xs text-warn">
               {problem}
             </p>
           )}
@@ -66,23 +66,20 @@ function Hero({ loading }: { loading: boolean }) {
   return (
     <div className="flex flex-col items-center gap-6">
       <div
-        className={`w-24 h-24 rounded-2xl bg-gradient-to-br from-accent-500/20 to-accent-700/10
-            border border-accent-500/20 flex items-center justify-center
-            ${loading ? "animate-pulse-glow" : ""}`}
+        className={`w-24 h-24 rounded-2xl bg-panel border border-line flex items-center justify-center
+            ${loading ? "animate-pulse" : ""}`}
       >
-        <span className="text-accent-400">
+        <span className="text-accent">
           <IconUsb />
         </span>
       </div>
 
       <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-zinc-100 to-zinc-400 bg-clip-text text-transparent">
-          SocketSweep
-        </h1>
-        <p className="mt-2 text-sm text-zinc-500 max-w-xs leading-relaxed">
+        <h1 className="text-3xl font-bold tracking-tight text-fg">SocketSweep</h1>
+        <p className="mt-2 text-sm text-muted max-w-xs leading-relaxed">
           High-performance Android storage analyzer.
           <br />
-          <span className="text-zinc-600">Bypasses MTP — direct POSIX scanning.</span>
+          <span className="text-faint">Bypasses MTP — direct POSIX scanning.</span>
         </p>
       </div>
     </div>
@@ -98,24 +95,23 @@ function DevicePicker({
 }) {
   return (
     <div className="w-full max-w-sm flex flex-col gap-2" role="group" aria-label="Choose a device">
-      <p className="text-xs text-zinc-500 text-center mb-1">
+      <p className="text-xs text-muted text-center mb-1">
         {devices.length} devices connected — pick one
       </p>
       {devices.map((d) => (
         <button
           key={d.serial}
           onClick={() => onConnect(d.serial)}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800
-                hover:border-accent-500/40 hover:bg-zinc-800/60 text-left transition-colors
-                focus-visible:outline-2 focus-visible:outline-accent-500"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-panel border border-line
+                hover:border-accent hover:bg-sunk text-left transition-colors"
         >
-          <span className="text-accent-400 shrink-0">
+          <span className="text-accent shrink-0">
             <IconUsb />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium text-zinc-200 truncate">{d.model}</span>
-            <span className="block text-[11px] font-mono text-zinc-600 truncate">{d.serial}</span>
-            {d.hint && <span className="block mt-0.5 text-[11px] text-zinc-500">{d.hint}</span>}
+            <span className="block text-sm font-medium text-fg truncate">{d.model}</span>
+            <span className="block text-[11px] font-mono text-faint truncate">{d.serial}</span>
+            {d.hint && <span className="block mt-0.5 text-[11px] text-muted">{d.hint}</span>}
           </span>
         </button>
       ))}
@@ -136,14 +132,14 @@ function ConnectButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onConnect}
       disabled={loading}
       className={`px-8 py-3 rounded-xl font-semibold text-sm transition-all duration-300
-            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-400
             ${
               loading
-                ? "bg-zinc-800 text-zinc-500 cursor-wait"
-                : "bg-gradient-to-r from-accent-600 to-accent-500 text-white cursor-pointer hover:from-accent-500 hover:to-accent-400 hover:shadow-lg hover:shadow-accent-500/20 hover:-translate-y-0.5"
+                ? "bg-sunk text-muted cursor-wait"
+                : "bg-accent text-on-accent cursor-pointer hover:opacity-90"
             }`}
     >
       {loading ? (
@@ -169,10 +165,10 @@ function DeviceProblems({ devices }: { devices: Device[] }) {
       {devices.map((d) => {
         const trouble = troubleOf(d.state);
         return (
-          <li key={d.serial} className="text-amber-400/80">
+          <li key={d.serial} className="text-warn">
             <span className="font-mono">{d.model}</span> is {trouble.name}
-            {trouble.fix && <span className="text-zinc-500"> — {trouble.fix}</span>}
-            {d.hint && <p className="mt-0.5 text-[11px] text-zinc-500">{d.hint}</p>}
+            {trouble.fix && <span className="text-muted"> — {trouble.fix}</span>}
+            {d.hint && <p className="mt-0.5 text-[11px] text-muted">{d.hint}</p>}
           </li>
         );
       })}
@@ -183,7 +179,7 @@ function DeviceProblems({ devices }: { devices: Device[] }) {
 /** ADB ships with the app, so it is deliberately absent from this list. */
 function Prerequisites() {
   return (
-    <div className="flex flex-col items-center gap-1.5 text-xs text-zinc-600">
+    <div className="flex flex-col items-center gap-1.5 text-xs text-faint">
       <p>• Android device connected via USB</p>
       <p>• USB Debugging enabled in Developer Options</p>
     </div>
