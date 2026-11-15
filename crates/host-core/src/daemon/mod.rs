@@ -3,8 +3,8 @@
 //! Check the phone can run it, push the matching build, launch it with the
 //! session token in its environment, open the tunnel, and complete the
 //! handshake, retrying while it binds its socket. On any failure after the
-//! push, and on disconnect, everything is torn down again: the daemon is
-//! killed and its binary removed.
+//! push, and on disconnect, everything is torn down again: the daemon and any
+//! app helper run are killed, and both are removed from the phone.
 //!
 //! The socket name is fresh per session, so a stale daemon cannot be mistaken
 //! for the current one; the token, not the name, is the security boundary.
@@ -48,13 +48,16 @@ const KILL_DAEMON: &str = "pkill -f '[s]ocketsweep-daemon'";
 /// Lets the shell user read all of shared storage under Scoped Storage.
 const GRANT_STORAGE: &str = "appops set com.android.shell MANAGE_EXTERNAL_STORAGE allow";
 
-/// The daemon builds the caller has, by ABI. Paths on this computer.
+/// The builds the caller has to push to a phone. Paths on this computer.
 #[derive(Debug, Clone, Default)]
 pub struct DaemonBinaries {
-    /// For phones (`arm64-v8a`).
+    /// The daemon for phones (`arm64-v8a`).
     pub arm64: Option<PathBuf>,
-    /// For the emulator (`x86_64`).
+    /// The daemon for the emulator (`x86_64`).
     pub x86_64: Option<PathBuf>,
+    /// The app helper (`socketsweep-helper.dex`), which runs on any ABI.
+    /// Without it, apps are known by package name only.
+    pub helper: Option<PathBuf>,
 }
 
 impl DaemonBinaries {
