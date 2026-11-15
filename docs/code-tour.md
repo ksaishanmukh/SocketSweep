@@ -59,9 +59,21 @@ edit it.
      commands, time limit and the app catalog).
    - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs): short; just wiring.
 4. **GUI.** [`src/api`](../src/api) (the only import of bindings), then
-   [`src/hooks`](../src/hooks) (`useScanSession`, `useSessionLifecycle`,
-   `useNavigation`, `useScanProgress`), then
-   [`src/components`](../src/components) and `screens/`.
+   [`src/hooks`](../src/hooks): `useScanSession` composes the rest —
+   `useSessionLifecycle` and `useScanProgress` (connect, scan, events),
+   `useNavigation` (open folder, map, back/forward history),
+   `useViewOptions` and `useViewControls` (sort, filters, search box; the
+   host sorts and filters), `useOverview`, `useSearch` (search everywhere),
+   `useSelection`, `useDelete` and `useCopy` (batch actions), and
+   `useAppsUpdated` (app names and icons arriving). Pure rules live in
+   [`src/lib`](../src/lib): `viewOptions.ts`, `history.ts`, `mapGrip.ts`
+   (the map's drag and collapse rule), `mapTiles.ts`, `selection.ts`,
+   `iconStore.ts`. Then [`src/components`](../src/components): `shell/`
+   (header, totals line), `overview/` (the Overview tab's cards),
+   `explorer/` (map, list, toolbar, filters), `selection/` (action bar,
+   delete dialog), `common/` and `screens/`. The theme is a set of CSS
+   custom properties in [`App.css`](../src/App.css) that follow the OS's
+   light or dark setting.
 5. **Tests, sim and bench last.** They make sense once you know what they
    check: [`crates/sim/tests`](../crates/sim/tests),
    [`crates/daemon/tests/session.rs`](../crates/daemon/tests/session.rs),
@@ -78,7 +90,7 @@ signal.
 1. **GUI.** The navigation hooks ([`useNavigation.ts`](../src/hooks/useNavigation.ts))
    load the new view, then call `useFocus` in
    [`useFocusAndTreemap.ts`](../src/hooks/useFocusAndTreemap.ts), which calls
-   `commands.focus(node, limit, metric)`.
+   `commands.focus(node, limit, metric, sort, filter)`.
 2. **API.** `commands` is re-exported from the generated bindings by
    [`src/api/index.ts`](../src/api/index.ts); it invokes the Tauri command
    `focus`.
@@ -148,9 +160,9 @@ signal.
     `src-tauri/src/lib.rs` sends it to the window as the `scan-progress` event.
 17. **GUI update.** [`useHostEvents.ts`](../src/hooks/useHostEvents.ts)
     subscribes to the event; [`useScanProgress.ts`](../src/hooks/useScanProgress.ts)
-    handles it, refreshes the live view and treemap
-    ([`useLiveRefresh.ts`](../src/hooks/useLiveRefresh.ts)), and React
-    re-renders the file list and treemap.
+    handles it and takes the live view; [`useLiveRefresh.ts`](../src/hooks/useLiveRefresh.ts)
+    re-reads the map or the overview, whichever tab is showing, and React
+    re-renders the list and map.
 
 The same shape (hook, `commands.x`, `Commands::x`, a client call, a wire
 message, a daemon handler) holds for delete and for starting a scan.
@@ -198,8 +210,15 @@ message, a daemon handler) holds for delete and for starting a scan.
   [`host-core/app/apps.rs`](../crates/host-core/src/app/apps.rs), and the
   helper itself in [`android-helper/`](../android-helper), whose output
   format `wire::apps` parses.
-- **Change a screen.** [`src/components/screens`](../src/components/screens);
-  state lives in [`src/hooks`](../src/hooks), pure helpers in [`src/lib`](../src/lib).
+- **Change a screen.** The Overview tab is
+  [`src/components/overview`](../src/components/overview), the Explorer tab
+  [`src/components/explorer`](../src/components/explorer), the header
+  [`shell/`](../src/components/shell); setup and failure are in
+  [`screens/`](../src/components/screens). State lives in
+  [`src/hooks`](../src/hooks), pure helpers in [`src/lib`](../src/lib).
+  Colours come from the custom properties in [`App.css`](../src/App.css):
+  use `bg-panel`, `text-muted`, `border-line` and the `--cat-*` category
+  colours rather than fixed colours, so both themes keep working.
 
 ## 5. How to run things
 
