@@ -14,6 +14,7 @@
  */
 import { vi, type Mock } from "vitest";
 import type {
+  AppsUpdated,
   CommandError,
   ConnectionLost,
   Connected,
@@ -47,8 +48,12 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   "typeBreakdown",
   "appBreakdown",
   "search",
+  "overview",
+  "appIcon",
   "delete",
+  "deleteMany",
   "copyToDesktop",
+  "copyMany",
   "cancelCopy",
 ];
 
@@ -61,6 +66,7 @@ const listeners = {
   scanProgress: new Set<Handler<ScanProgress>>(),
   copyProgress: new Set<Handler<CopyProgress>>(),
   connectionLost: new Set<Handler<ConnectionLost>>(),
+  appsUpdated: new Set<Handler<AppsUpdated>>(),
 };
 
 function subscribe<T>(set: Set<Handler<T>>) {
@@ -76,6 +82,7 @@ export const events = {
   scanProgress: vi.fn(subscribe(listeners.scanProgress)),
   copyProgress: vi.fn(subscribe(listeners.copyProgress)),
   connectionLost: vi.fn(subscribe(listeners.connectionLost)),
+  appsUpdated: vi.fn(subscribe(listeners.appsUpdated)),
 };
 
 /** What `vi.mock("../api", ...)` swaps in. */
@@ -86,6 +93,7 @@ export const emit = {
   scanProgress: (p: ScanProgress) => listeners.scanProgress.forEach((h) => h(p)),
   copyProgress: (p: CopyProgress) => listeners.copyProgress.forEach((h) => h(p)),
   connectionLost: (l: ConnectionLost) => listeners.connectionLost.forEach((h) => h(l)),
+  appsUpdated: (a: AppsUpdated) => listeners.appsUpdated.forEach((h) => h(a)),
 };
 
 /** How many listeners are subscribed to each event, to prove they are cleaned up. */
@@ -93,6 +101,7 @@ export const listenerCount = () => ({
   scanProgress: listeners.scanProgress.size,
   copyProgress: listeners.copyProgress.size,
   connectionLost: listeners.connectionLost.size,
+  appsUpdated: listeners.appsUpdated.size,
 });
 
 /** Call from `beforeEach`: forgets every call and answer, and drops all subscribers. */
@@ -101,9 +110,11 @@ export function resetApi() {
   events.scanProgress.mockReset().mockImplementation(subscribe(listeners.scanProgress));
   events.copyProgress.mockReset().mockImplementation(subscribe(listeners.copyProgress));
   events.connectionLost.mockReset().mockImplementation(subscribe(listeners.connectionLost));
+  events.appsUpdated.mockReset().mockImplementation(subscribe(listeners.appsUpdated));
   listeners.scanProgress.clear();
   listeners.copyProgress.clear();
   listeners.connectionLost.clear();
+  listeners.appsUpdated.clear();
 
   // Commands that answer with nothing and are called without being awaited.
   commands.listDevices.mockResolvedValue([]);
@@ -138,6 +149,9 @@ export function row(id: number, over: Partial<Row> = {}): Row {
     measure: "final",
     files: 1,
     unreadable: false,
+    changed: null,
+    category: "other",
+    app: null,
     parent: null,
     parentNode: null,
     ...over,
@@ -153,8 +167,13 @@ export function view(id: number, rows: Row[] = [], over: Partial<View> = {}): Vi
     files: rows.length,
     dirs: 0,
     unreadable: false,
+    changed: null,
+    category: "other",
+    app: null,
     rows,
     hidden: 0,
+    totalMatching: rows.length,
+    totalChildren: rows.length,
     ...over,
   };
 }
@@ -166,6 +185,9 @@ export function treemapNode(id: number, over: Partial<TreemapNode> = {}): Treema
     kind: "dir",
     size: size(100),
     measure: "final",
+    changed: null,
+    category: "other",
+    app: null,
     children: [],
     ...over,
   };
@@ -209,7 +231,7 @@ export function commandError(code: ErrorCode, message: string): CommandError {
 
 export function copyProgress(over: Partial<CopyProgress> = {}): CopyProgress {
   return {
-    node: node(2),
+    nodes: [node(2)],
     destination: "C:\\Users\\me\\Desktop\\item2",
     filesDone: 1,
     filesTotal: 4,

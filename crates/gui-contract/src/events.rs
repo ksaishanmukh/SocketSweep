@@ -4,7 +4,7 @@ use serde::Serialize;
 use specta::datatype::DataType;
 use specta::{Type, Types};
 
-use crate::{ConnectionLost, CopyProgress, ScanProgress};
+use crate::{AppsUpdated, ConnectionLost, CopyProgress, ScanProgress};
 
 /// A payload the host emits under a fixed name. The shell emits only types
 /// that implement this, under [`Event::NAME`].
@@ -43,4 +43,5 @@ events! {
     ScanProgress => "scan-progress",
     CopyProgress => "copy-progress",
     ConnectionLost => "connection-lost",
+    AppsUpdated => "apps-updated",
 }

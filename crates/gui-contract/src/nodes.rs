@@ -64,3 +64,52 @@ pub enum EntryKind {
     /// Sockets, pipes, devices.
     Other,
 }
+
+/// A broad kind of content, for colouring and filtering. A file's comes from
+/// its extension; a folder's is the one holding the most bytes inside it, by
+/// the [`SizeMetric`] of the query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum Category {
+    Audio,
+    Video,
+    Photo,
+    /// Archives and app packages (`.zip`, `.apk`, `.obb`, …).
+    Archive,
+    Doc,
+    /// Everything else: app data, caches, unknown extensions.
+    Other,
+}
+
+impl Category {
+    /// Every category, in the order [`Category::index`] numbers them.
+    pub const ALL: [Category; 6] = [
+        Category::Audio,
+        Category::Video,
+        Category::Photo,
+        Category::Archive,
+        Category::Doc,
+        Category::Other,
+    ];
+
+    /// Position in [`Category::ALL`], for arrays with one slot per category.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// The app a folder belongs to: a folder directly under `Android/data`,
+/// `Android/media` or `Android/obb` named like a package.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppTag {
+    /// Android package name, e.g. `com.whatsapp`.
+    pub package: String,
+    /// The name the launcher shows, once the phone has reported it.
+    pub label: Option<String>,
+    /// False only once the phone has reported its apps and this package is
+    /// not among them: the folder is left over from an uninstalled app.
+    pub installed: bool,
+    /// `appIcon` has an icon for this package.
+    pub has_icon: bool,
+}

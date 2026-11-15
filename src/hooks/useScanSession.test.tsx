@@ -215,7 +215,12 @@ describe("connecting and scanning", () => {
     unmount();
 
     await waitFor(() =>
-      expect(listenerCount()).toEqual({ scanProgress: 0, copyProgress: 0, connectionLost: 0 }),
+      expect(listenerCount()).toEqual({
+        scanProgress: 0,
+        copyProgress: 0,
+        connectionLost: 0,
+        appsUpdated: 0,
+      }),
     );
   });
 });
