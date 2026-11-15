@@ -1,7 +1,7 @@
 //! Listing phones, choosing one, and connecting to its daemon.
 
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 use socketsweep_gui_contract::{Connected, Device, DeviceState, ErrorCode};
 use socketsweep_transport::{self as transport, Transport, TransportError};
@@ -110,6 +110,7 @@ fn install(
         daemon,
         model,
         epoch,
+        apps: Mutex::default(),
     }));
     Ok(())
 }

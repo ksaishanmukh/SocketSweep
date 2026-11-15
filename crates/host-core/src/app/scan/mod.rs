@@ -8,18 +8,17 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use socketsweep_gui_contract::{
-    ErrorCode, NodeRef, ScanPhase, ScanStarted, SessionId, SizeMetric, DEFAULT_VIEW_LIMIT,
-};
+use socketsweep_gui_contract::{ErrorCode, NodeRef, ScanPhase, ScanStarted, SessionId};
 use socketsweep_wire::{ErrCode, ReqId, ScanEvent, ServerMsg};
 
+use super::apps;
 use super::errors::{client_err, err, launch_err, CmdResult};
 use super::state::{Busy, Conn, Inner, Scan, ScanMeta};
 use crate::client::{Client, ClientError};
 use crate::daemon::check_root;
 use crate::focus::{FocusDriver, FocusTarget};
 use crate::lock;
-use crate::tree::{Tree, ROOT};
+use crate::tree::{Tree, ViewQuery, ROOT};
 use ingest::spawn_ingest;
 
 /// Source of GUI session ids: unique for the life of the process, never 0.
@@ -67,6 +66,7 @@ pub(super) fn start(inner: &Arc<Inner>, root: Option<String>) -> CmdResult<ScanS
     }
     *lock(&inner.scan) = Some(Arc::clone(&scan));
     spawn_ingest(inner, Arc::clone(&scan), rx);
+    apps::spawn(inner, conn, scan);
 
     Ok(ScanStarted {
         session,
@@ -124,6 +124,12 @@ fn new_scan(
     root: &str,
     resolved: &[u8],
 ) -> Scan {
+    let mut tree = Tree::new(session, resolved, root);
+    tree.set_apps(apps::initial_catalog(inner, conn));
+    let previous = inner
+        .history
+        .as_ref()
+        .and_then(|h| h.previous(&conn.daemon.serial, root));
     let focus_client = client.clone();
     let focus = FocusDriver::start(inner.config.focus_window, move |(target, seq)| {
         let _ = match target {
@@ -137,7 +143,8 @@ fn new_scan(
         client,
         serial: conn.daemon.serial.clone(),
         root: root.to_string(),
-        tree: Mutex::new(Tree::new(session, resolved, root)),
+        previous,
+        tree: Mutex::new(tree),
         meta: Mutex::new(ScanMeta {
             phase: ScanPhase::Skeleton,
             started: Instant::now(),
@@ -147,8 +154,7 @@ fn new_scan(
             focus: None,
             daemon_focus: None,
             finished: None,
-            view_limit: DEFAULT_VIEW_LIMIT,
-            view_by: SizeMetric::Disk,
+            view: ViewQuery::default(),
         }),
         focus,
         done: Mutex::new(false),

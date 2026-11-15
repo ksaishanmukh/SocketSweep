@@ -52,16 +52,39 @@ shell_commands! {
     fn disconnect() -> ();
     fn start_scan(root: Option<String>) -> ScanStarted;
     fn cancel_scan() -> ();
-    fn focus(node: Option<NodeRef>, limit: Option<u32>, by: Option<SizeMetric>) -> ();
-    fn get_view(node: Option<NodeRef>, limit: Option<u32>, by: Option<SizeMetric>) -> View;
+    fn focus(
+        node: Option<NodeRef>,
+        limit: Option<u32>,
+        by: Option<SizeMetric>,
+        sort: Option<ViewSort>,
+        filter: Option<ViewFilter>,
+    ) -> ();
+    fn get_view(
+        node: Option<NodeRef>,
+        limit: Option<u32>,
+        by: Option<SizeMetric>,
+        sort: Option<ViewSort>,
+        filter: Option<ViewFilter>,
+    ) -> View;
     fn get_breadcrumbs(node: NodeRef) -> Vec<Crumb>;
     fn get_treemap(node: Option<NodeRef>, depth: Option<u32>, by: Option<SizeMetric>) -> TreemapNode;
     fn largest_files(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<Row>;
     fn type_breakdown(by: Option<SizeMetric>) -> Vec<TypeGroup>;
     fn app_breakdown(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<AppUsage>;
-    fn search(query: String, limit: Option<u32>, by: Option<SizeMetric>) -> Vec<Row>;
+    fn search(
+        query: String,
+        limit: Option<u32>,
+        by: Option<SizeMetric>,
+        filter: Option<SearchFilter>,
+        sort: Option<ViewSort>,
+        within: Option<NodeRef>,
+    ) -> Vec<Row>;
+    fn overview(by: Option<SizeMetric>) -> Overview;
+    fn app_icon(app: String) -> Option<String>;
     fn delete(node: NodeRef) -> Deleted;
+    fn delete_many(nodes: Vec<NodeRef>) -> DeletedMany;
     fn copy_to_desktop(node: NodeRef, destination: Option<String>) -> CopyResult;
+    fn copy_many(nodes: Vec<NodeRef>, destination: Option<String>) -> CopyResult;
     fn cancel_copy() -> ();
 }
 
@@ -72,6 +95,7 @@ fn forward(handle: &tauri::AppHandle, event: HostEvent) {
         HostEvent::ScanProgress(p) => handle.emit(name, p),
         HostEvent::CopyProgress(p) => handle.emit(name, p),
         HostEvent::ConnectionLost(p) => handle.emit(name, p),
+        HostEvent::AppsUpdated(p) => handle.emit(name, p),
     };
     if let Err(e) = sent {
         eprintln!("could not emit {name}: {e}");
@@ -91,6 +115,7 @@ fn build_app(handle: &tauri::AppHandle) -> Result<App, Box<dyn std::error::Error
         daemon: DaemonBinaries {
             arm64: Some(bundled(handle, "daemon-arm64.gz")?),
             x86_64: Some(bundled(handle, "daemon-x86_64.gz")?),
+            helper: Some(bundled(handle, "socketsweep-helper.dex")?),
         },
         history_file: paths.app_data_dir().ok().map(|d| d.join("history.json")),
         default_destination: paths.desktop_dir().or_else(|_| paths.download_dir()).ok(),

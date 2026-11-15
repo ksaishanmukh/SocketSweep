@@ -2,6 +2,7 @@
 
 use super::super::scan::NEXT_SESSION;
 use super::super::*;
+use crate::apps::helper::HelperOptions;
 use crate::client::ClientConfig;
 use crate::lock;
 use crate::testkit::FakeDaemon;
@@ -30,6 +31,34 @@ impl Drop for Rig {
 
 impl Rig {
     pub(super) fn new(daemon: FakeDaemon) -> Rig {
+        Self::build(daemon, |_, _| {})
+    }
+
+    /// A rig whose app bundles the app helper, with a short time limit and
+    /// one package per icon run.
+    pub(super) fn with_helper(daemon: FakeDaemon) -> Rig {
+        Self::build(daemon, |config, dir| {
+            let dex = dir.join("socketsweep-helper.dex");
+            std::fs::write(
+                &dex, b"dex
+035",
+            )
+            .unwrap();
+            config.daemon.helper = Some(dex);
+            config.helper = HelperOptions {
+                timeout: Duration::from_millis(300),
+                icon_chunk: 1,
+                icon_size: 48,
+            };
+        })
+    }
+
+    /// A rig with `configure` applied to the app's configuration; it is
+    /// given the rig's scratch folder.
+    pub(super) fn build(
+        daemon: FakeDaemon,
+        configure: impl FnOnce(&mut AppConfig, &std::path::Path),
+    ) -> Rig {
         let dir = std::env::temp_dir().join(format!(
             "socketsweep-app-{}-{}",
             std::process::id(),
@@ -41,10 +70,11 @@ impl Rig {
 
         let transport = Arc::new(FakeTransport::new().with_device(FakeDevice::ready("P1")));
         daemon.install(&transport, "P1");
-        let config = AppConfig {
+        let mut config = AppConfig {
             daemon: DaemonBinaries {
                 arm64: Some(binary),
                 x86_64: None,
+                helper: None,
             },
             launch: LaunchOptions {
                 startup_deadline: Duration::from_secs(5),
@@ -61,6 +91,7 @@ impl Rig {
             progress_interval: Duration::from_millis(20),
             ..AppConfig::default()
         };
+        configure(&mut config, &dir);
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
         let t: Arc<dyn Transport> = transport.clone();

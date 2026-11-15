@@ -6,12 +6,13 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use socketsweep_gui_contract::{
-    ConnectionLost, ErrorCode, NodeId, ScanFinished, ScanOutcome, ScanPhase, SessionId, SizeMetric,
+    ConnectionLost, ErrorCode, NodeId, ScanFinished, ScanOutcome, ScanPhase, ScanRecord, SessionId,
     SkeletonReady,
 };
 use socketsweep_transport::{Transport, TransportError};
 use socketsweep_wire::ReqId;
 
+use super::apps::AppsCache;
 use super::errors::{err, transport_err, CmdResult};
 use super::{AppConfig, EventSink, HostEvent};
 use crate::client::Client;
@@ -19,7 +20,7 @@ use crate::daemon::{tear_down, Daemon};
 use crate::focus::FocusDriver;
 use crate::history::History;
 use crate::lock;
-use crate::tree::Tree;
+use crate::tree::{Tree, ViewQuery};
 
 /// Lets `cancel_copy` reach a running copy.
 #[derive(Default)]
@@ -60,6 +61,8 @@ pub(super) struct Conn {
     pub(super) daemon: Daemon,
     pub(super) model: String,
     pub(super) epoch: u64,
+    /// What the app helper has reported on this phone, kept across scans.
+    pub(super) apps: Mutex<AppsCache>,
 }
 
 pub(super) struct ScanMeta {
@@ -74,10 +77,9 @@ pub(super) struct ScanMeta {
     pub(super) daemon_focus: Option<(u32, Option<NodeId>, bool)>,
     pub(super) finished: Option<ScanFinished>,
     /// How the GUI last asked, with `focus`, for the open folder to be
-    /// shown: the size and row cap of the `view` in progress events and in
-    /// the answer to `delete`. `get_view` never changes them.
-    pub(super) view_limit: u32,
-    pub(super) view_by: SizeMetric,
+    /// shown: the `view` in progress events and in the answer to `delete`.
+    /// `get_view` never changes it.
+    pub(super) view: ViewQuery,
 }
 
 pub(super) struct Scan {
@@ -86,6 +88,8 @@ pub(super) struct Scan {
     pub(super) client: Client,
     pub(super) serial: String,
     pub(super) root: String,
+    /// The last finished scan of this phone and root before this one began.
+    pub(super) previous: Option<ScanRecord>,
     pub(super) tree: Mutex<Tree>,
     pub(super) meta: Mutex<ScanMeta>,
     pub(super) focus: FocusDriver,

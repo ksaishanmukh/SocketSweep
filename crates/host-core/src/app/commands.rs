@@ -2,16 +2,39 @@
 //! handed to their modules.
 
 use socketsweep_gui_contract::{
-    AppUsage, Commands, Connected, CopyResult, Crumb, Deleted, Device, NodeRef, Row, ScanStarted,
-    SizeMetric, TreemapNode, TypeGroup, View, DEFAULT_APPS_LIMIT, DEFAULT_LARGEST_LIMIT,
-    DEFAULT_SEARCH_LIMIT, DEFAULT_TREEMAP_DEPTH, DEFAULT_VIEW_LIMIT,
+    AppUsage, Commands, Connected, CopyResult, Crumb, Deleted, DeletedMany, Device, NodeRef,
+    Overview, Row, ScanStarted, SearchFilter, SizeMetric, TreemapNode, TypeGroup, View, ViewFilter,
+    ViewSort, DEFAULT_APPS_LIMIT, DEFAULT_LARGEST_LIMIT, DEFAULT_SEARCH_LIMIT,
+    DEFAULT_TREEMAP_DEPTH, DEFAULT_VIEW_LIMIT,
 };
 
 use super::errors::{tree_err, CmdResult};
-use super::{connect, copy, delete, scan, App};
+use super::{apps, connect, copy, delete, overview, scan, App};
 use crate::focus::FocusTarget;
 use crate::lock;
-use crate::tree::ROOT;
+use crate::tree::{SearchQuery, Tree, ViewQuery, ROOT};
+
+/// The node a command names, the root when it names none.
+fn node_or_root(tree: &Tree, node: Option<NodeRef>) -> CmdResult<u32> {
+    match node {
+        Some(node) => tree.resolve(node).map_err(tree_err),
+        None => Ok(ROOT),
+    }
+}
+
+fn view_query(
+    limit: Option<u32>,
+    by: Option<SizeMetric>,
+    sort: Option<ViewSort>,
+    filter: Option<ViewFilter>,
+) -> ViewQuery {
+    ViewQuery {
+        limit: limit.unwrap_or(DEFAULT_VIEW_LIMIT),
+        by: by.unwrap_or_default(),
+        sort: sort.unwrap_or_default(),
+        filter: filter.unwrap_or_default(),
+    }
+}
 
 impl Commands for App {
     fn list_devices(&self) -> CmdResult<Vec<Device>> {
@@ -43,21 +66,19 @@ impl Commands for App {
         node: Option<NodeRef>,
         limit: Option<u32>,
         by: Option<SizeMetric>,
+        sort: Option<ViewSort>,
+        filter: Option<ViewFilter>,
     ) -> CmdResult<()> {
         let scan = self.inner.scan()?;
         let (folder, dir) = {
             let tree = lock(&scan.tree);
-            let id = match node {
-                Some(node) => tree.resolve(node).map_err(tree_err)?,
-                None => ROOT,
-            };
+            let id = node_or_root(&tree, node)?;
             tree.focus_dir(id).map_err(tree_err)?
         };
         let running = {
             let mut meta = lock(&scan.meta);
             meta.focus = Some(folder);
-            meta.view_limit = limit.unwrap_or(DEFAULT_VIEW_LIMIT);
-            meta.view_by = by.unwrap_or_default();
+            meta.view = view_query(limit, by, sort, filter);
             meta.finished.is_none()
         };
         if running {
@@ -76,16 +97,14 @@ impl Commands for App {
         node: Option<NodeRef>,
         limit: Option<u32>,
         by: Option<SizeMetric>,
+        sort: Option<ViewSort>,
+        filter: Option<ViewFilter>,
     ) -> CmdResult<View> {
         let scan = self.inner.scan()?;
-        let limit = limit.unwrap_or(DEFAULT_VIEW_LIMIT);
-        let by = by.unwrap_or_default();
         let tree = lock(&scan.tree);
-        let id = match node {
-            Some(node) => tree.resolve(node).map_err(tree_err)?,
-            None => ROOT,
-        };
-        tree.view(id, limit, by).map_err(tree_err)
+        let id = node_or_root(&tree, node)?;
+        tree.view_query(id, &view_query(limit, by, sort, filter))
+            .map_err(tree_err)
     }
 
     fn get_breadcrumbs(&self, node: NodeRef) -> CmdResult<Vec<Crumb>> {
@@ -103,10 +122,7 @@ impl Commands for App {
     ) -> CmdResult<TreemapNode> {
         let scan = self.inner.scan()?;
         let tree = lock(&scan.tree);
-        let id = match node {
-            Some(node) => tree.resolve(node).map_err(tree_err)?,
-            None => ROOT,
-        };
+        let id = node_or_root(&tree, node)?;
         tree.treemap(
             id,
             depth.unwrap_or(DEFAULT_TREEMAP_DEPTH),
@@ -145,22 +161,47 @@ impl Commands for App {
         query: String,
         limit: Option<u32>,
         by: Option<SizeMetric>,
+        filter: Option<SearchFilter>,
+        sort: Option<ViewSort>,
+        within: Option<NodeRef>,
     ) -> CmdResult<Vec<Row>> {
         let scan = self.inner.scan()?;
         let tree = lock(&scan.tree);
-        Ok(tree.search(
-            &query,
-            limit.unwrap_or(DEFAULT_SEARCH_LIMIT),
-            by.unwrap_or_default(),
-        ))
+        let within = within
+            .map(|n| tree.resolve(n).map_err(tree_err))
+            .transpose()?;
+        Ok(tree.search_with(&SearchQuery {
+            query,
+            limit: limit.unwrap_or(DEFAULT_SEARCH_LIMIT),
+            by: by.unwrap_or_default(),
+            filter: filter.unwrap_or_default(),
+            sort: sort.unwrap_or_default(),
+            within,
+        }))
+    }
+
+    fn overview(&self, by: Option<SizeMetric>) -> CmdResult<Overview> {
+        overview::overview(&self.inner, by.unwrap_or_default())
+    }
+
+    fn app_icon(&self, app: String) -> CmdResult<Option<String>> {
+        Ok(apps::icon(&self.inner, &app))
     }
 
     fn delete(&self, node: NodeRef) -> CmdResult<Deleted> {
         delete::delete(&self.inner, node)
     }
 
+    fn delete_many(&self, nodes: Vec<NodeRef>) -> CmdResult<DeletedMany> {
+        delete::delete_many(&self.inner, nodes)
+    }
+
     fn copy_to_desktop(&self, node: NodeRef, destination: Option<String>) -> CmdResult<CopyResult> {
-        copy::copy_to_desktop(&self.inner, node, destination)
+        copy::copy_many(&self.inner, vec![node], destination)
+    }
+
+    fn copy_many(&self, nodes: Vec<NodeRef>, destination: Option<String>) -> CmdResult<CopyResult> {
+        copy::copy_many(&self.inner, nodes, destination)
     }
 
     fn cancel_copy(&self) -> CmdResult<()> {

@@ -68,10 +68,12 @@ pub fn binaries(daemon: Option<PathBuf>) -> DaemonBinaries {
         Some(p) => DaemonBinaries {
             arm64: Some(p.clone()),
             x86_64: Some(p),
+            helper: None,
         },
         None => DaemonBinaries {
             arm64: find_daemon("daemon-arm64"),
             x86_64: find_daemon("daemon-x86_64"),
+            helper: None,
         },
     }
 }

@@ -166,7 +166,7 @@ impl Scan {
             skeleton: meta.skeleton,
             focus,
             finished: meta.finished.clone(),
-            view: tree.view(watching, meta.view_limit, meta.view_by).ok(),
+            view: tree.view_query(watching, &meta.view).ok(),
         }
     }
 }

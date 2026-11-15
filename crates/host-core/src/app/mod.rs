@@ -15,7 +15,15 @@
 //! queries, focus, delete and copy all work while it runs.
 //!
 //! Lock order where several are taken: `busy`, `conn`, `scan`, then a scan's
-//! `tree`, then its `meta`.
+//! `tree`, then its `meta`; a connection's app cache is taken alone.
+//!
+//! # App names and icons
+//!
+//! Once a scan has started, a thread of its own runs the app helper on the
+//! phone (see [`crate::apps`]): names first, then icons a few packages at a
+//! time. It never holds up the scan, and it stops when the scan is replaced
+//! or the session ends. What it learns is kept per connection, so a rescan
+//! shows names at once, and each answer is announced with `apps-updated`.
 //!
 //! # Sessions
 //!
@@ -25,12 +33,14 @@
 //! disconnected does not install itself afterwards, and a lost-connection
 //! report for an old connection is ignored.
 
+mod apps;
 mod commands;
 mod connect;
 mod copy;
 mod delete;
 mod errors;
 mod events;
+mod overview;
 mod scan;
 mod state;
 
@@ -45,6 +55,7 @@ use socketsweep_gui_contract::{Commands, ErrorCode, SessionId};
 use socketsweep_transport::{Transport, TransportError};
 use socketsweep_wire::ScanOpts;
 
+use crate::apps::helper::HelperOptions;
 use crate::daemon::{DaemonBinaries, LaunchOptions};
 use crate::focus::FOCUS_WINDOW;
 use crate::history::History;
@@ -58,9 +69,11 @@ pub use events::{EventSink, HostEvent};
 /// Everything the host needs from the shell.
 #[derive(Debug, Clone)]
 pub struct AppConfig {
-    /// The daemon builds bundled with the app.
+    /// The daemon builds and app helper bundled with the app.
     pub daemon: DaemonBinaries,
     pub launch: LaunchOptions,
+    /// Time limit and batch size of the app helper's runs.
+    pub helper: HelperOptions,
     /// Where scan history is kept; `None` keeps none.
     pub history_file: Option<PathBuf>,
     /// Where `copyToDesktop` copies when the GUI names no destination: the
@@ -78,6 +91,7 @@ impl Default for AppConfig {
         AppConfig {
             daemon: DaemonBinaries::default(),
             launch: LaunchOptions::default(),
+            helper: HelperOptions::default(),
             history_file: None,
             default_destination: None,
             scan_opts: ScanOpts::default(),
