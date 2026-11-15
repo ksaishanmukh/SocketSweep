@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatBytes, formatNumber } from "./format";
+import { fileKind, formatBytes, formatDate, formatDelta, formatNumber } from "./format";
 
 describe("formatBytes", () => {
   it("formats whole byte counts without a decimal", () => {
@@ -39,6 +39,33 @@ describe("formatBytes", () => {
   it("handles non-finite input", () => {
     expect(formatBytes(NaN)).toBe("—");
     expect(formatBytes(Infinity)).toBe("—");
+  });
+});
+
+describe("fileKind", () => {
+  it("names a file by its extension", () => {
+    expect(fileKind("backup.zip")).toBe("ZIP file");
+    expect(fileKind("a.tar.gz")).toBe("GZ file");
+  });
+
+  it("falls back to File without a usable extension", () => {
+    expect(fileKind("README")).toBe("File");
+    expect(fileKind(".nomedia")).toBe("File");
+    expect(fileKind("odd.")).toBe("File");
+    expect(fileKind("x.averyverylongext")).toBe("File");
+  });
+});
+
+describe("formatDate and formatDelta", () => {
+  it("shows a dash for an unknown change time", () => {
+    expect(formatDate(null)).toBe("—");
+    expect(formatDate(0)).toMatch(/1970/);
+  });
+
+  it("signs a size change", () => {
+    expect(formatDelta(1024)).toBe("+1.0 KB");
+    expect(formatDelta(-1024)).toBe("−1.0 KB");
+    expect(formatDelta(0)).toBe("no change");
   });
 });
 
