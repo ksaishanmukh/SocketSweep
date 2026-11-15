@@ -10,6 +10,7 @@ export function useSessionState() {
   const [scanInfo, setScanInfo] = useState<ScanInfo | null>(null);
   const [previous, setPrevious] = useState<ScanRecord | null>(null);
   const [model, setModel] = useState<string | null>(null);
+  const [rootPath, setRootPath] = useState<string | null>(null);
   const [copyDestination, setCopyDestination] = useState<string | null>(null);
 
   const trackingRef = useRef<SessionTracking>(initialTracking());
@@ -27,6 +28,7 @@ export function useSessionState() {
     setFailure(null);
     setPrevious(null);
     setModel(null);
+    setRootPath(null);
     setCopyDestination(null);
     setPhase("setup");
   }, [setPhase]);
@@ -38,6 +40,7 @@ export function useSessionState() {
     scanInfo,
     previous,
     model,
+    rootPath,
     copyDestination,
     trackingRef,
     setPhase,
@@ -46,6 +49,7 @@ export function useSessionState() {
     setScanInfo,
     setPrevious,
     setModel,
+    setRootPath,
     setCopyDestination,
     returnToSetup,
   };

@@ -1,7 +1,7 @@
 import type { MutableRefObject } from "react";
 import type { NodeRef, ScanOutcome, ScanPhase, ScanProgress, Totals } from "../api";
 import type { Notify, SessionDeps } from "./types";
-import type { useAnalyses } from "./useAnalyses";
+import type { useOverview } from "./useOverview";
 import type { useNavigation } from "./useNavigation";
 import type { useSearch } from "./useSearch";
 
@@ -33,7 +33,7 @@ export interface TreeDeps extends SessionDeps {
   notify: Notify;
   setTotals: (totals: Totals | null) => void;
   nav: ReturnType<typeof useNavigation>;
-  analyses: ReturnType<typeof useAnalyses>;
+  overview: ReturnType<typeof useOverview>;
   search: ReturnType<typeof useSearch>;
   /** Forgets everything that holds nodes of the tree being replaced or dropped. */
   reset: () => void;

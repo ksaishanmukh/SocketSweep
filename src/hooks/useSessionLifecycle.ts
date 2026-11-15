@@ -48,6 +48,9 @@ export function useSessionLifecycle(deps: Deps) {
     commands.cancelScan().catch(fail);
   }, [fail]);
 
+  /** The scan root, for jumps that start from the top. */
+  const rootNode = useCallback(() => trackingRef.current.root, [trackingRef]);
+
   return {
     phase: state.phase,
     status: state.status,
@@ -55,10 +58,12 @@ export function useSessionLifecycle(deps: Deps) {
     scanInfo: state.scanInfo,
     previous: state.previous,
     model: state.model,
+    rootPath: state.rootPath,
     copyDestination: state.copyDestination,
     connect,
     disconnect,
     scan,
     cancelScan,
+    rootNode,
   };
 }

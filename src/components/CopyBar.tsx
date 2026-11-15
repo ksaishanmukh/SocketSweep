@@ -22,32 +22,32 @@ export function CopyBar({ copy, onCancel }: { copy: CopyState; onCancel: () => v
   }
 
   return (
-    <div className="shrink-0 border-t border-zinc-800 bg-zinc-950" role="status">
-      <div className="flex items-center gap-3 px-5 py-1.5 text-[11px] text-zinc-400">
-        <span className="font-medium text-zinc-300 truncate max-w-[16rem]">
+    <div className="shrink-0 border-t border-line bg-panel" role="status">
+      <div className="flex items-center gap-3 px-5 py-1.5 text-[11px] text-muted">
+        <span className="font-medium text-fg truncate max-w-[16rem]">
           {copy.cancelling ? "Stopping copy of" : "Copying"} {copy.name}
         </span>
-        <span className="tabular-nums text-zinc-500 truncate" aria-live="off">
+        <span className="tabular-nums text-muted truncate" aria-live="off">
           {detail}
         </span>
         {p?.current && (
-          <span className="font-mono text-zinc-600 truncate min-w-0 flex-1" title={p.current}>
+          <span className="font-mono text-faint truncate min-w-0 flex-1" title={p.current}>
             {p.current}
           </span>
         )}
         {!p?.current && <span className="flex-1" />}
-        {p && <span className="text-zinc-600 truncate max-w-[14rem]">to {p.destination}</span>}
+        {p && <span className="text-faint truncate max-w-[14rem]">to {p.destination}</span>}
         <button
           onClick={onCancel}
           disabled={copy.cancelling}
-          className="px-2 py-0.5 rounded border border-zinc-700/60 text-zinc-400 hover:text-zinc-100
-            hover:bg-zinc-800 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent-500"
+          className="px-2 py-0.5 rounded border border-line text-muted hover:text-fg
+            hover:bg-sunk disabled:opacity-50"
         >
           {copy.cancelling ? "Stopping…" : "Cancel"}
         </button>
       </div>
       <div
-        className="h-0.5 bg-zinc-800 overflow-hidden"
+        className="h-0.5 bg-sunk overflow-hidden"
         role="progressbar"
         aria-label="Copy progress"
         aria-valuemin={0}
@@ -56,11 +56,11 @@ export function CopyBar({ copy, onCancel }: { copy: CopyState; onCancel: () => v
       >
         {determinate ? (
           <div
-            className="h-full bg-accent-500 transition-[width] duration-200"
+            className="h-full bg-accent transition-[width] duration-200"
             style={{ width: `${fraction * 100}%` }}
           />
         ) : (
-          <div className="h-full bg-accent-500 indeterminate-bar" />
+          <div className="h-full bg-accent indeterminate-bar" />
         )}
       </div>
     </div>

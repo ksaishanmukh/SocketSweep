@@ -9,7 +9,7 @@ const SKELETON_NOTE = "[SCAN] Top levels listed. Browsing while sizes fill in.";
 export function useEnterBrowsing({
   log,
   nav,
-  analyses,
+  overview,
   reset,
   trackingRef,
   setPhase,
@@ -31,15 +31,15 @@ export function useEnterBrowsing({
         }
         setPhase("browsing");
         log(SKELETON_NOTE);
-        void analyses.refresh();
+        void overview.refresh();
       })();
     },
-    [analyses, log, nav, trackingRef, reset, setFailure, setPhase],
+    [overview, log, nav, trackingRef, reset, setFailure, setPhase],
   );
 }
 
 /** The scan has ended: say how, and redraw everything with the final sizes. */
-export function useScanFinished({ log, notify, nav, analyses, search, trackingRef }: ProgressDeps) {
+export function useScanFinished({ log, notify, nav, overview, search, trackingRef }: ProgressDeps) {
   return useCallback(
     (totals: Totals, finished: ScanFinished) => {
       trackingRef.current.finishedSeen = true;
@@ -55,10 +55,10 @@ export function useScanFinished({ log, notify, nav, analyses, search, trackingRe
         }
       }
       // Sizes are final now (or as final as they will get): redraw everything.
-      void analyses.refresh();
+      void overview.refresh();
       nav.refreshTreemap();
       search.rerun();
     },
-    [analyses, log, nav, notify, trackingRef, search],
+    [overview, log, nav, notify, trackingRef, search],
   );
 }

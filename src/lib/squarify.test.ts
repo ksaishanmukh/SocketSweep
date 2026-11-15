@@ -1,17 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { squarify, squarifyNested, type TreemapItem, type Tile } from "./squarify";
+import { squarify, type TreemapItem, type Tile } from "./squarify";
 
-const item = (
-  id: number,
-  size: number,
-  name = `n${id}`,
-  children?: TreemapItem[],
-): TreemapItem => ({
+const item = (id: number, size: number, name = `n${id}`): TreemapItem => ({
   id,
   name,
   size,
-  isDir: !!children,
-  children,
+  isDir: false,
 });
 
 /** True if two rectangles share any area (touching edges do not count). */
@@ -130,60 +124,5 @@ describe("squarify", () => {
     const tiles = squarify(items, 1000, 700);
     expect(tiles).toHaveLength(2000);
     expect(tiles.every((t) => Number.isFinite(t.x + t.y + t.w + t.h))).toBe(true);
-  });
-});
-
-describe("squarifyNested", () => {
-  it("lays children inside their parent tile", () => {
-    const items = [
-      item(1, 100, "big", [item(10, 60, "c1"), item(11, 40, "c2")]),
-      item(2, 20, "small"),
-    ];
-    const tiles = squarifyNested(items, 800, 600, { minNestSize: 10, maxDepth: 1 });
-
-    const parent = tiles.find((t) => t.id === 1)!;
-    const children = tiles.filter((t) => t.depth === 1);
-    expect(children.map((c) => c.id).sort()).toEqual([10, 11]);
-
-    for (const c of children) {
-      expect(c.x).toBeGreaterThanOrEqual(parent.x - 1e-6);
-      expect(c.y).toBeGreaterThanOrEqual(parent.y - 1e-6);
-      expect(c.x + c.w).toBeLessThanOrEqual(parent.x + parent.w + 1e-6);
-      expect(c.y + c.h).toBeLessThanOrEqual(parent.y + parent.h + 1e-6);
-    }
-  });
-
-  it("does not nest into a tile too small to read", () => {
-    const items = [item(1, 1000, "big", [item(10, 500)]), item(2, 1, "tiny", [item(20, 1)])];
-    const tiles = squarifyNested(items, 400, 300, { minNestSize: 90 });
-
-    expect(tiles.some((t) => t.id === 10)).toBe(true);
-    expect(tiles.some((t) => t.id === 20)).toBe(false);
-  });
-
-  it("stops at maxDepth", () => {
-    const deep = item(1, 100, "a", [item(2, 100, "b", [item(3, 100, "c")])]);
-    const tiles = squarifyNested([deep], 900, 700, { minNestSize: 10, maxDepth: 1 });
-    expect(tiles.map((t) => t.id).sort()).toEqual([1, 2]);
-  });
-
-  it("keeps siblings from overlapping at every depth", () => {
-    const items = [
-      item(1, 60, "a", [item(10, 30), item(11, 20), item(12, 10)]),
-      item(2, 40, "b", [item(20, 25), item(21, 15)]),
-    ];
-    const tiles = squarifyNested(items, 900, 600, { minNestSize: 20, maxDepth: 1 });
-
-    // Compared within a depth level: a child overlapping its own parent is the
-    // point of nesting, but nothing at the same level may overlap. Since
-    // parents are disjoint, disjoint-within-level covers cousins too.
-    for (const depth of [0, 1]) {
-      const level = tiles.filter((t) => t.depth === depth);
-      for (let i = 0; i < level.length; i++) {
-        for (let j = i + 1; j < level.length; j++) {
-          expect(overlaps(level[i], level[j])).toBe(false);
-        }
-      }
-    }
   });
 });

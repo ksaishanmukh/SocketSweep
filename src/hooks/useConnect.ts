@@ -11,6 +11,7 @@ interface Deps extends Pick<SessionDeps, "log" | "fail"> {
   setStatus: (status: string) => void;
   setPrevious: (previous: ScanRecord | null) => void;
   setModel: (model: string | null) => void;
+  setRootPath: (root: string | null) => void;
   setCopyDestination: (destination: string | null) => void;
 }
 
@@ -25,6 +26,7 @@ export function useConnect({
   setStatus,
   setPrevious,
   setModel,
+  setRootPath,
   setCopyDestination,
 }: Deps) {
   return useCallback(
@@ -41,6 +43,7 @@ export function useConnect({
         // previous session rather than against the scan a moment ago.
         setPrevious(info.previous);
         setModel(info.model);
+        setRootPath(info.root);
         setCopyDestination(info.copyDestination);
         log(`[ADB] ${info.model} (${info.serial}).`);
         await scan();
@@ -59,6 +62,7 @@ export function useConnect({
       setModel,
       setPhase,
       setPrevious,
+      setRootPath,
       setStatus,
       trackingRef,
     ],

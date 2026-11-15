@@ -30,21 +30,21 @@ describe("ScanStatus", () => {
     const onStop = vi.fn();
     render(<ScanStatus scan={scan()} onStop={onStop} onRescan={() => {}} />);
 
-    expect(screen.getByText("Measuring sizes…")).toBeTruthy();
+    expect(screen.getByText(/Measuring ·/)).toBeTruthy();
     expect(screen.getByText("40 of 100 folders")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Stop" }));
     expect(onStop).toHaveBeenCalledOnce();
   });
 
-  it("disappears after a complete scan", () => {
+  it("says how long a complete scan took", () => {
     const { container } = render(
       <ScanStatus
-        scan={scan({ running: false, outcome: "complete" })}
+        scan={scan({ running: false, outcome: "complete", elapsedMs: 1000 })}
         onStop={() => {}}
         onRescan={() => {}}
       />,
     );
-    expect(container.textContent).toBe("");
+    expect(container.textContent).toBe("Scan complete in 1.0 s");
   });
 
   it("explains an incomplete scan and offers a rescan", async () => {
@@ -66,7 +66,7 @@ describe("ScanStatus", () => {
 });
 
 function copying(over: Partial<CopyState> = {}): CopyState {
-  return { node: node(2), name: "DCIM", progress: copyProgress(), cancelling: false, ...over };
+  return { nodes: [node(2)], name: "DCIM", progress: copyProgress(), cancelling: false, ...over };
 }
 
 describe("CopyBar", () => {

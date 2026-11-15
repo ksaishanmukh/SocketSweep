@@ -15,7 +15,6 @@ export interface TreemapItem {
   name: string;
   size: number;
   isDir: boolean;
-  children?: TreemapItem[];
 }
 
 interface Rect {
@@ -32,7 +31,6 @@ export interface Tile extends Rect {
   isDir: boolean;
   /** 0 for top-level tiles, 1 for their children, and so on. */
   depth: number;
-  children?: TreemapItem[];
 }
 
 /**
@@ -70,53 +68,6 @@ export function squarify(items: TreemapItem[], width: number, height: number, de
   }
 
   return tiles;
-}
-
-/**
- * Tiles big enough to be worth drawing children inside, laid out recursively.
- *
- * A tile only nests if it is large enough that the children would be legible
- * and it has a header's worth of room to spare.
- */
-export function squarifyNested(
-  items: TreemapItem[],
-  width: number,
-  height: number,
-  opts: { minNestSize?: number; headerHeight?: number; maxDepth?: number } = {},
-): Tile[] {
-  const { minNestSize = 90, headerHeight = 16, maxDepth = 1 } = opts;
-
-  const out: Tile[] = [];
-  const walk = (list: TreemapItem[], rect: Rect, depth: number) => {
-    const tiles = squarify(list, rect.w, rect.h, depth);
-
-    for (const tile of tiles) {
-      const placed: Tile = { ...tile, x: tile.x + rect.x, y: tile.y + rect.y };
-      out.push(placed);
-
-      const canNest =
-        depth < maxDepth &&
-        placed.children?.length &&
-        placed.w >= minNestSize &&
-        placed.h >= minNestSize + headerHeight;
-
-      if (canNest) {
-        walk(
-          placed.children!,
-          {
-            x: placed.x + 1,
-            y: placed.y + headerHeight,
-            w: placed.w - 2,
-            h: placed.h - headerHeight - 1,
-          },
-          depth + 1,
-        );
-      }
-    }
-  };
-
-  walk(items, { x: 0, y: 0, w: width, h: height }, 0);
-  return out;
 }
 
 /** The items `start..end` that share a row, and their total area. */
@@ -173,7 +124,6 @@ function placeRow(
       name: sorted[k].name,
       size: sorted[k].size,
       isDir: sorted[k].isDir,
-      children: sorted[k].children,
       depth,
       x: horizontal ? x : x + offset,
       y: horizontal ? y + offset : y,
