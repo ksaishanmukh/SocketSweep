@@ -20,7 +20,7 @@ unless a link says otherwise.
 | [`src-tauri`](../src-tauri)                       | Thin Tauri shell: one Tauri command per contract command, event forwarding. | [`src/lib.rs`](../src-tauri/src/lib.rs) (`shell_commands!`, `forward`), [`tauri.conf.json`](../src-tauri/tauri.conf.json)                                                                                            |
 | [`src/`](../src)                                  | The React GUI.                                                              | [`api/index.ts`](../src/api/index.ts), [`hooks/`](../src/hooks), [`components/`](../src/components), [`lib/`](../src/lib)                                                                                            |
 | [`scripts/`](../scripts)                          | Node helpers: fetch adb, cross-compile the daemon.                          | [`setup-bins.mjs`](../scripts/setup-bins.mjs), [`build-daemon.mjs`](../scripts/build-daemon.mjs)                                                                                                                     |
-| [`.github/workflows/`](../.github/workflows)      | CI: build and checks, nightly emulator end-to-end.                          | [`build.yml`](../.github/workflows/build.yml), [`e2e.yml`](../.github/workflows/e2e.yml)                                                                                                                             |
+| [`.github/workflows/`](../.github/workflows)      | CI by tag: checks, builds, releases, emulator end-to-end.                   | [`build.yml`](../.github/workflows/build.yml), [`e2e.yml`](../.github/workflows/e2e.yml)                                                                                                                             |
 
 Dependencies point one way: `wire` and `gui-contract` are the base. The phone
 side (`engine`, `daemon`) and the desktop side (`host-core`) never see each
@@ -257,5 +257,5 @@ cargo run --release -p socketsweep-bench -- fixture --seed 1                  # 
 cargo run --release -p socketsweep-bench -- e2e --seed 1                      # connect, scan, focus, delete, copy
 ```
 
-Add `--serial` when more than one device is attached. The nightly emulator
+Add `--serial` when more than one device is attached. The emulator
 version of the last two is [`e2e.yml`](../.github/workflows/e2e.yml).

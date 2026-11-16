@@ -235,11 +235,24 @@ cargo run --release -p socketsweep-bench -- fixture --seed 1
 cargo run --release -p socketsweep-bench -- e2e --seed 1
 ```
 
-The `Emulator end-to-end` workflow runs the last two (and a three-run benchmark)
-on an x86_64 emulator nightly; start it by hand from the Actions tab.
+### CI
 
-Releases are built by CI: pushing a `v*` tag builds Windows, macOS and Linux
-installers and attaches them to a draft release.
+CI runs only when you push a tag, so pushes and pull requests (documentation
+included) run nothing. The prefix picks the job:
+
+| Tag | Runs |
+|---|---|
+| `check-<anything>` | The fast gate: formatting, clippy, Rust and GUI tests, lint (about 2 min) |
+| `build-<anything>` | The gate, the phone daemon and app helper, and Windows, macOS and Linux bundles, uploaded as artifacts |
+| `e2e-<anything>` | The emulator end-to-end test and a three-run benchmark on an x86_64 emulator |
+| `v<version>` | A full build, with the version taken from the tag, attached to a draft release |
+
+```bash
+git tag check-my-change && git push origin check-my-change
+git push origin :refs/tags/check-my-change   # delete it again afterwards
+```
+
+Both workflows can also be started by hand from the Actions tab.
 
 ## Origins and credit
 
