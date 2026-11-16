@@ -5,8 +5,8 @@
 //! origin), no I/O. Inputs are picks, task results, focus changes, prunes and
 //! ticks; outputs are wire [`ScanEvent`]s, appended to an internal queue at
 //! the moment the state changes and drained with
-//! [`ScanState::take_events`]. The threaded [`pool`](crate::pool) and a
-//! simulator can both drive it.
+//! [`ScanState::take_events`]. The threaded [`pool`](crate::pool) drives it,
+//! and tests can drive it directly.
 //!
 //! Applying results, the completion cascade and prunes live in
 //! [`aggregate`](crate::aggregate).

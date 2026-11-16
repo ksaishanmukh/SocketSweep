@@ -10,7 +10,7 @@
 //! - [`ScanState`]: the pure scheduler and aggregator. Inputs (picks, results,
 //!   focus, prunes, ticks, with the time passed in) produce wire
 //!   [`ScanEvent`](socketsweep_wire::ScanEvent)s at the moment the state
-//!   changes, so a simulator can drive it directly.
+//!   changes, so a test can drive it directly.
 //!
 //! # Modes
 //!

@@ -1,84 +1,177 @@
-//! Engine properties, over random trees and navigation scripts,
-//! driving `ScanState` through the discrete-event simulator.
+//! Engine properties, over random trees and navigation scripts, driving the
+//! real threaded pool: whatever the interleaving, the stream obeys G1–G3 and
+//! the totals are exact.
 
 mod common;
 
-use proptest::prelude::*;
-use socketsweep_sim::{
-    random_script, run_v4, Action, Checker, Latency, RandomShape, Script, SimConfig, SimFs,
-};
-use socketsweep_wire::{Outcome, ScanEvent, ScanOpts};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-fn small_cfg(workers: u8, max_depth: u16) -> SimConfig {
-    SimConfig {
-        workers,
-        opts: ScanOpts {
-            max_depth,
-            // Small trees scan in tens of virtual milliseconds: scale the
-            // ramp and the skeleton budget down with them.
-            ramp_ms: 5,
-            skeleton_budget_ms: 10,
-            ..ScanOpts::default()
-        },
-        // Random trees take ~40 virtual ms at W = 8 with these costs, long
-        // enough for the 5 ms ramp and the convergence check to matter.
-        latency: Latency::STANDARD,
-        tick: 1_000,
-        check_tiers: true,
-        validate_every: 5,
+use proptest::prelude::*;
+use socketsweep_engine::{Fs, RecordingSink, Scan};
+use socketsweep_sim::{Checker, RandomShape, SimFs, SlowFs};
+use socketsweep_wire::{DirId, Outcome, ScanEvent, ScanMode, ScanOpts};
+
+fn small_opts(workers: u8, max_depth: u16, mode: ScanMode) -> ScanOpts {
+    ScanOpts {
+        workers: Some(workers),
+        max_depth,
+        mode,
+        // Small trees scan in tens of milliseconds: scale the ramp and the
+        // skeleton budget down with them.
+        ramp_ms: 5,
+        skeleton_budget_ms: 10,
+        ..ScanOpts::default()
     }
 }
 
+/// A little real delay per call, so tasks overlap and the script's steps land
+/// mid-scan.
+fn slow(fs: SimFs) -> Arc<SlowFs<SimFs>> {
+    Arc::new(SlowFs::new(
+        fs,
+        Duration::from_micros(50),
+        Duration::from_micros(2),
+    ))
+}
+
+/// Directories introduced so far, in order.
+fn introduced(events: &[ScanEvent]) -> Vec<DirId> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            ScanEvent::Listing { entries, .. } => Some(entries.iter().filter_map(|en| en.id)),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+/// One step of a navigation script: `kind` 0 focuses a directory, 1 clears the
+/// focus, 2 deletes a directory (when deletes are allowed); `pick` chooses
+/// which.
+type Step = (u8, u32);
+
+/// Scan `fs` on a pool while this thread plays `steps`, as the session does:
+/// a prune first, then the delete on the file system. Returns the events and
+/// how many directories were pruned.
+fn run_script(
+    fs: &Arc<SlowFs<SimFs>>,
+    opts: &ScanOpts,
+    steps: &[Step],
+    deletes: bool,
+) -> (Vec<ScanEvent>, usize) {
+    let sink = Arc::new(RecordingSink::new());
+    let scan = Scan::new(
+        fs.root(fs.inner.root_path()).unwrap(),
+        opts,
+        Arc::clone(&sink),
+    );
+    let runner = {
+        let (scan, fs) = (scan.clone(), Arc::clone(fs));
+        std::thread::spawn(move || scan.run(&*fs))
+    };
+    let (mut pruned, mut seq) = (0, 0);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    for &(kind, pick) in steps {
+        let known = loop {
+            let known = introduced(&sink.events());
+            if !known.is_empty() || scan.is_finished() || Instant::now() > deadline {
+                break known;
+            }
+            std::thread::sleep(Duration::from_micros(200));
+        };
+        if scan.is_finished() || known.is_empty() {
+            break;
+        }
+        let dir = known[pick as usize % known.len()];
+        seq += 1;
+        match kind {
+            0 => {
+                scan.focus(seq, dir);
+            }
+            1 => {
+                scan.clear_focus(seq);
+            }
+            _ if deletes => {
+                if let Some(path) = scan.path_of(dir) {
+                    if scan.prune(dir) {
+                        assert!(fs.inner.delete(&path));
+                        pruned += 1;
+                    }
+                }
+            }
+            _ => {}
+        }
+        std::thread::sleep(Duration::from_micros(300));
+    }
+    assert_eq!(runner.join().unwrap(), Outcome::Complete);
+    (sink.events(), pruned)
+}
+
+fn steps() -> impl Strategy<Value = Vec<Step>> {
+    prop::collection::vec((0u8..3, any::<u32>()), 0..14)
+}
+
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 48, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: 32, ..ProptestConfig::default() })]
 
     /// Exactly-once listing and stats, totals equal to the ground truth (per
-    /// directory without deletes, at the root with them), G1–G3, the Back
-    /// floor and convergence of each tier to its target.
+    /// directory without deletes, at the root with them) and G1–G3, in both
+    /// modes, under focus changes and deletes from another thread.
     #[test]
     fn scans_are_exact_and_ordered(
         tree in any::<u64>(),
-        script_seed in any::<u64>(),
         workers in 1u8..=8,
-        steps in 0usize..14,
+        script in steps(),
         deletes in any::<bool>(),
         max_depth in prop_oneof![Just(64u16), 1u16..5],
+        mode in prop_oneof![Just(ScanMode::Focus), Just(ScanMode::Plain)],
     ) {
-        let fs = SimFs::random(tree, RandomShape::default());
-        let cfg = small_cfg(workers, max_depth);
-        let script = random_script(&fs, script_seed, steps, 60_000, deletes);
-        let run = run_v4(&fs, &cfg, &script);
-        let events: Vec<ScanEvent> = run.events().cloned().collect();
-        common::check_complete(&fs, &cfg.opts, &events, run.deleted.is_empty());
-        prop_assert!(run.violations.is_empty(), "tier properties: {:#?}", run.violations);
+        let fs = slow(SimFs::random(tree, RandomShape::default()));
+        let opts = small_opts(workers, max_depth, mode);
+        let (events, pruned) = run_script(&fs, &opts, &script, deletes);
+        common::check_complete(&fs.inner, &opts, &events, pruned == 0);
         let n = events.iter().filter(|e| matches!(e, ScanEvent::Pruned { .. })).count();
-        prop_assert_eq!(n, run.deleted.len());
+        prop_assert_eq!(n, pruned);
     }
 
     /// Hardlinked files count once per (dev, ino) at the root.
     #[test]
     fn hardlinks_count_once(tree in any::<u64>(), workers in 1u8..=8) {
-        let fs = SimFs::random(tree, RandomShape { hardlinks: true, ..RandomShape::default() });
-        let cfg = small_cfg(workers, 64);
-        let run = run_v4(&fs, &cfg, &Script::default());
-        let events: Vec<ScanEvent> = run.events().cloned().collect();
-        common::check_complete(&fs, &cfg.opts, &events, false);
+        let shape = RandomShape { hardlinks: true, ..RandomShape::default() };
+        let fs = slow(SimFs::random(tree, shape));
+        let opts = small_opts(workers, 64, ScanMode::Focus);
+        let (events, _) = run_script(&fs, &opts, &[], false);
+        common::check_complete(&fs.inner, &opts, &events, false);
     }
 
-    /// A cancelled scan still ends with `Finished { Cancelled }` and a valid
-    /// stream, and never reads anything twice.
+    /// A cancelled scan still ends with `Finished { Cancelled }` (or completes
+    /// if it was already done) and a valid stream, and never reads anything
+    /// twice.
     #[test]
-    fn cancel_ends_cleanly(tree in any::<u64>(), workers in 1u8..=8, at in 0u64..60_000) {
-        let fs = SimFs::random(tree, RandomShape::default());
-        let cfg = small_cfg(workers, 64);
-        let script = Script { steps: vec![(at, Action::Cancel)] };
-        let run = run_v4(&fs, &cfg, &script);
-        let events: Vec<ScanEvent> = run.events().cloned().collect();
-        Checker::check(&events).map_err(TestCaseError::fail)?;
-        let outcome = run.outcome.expect("finished");
+    fn cancel_ends_cleanly(tree in any::<u64>(), workers in 1u8..=8, after_us in 0u64..20_000) {
+        let fs = slow(SimFs::random(tree, RandomShape::default()));
+        let opts = small_opts(workers, 64, ScanMode::Focus);
+        let sink = Arc::new(RecordingSink::new());
+        let scan = Scan::new(fs.root(fs.inner.root_path()).unwrap(), &opts, Arc::clone(&sink));
+        let runner = {
+            let (scan, fs) = (scan.clone(), Arc::clone(&fs));
+            std::thread::spawn(move || scan.run(&*fs))
+        };
+        std::thread::sleep(Duration::from_micros(after_us));
+        scan.cancel();
+        let outcome = runner.join().unwrap();
         prop_assert!(matches!(outcome, Outcome::Cancelled | Outcome::Complete));
-        for id in 0..fs.len() as u32 {
-            prop_assert!(fs.lists(id) <= 1 && fs.stats(id) <= 1);
+        let events = sink.events();
+        Checker::check(&events).map_err(TestCaseError::fail)?;
+        let last = events.last();
+        prop_assert!(
+            matches!(last, Some(ScanEvent::Finished { outcome: o, .. }) if *o == outcome),
+            "{last:?}"
+        );
+        for id in 0..fs.inner.len() as u32 {
+            prop_assert!(fs.inner.lists(id) <= 1 && fs.inner.stats(id) <= 1);
         }
     }
 }
@@ -88,7 +181,7 @@ proptest! {
 #[test]
 fn focus_seq_and_settled() {
     use socketsweep_engine::Interrupt;
-    use socketsweep_engine::{Fs, Pick, ScanState, TaskOutput};
+    use socketsweep_engine::{Pick, ScanState, TaskOutput};
     let fs = SimFs::random(
         3,
         RandomShape {

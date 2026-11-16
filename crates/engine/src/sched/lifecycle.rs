@@ -138,8 +138,8 @@ impl ScanState {
 
     /// Advance time: ends the skeleton phase when due and emits `Progress`
     /// every [`PROGRESS_INTERVAL`]. Drivers call it periodically even when
-    /// no task finishes (the pool's ticker thread, the simulator's tick
-    /// event); every other input calls it too.
+    /// no task finishes (the pool's ticker thread); every other input calls
+    /// it too.
     pub fn tick(&mut self, now: Micros) {
         if self.is_finished() {
             return;
