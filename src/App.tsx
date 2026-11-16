@@ -3,7 +3,7 @@ import { ConsoleDrawer } from "./components/ConsoleDrawer";
 import { CopyBar } from "./components/CopyBar";
 import { FailedScreen } from "./components/screens/FailedScreen";
 import { ResultScreen } from "./components/screens/ResultScreen";
-import { SetupScreen } from "./components/screens/SetupScreen";
+import { SetupScreen } from "./components/screens/setup/SetupScreen";
 import { ActionBar } from "./components/selection/ActionBar";
 import { DeleteDialog } from "./components/selection/DeleteDialog";
 import { Toasts } from "./components/Toasts";
