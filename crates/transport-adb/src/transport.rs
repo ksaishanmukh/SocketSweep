@@ -1,7 +1,7 @@
 //! The [`Transport`] calls, over the adb server.
 
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -43,39 +43,21 @@ impl Transport for AdbTransport {
     fn shell(&self, serial: &str, command: &str) -> Result<Output> {
         let fail = |e: WireError| wire_to_error(e, &format!("adb shell {command}"));
 
-        // Shell protocol v2 (Android 7+) carries stdout, stderr and the exit
-        // code separately. Older phones reject it, and fall back to the raw
-        // stream, which carries stdout and stderr mixed and no exit code.
+        // Shell protocol v2 carries stdout, stderr and the exit code
+        // separately; every supported Android (API 30+) has it.
         let mut stream = self.transport(serial, IO_TIMEOUT)?;
-        match request(&mut stream, &format!("shell,v2,raw:{command}")) {
-            Ok(()) => {
-                // Nothing is ever sent on stdin; closing it stops a command
-                // that reads stdin from waiting on us.
-                stream
-                    .write_all(&[SHELL_CLOSE_STDIN, 0, 0, 0, 0])
-                    .map_err(|e| fail(e.into()))?;
-                let out = read_shell_v2(&mut stream).map_err(fail)?;
-                Ok(Output {
-                    stdout: out.stdout,
-                    stderr: out.stderr,
-                    exit: out.exit.map(i32::from),
-                })
-            }
-            Err(WireError::Fail(_)) => {
-                let mut stream = self.transport(serial, IO_TIMEOUT)?;
-                request(&mut stream, &format!("shell:{command}")).map_err(fail)?;
-                let mut stdout = Vec::new();
-                stream
-                    .read_to_end(&mut stdout)
-                    .map_err(|e| fail(e.into()))?;
-                Ok(Output {
-                    stdout,
-                    stderr: Vec::new(),
-                    exit: None,
-                })
-            }
-            Err(e) => Err(fail(e)),
-        }
+        request(&mut stream, &format!("shell,v2,raw:{command}")).map_err(fail)?;
+        // Nothing is ever sent on stdin; closing it stops a command that
+        // reads stdin from waiting on us.
+        stream
+            .write_all(&[SHELL_CLOSE_STDIN, 0, 0, 0, 0])
+            .map_err(|e| fail(e.into()))?;
+        let out = read_shell_v2(&mut stream).map_err(fail)?;
+        Ok(Output {
+            stdout: out.stdout,
+            stderr: out.stderr,
+            exit: out.exit.map(i32::from),
+        })
     }
 
     fn push(&self, serial: &str, local: &Path, remote: &str, mode: u32) -> Result<()> {
@@ -101,7 +83,6 @@ impl Transport for AdbTransport {
         progress: &mut dyn FnMut(u64),
     ) -> Result<u64> {
         let shown = String::from_utf8_lossy(remote).into_owned();
-        let v2 = self.has_sendrecv_v2(serial);
         let mut stream = self.transport(serial, PULL_TIMEOUT)?;
         request(&mut stream, "sync:")
             .map_err(|e| wire_to_error(e, &format!("Cannot pull {shown}")))?;
@@ -115,7 +96,7 @@ impl Transport for AdbTransport {
         let part = PathBuf::from(part);
         let mut file = File::create(&part).map_err(local_err)?;
 
-        let result = sync_recv(&mut stream, remote, v2, &mut file, progress)
+        let result = sync_recv(&mut stream, remote, &mut file, progress)
             .map_err(|e| match e {
                 RecvError::Wire(w) => wire_to_error(w, &format!("Cannot pull {shown}")),
                 RecvError::Sink(source) => local_err(source),

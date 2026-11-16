@@ -2,10 +2,9 @@
 //! handed to their modules.
 
 use socketsweep_gui_contract::{
-    AppUsage, Commands, Connected, CopyResult, Crumb, Deleted, DeletedMany, Device, NodeRef,
-    Overview, Row, ScanStarted, SearchFilter, SizeMetric, TreemapNode, TypeGroup, View, ViewFilter,
-    ViewSort, DEFAULT_APPS_LIMIT, DEFAULT_LARGEST_LIMIT, DEFAULT_SEARCH_LIMIT,
-    DEFAULT_TREEMAP_DEPTH, DEFAULT_VIEW_LIMIT,
+    Commands, Connected, CopyResult, Crumb, DeletedMany, Device, NodeRef, Overview, Row,
+    ScanStarted, SearchFilter, SizeMetric, TreemapNode, View, ViewFilter, ViewSort,
+    DEFAULT_SEARCH_LIMIT, DEFAULT_TREEMAP_DEPTH, DEFAULT_VIEW_LIMIT,
 };
 
 use super::errors::{tree_err, CmdResult};
@@ -131,31 +130,6 @@ impl Commands for App {
         .map_err(tree_err)
     }
 
-    fn largest_files(&self, limit: Option<u32>, by: Option<SizeMetric>) -> CmdResult<Vec<Row>> {
-        let scan = self.inner.scan()?;
-        let tree = lock(&scan.tree);
-        Ok(tree.largest_files(
-            limit.unwrap_or(DEFAULT_LARGEST_LIMIT),
-            by.unwrap_or_default(),
-        ))
-    }
-
-    fn type_breakdown(&self, by: Option<SizeMetric>) -> CmdResult<Vec<TypeGroup>> {
-        let scan = self.inner.scan()?;
-        let tree = lock(&scan.tree);
-        Ok(tree.type_breakdown(by.unwrap_or_default()))
-    }
-
-    fn app_breakdown(
-        &self,
-        limit: Option<u32>,
-        by: Option<SizeMetric>,
-    ) -> CmdResult<Vec<AppUsage>> {
-        let scan = self.inner.scan()?;
-        let tree = lock(&scan.tree);
-        Ok(tree.app_breakdown(limit.unwrap_or(DEFAULT_APPS_LIMIT), by.unwrap_or_default()))
-    }
-
     fn search(
         &self,
         query: String,
@@ -188,16 +162,8 @@ impl Commands for App {
         Ok(apps::icon(&self.inner, &app))
     }
 
-    fn delete(&self, node: NodeRef) -> CmdResult<Deleted> {
-        delete::delete(&self.inner, node)
-    }
-
     fn delete_many(&self, nodes: Vec<NodeRef>) -> CmdResult<DeletedMany> {
         delete::delete_many(&self.inner, nodes)
-    }
-
-    fn copy_to_desktop(&self, node: NodeRef, destination: Option<String>) -> CmdResult<CopyResult> {
-        copy::copy_many(&self.inner, vec![node], destination)
     }
 
     fn copy_many(&self, nodes: Vec<NodeRef>, destination: Option<String>) -> CmdResult<CopyResult> {

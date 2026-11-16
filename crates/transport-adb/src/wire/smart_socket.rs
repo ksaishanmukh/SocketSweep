@@ -45,20 +45,3 @@ pub fn read_hex_string<R: Read>(r: &mut R) -> Wire<String> {
     r.read_exact(&mut body)?;
     Ok(String::from_utf8_lossy(&body).into_owned())
 }
-
-/// The reply to `host-serial:…:forward:` and `…:killforward:`. The server
-/// answers `OKAY` once for accepting the request and again for the result, and
-/// for `tcp:0` follows with the chosen port as a length-prefixed string. A
-/// refusal is a `FAIL` in place of either `OKAY`.
-pub fn read_forward_reply<R: Read>(r: &mut R, expect_port: bool) -> Wire<Option<u16>> {
-    read_status(r)?;
-    read_status(r)?;
-    if !expect_port {
-        return Ok(None);
-    }
-    let port = read_hex_string(r)?;
-    match port.trim().parse::<u16>() {
-        Ok(p) if p != 0 => Ok(Some(p)),
-        _ => Err(WireError::Bad(format!("port {port:?}"))),
-    }
-}

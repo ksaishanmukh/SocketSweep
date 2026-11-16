@@ -101,11 +101,6 @@ fn queries_sort_by_the_requested_metric() {
     let view = t.view(ROOT, 1, SizeMetric::Disk).unwrap();
     assert_eq!(view.hidden, 1);
 
-    let groups = t.type_breakdown(SizeMetric::Disk);
-    assert_eq!(groups[0].label, "Photos");
-    let groups = t.type_breakdown(SizeMetric::Apparent);
-    assert_eq!(groups[0].label, "Video");
-
     let hits = t.search("SPARSE", 10, SizeMetric::Disk);
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].parent.as_deref(), Some("/sdcard"));

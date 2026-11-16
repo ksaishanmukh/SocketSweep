@@ -111,7 +111,10 @@ impl Scenario<'_> {
         let (_, _, v_apparent, _) =
             fixture::measure_on_device(self.transport, &cfg.serial, &vpath)?;
         let v_own = dir_size(self.transport, &cfg.serial, &vpath)?;
-        let deleted = cmd("delete", self.app.delete(row(view, victim)?))?;
+        let deleted = cmd(
+            "delete_many",
+            self.app.delete_many(vec![row(view, victim)?]),
+        )?;
         ensure(
             deleted.items == u64::from(gone.files + gone.dirs + 1),
             || {
@@ -159,9 +162,9 @@ impl Scenario<'_> {
         let dest = cfg.work.join("copies");
         let _ = std::fs::remove_dir_all(&dest);
         let copied = cmd(
-            "copy_to_desktop",
+            "copy_many",
             self.app
-                .copy_to_desktop(row(view, source)?, Some(dest.display().to_string())),
+                .copy_many(vec![row(view, source)?], Some(dest.display().to_string())),
         )?;
         ensure(
             (copied.files, copied.bytes, copied.skipped, copied.renamed)

@@ -109,7 +109,6 @@ pub(crate) struct DeferredEnt {
 pub(crate) struct Running {
     pub dir: DirId,
     pub kind: TaskKind,
-    pub since: Micros,
 }
 
 #[derive(Debug, Clone, Default)]

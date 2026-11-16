@@ -15,7 +15,6 @@ fn constants_match_the_specification() {
     assert_eq!(HOST_PING_INTERVAL.as_secs(), 5);
     assert_eq!(HOST_DEAD_AFTER.as_secs(), 15);
     assert_eq!(DAEMON_DEAD_AFTER.as_secs(), 30);
-    assert_eq!(STALL_THRESHOLD.as_secs(), 3);
     // The liveness timeouts are ordered so a busy peer is never mistaken for a
     // dead one.
     assert!(HEARTBEAT_INTERVAL * 3 < HOST_DEAD_AFTER);

@@ -176,8 +176,7 @@ pub struct DeviceInfo {
 pub struct Output {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
-    /// The exit code, or `None` from a phone too old for adb's shell protocol
-    /// v2, which mixes stderr into stdout and reports no exit code.
+    /// The exit code, or `None` if the shell did not report one.
     pub exit: Option<i32>,
 }
 

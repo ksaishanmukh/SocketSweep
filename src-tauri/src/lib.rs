@@ -68,9 +68,6 @@ shell_commands! {
     ) -> View;
     fn get_breadcrumbs(node: NodeRef) -> Vec<Crumb>;
     fn get_treemap(node: Option<NodeRef>, depth: Option<u32>, by: Option<SizeMetric>) -> TreemapNode;
-    fn largest_files(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<Row>;
-    fn type_breakdown(by: Option<SizeMetric>) -> Vec<TypeGroup>;
-    fn app_breakdown(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<AppUsage>;
     fn search(
         query: String,
         limit: Option<u32>,
@@ -81,9 +78,7 @@ shell_commands! {
     ) -> Vec<Row>;
     fn overview(by: Option<SizeMetric>) -> Overview;
     fn app_icon(app: String) -> Option<String>;
-    fn delete(node: NodeRef) -> Deleted;
     fn delete_many(nodes: Vec<NodeRef>) -> DeletedMany;
-    fn copy_to_desktop(node: NodeRef, destination: Option<String>) -> CopyResult;
     fn copy_many(nodes: Vec<NodeRef>, destination: Option<String>) -> CopyResult;
     fn cancel_copy() -> ();
 }

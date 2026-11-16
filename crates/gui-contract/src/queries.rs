@@ -110,13 +110,3 @@ pub struct AppUsage {
     /// The largest folder the package owns, for navigating to it.
     pub node: NodeRef,
 }
-
-/// Total size of one broad file category (images, video, …).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct TypeGroup {
-    pub category: Category,
-    pub label: String,
-    pub size: Size,
-    pub files: u32,
-}

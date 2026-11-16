@@ -76,7 +76,7 @@ pub struct AppConfig {
     pub helper: HelperOptions,
     /// Where scan history is kept; `None` keeps none.
     pub history_file: Option<PathBuf>,
-    /// Where `copyToDesktop` copies when the GUI names no destination: the
+    /// Where `copyMany` copies when the GUI names no destination: the
     /// desktop.
     pub default_destination: Option<PathBuf>,
     pub scan_opts: ScanOpts,

@@ -2,9 +2,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use socketsweep_wire::{
-    Limits, Outcome, ScanEvent, ScanMode, ScanOpts, TierCfg, Totals, ROOT_DIR, STALL_THRESHOLD,
-};
+use socketsweep_wire::{Limits, Outcome, ScanEvent, ScanMode, ScanOpts, TierCfg, Totals, ROOT_DIR};
 
 use super::{DirRec, Micros, ScanState, WorkerSlot, NONE, PROGRESS_INTERVAL};
 use crate::fs::RootInfo;
@@ -65,8 +63,6 @@ impl ScanState {
             listed: 0,
             big: Vec::new(),
             links: HashSet::new(),
-            files_seen: 0,
-            disk_seen: 0,
             start: now,
             last_progress: now,
             progress_interval: PROGRESS_INTERVAL,
@@ -153,7 +149,7 @@ impl ScanState {
             && now.saturating_sub(self.last_progress) >= self.progress_interval
         {
             self.last_progress = now;
-            self.emit_progress(now);
+            self.emit_progress();
         }
     }
 
@@ -161,24 +157,10 @@ impl ScanState {
         (now.saturating_sub(self.start) / 1000).min(u64::from(u32::MAX)) as u32
     }
 
-    fn emit_progress(&mut self, now: Micros) {
-        let stall = STALL_THRESHOLD.as_micros() as u64;
-        let stalled = self
-            .workers
-            .iter()
-            .filter_map(|w| w.task)
-            .filter(|t| now.saturating_sub(t.since) > stall)
-            .map(|t| (t.dir, (now.saturating_sub(t.since) / 1000) as u32))
-            .collect();
-        let active = self.tier_active();
+    fn emit_progress(&mut self) {
         self.out.push(ScanEvent::Progress {
             listed: self.listed,
             known: self.dirs.len() as u32,
-            files: self.files_seen,
-            disk: self.disk_seen,
-            pending: self.dirs[0].pending_desc,
-            alloc: active.map(|a| a.min(255) as u8),
-            stalled,
         });
     }
 

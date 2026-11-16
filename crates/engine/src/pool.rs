@@ -4,8 +4,8 @@
 //! lock; apply; unlock`, and every event produced under the lock is handed
 //! to the [`EventSink`] before the lock is released, which is what makes the
 //! event order the order of state changes. A ticker thread wakes
-//! the state periodically (skeleton budget, `Progress`, stalled
-//! directories) while every worker is busy in a long task.
+//! the state periodically (skeleton budget, `Progress`)
+//! while every worker is busy in a long task.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};

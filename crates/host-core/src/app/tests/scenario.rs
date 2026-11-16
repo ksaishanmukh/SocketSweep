@@ -117,7 +117,6 @@ fn queries_and_history(rig: &Rig, dcim: NodeRef) {
     let app = &rig.app;
     let crumbs = app.get_breadcrumbs(dcim).unwrap();
     assert_eq!(crumbs.len(), 2);
-    assert_eq!(app.largest_files(None, None).unwrap()[0].name, "pic.jpg");
     assert_eq!(
         app.search("PIC".into(), None, None, None, None, None)
             .unwrap()
@@ -125,8 +124,9 @@ fn queries_and_history(rig: &Rig, dcim: NodeRef) {
         1
     );
     assert_eq!(app.get_treemap(None, None, None).unwrap().children.len(), 2);
-    assert_eq!(app.type_breakdown(None).unwrap()[0].label, "Photos");
-    assert!(app.app_breakdown(None, None).unwrap().is_empty());
+    let overview = app.overview(None).unwrap();
+    assert_eq!(overview.biggest_files[0].name, "pic.jpg");
+    assert!(overview.apps.is_empty());
 
     // History records the completed scan.
     let history = History::new(rig.dir.join("history.json"));
@@ -138,16 +138,23 @@ fn queries_and_history(rig: &Rig, dcim: NodeRef) {
 
 fn delete_a_file(rig: &Rig, root: NodeRef, dcim: NodeRef, a: NodeRef) {
     let app = &rig.app;
-    assert_eq!(app.delete(root).unwrap_err().code, ErrorCode::Invalid);
-    let deleted = app.delete(a).unwrap();
+    assert_eq!(
+        app.delete_many(vec![root]).unwrap_err().code,
+        ErrorCode::Invalid
+    );
+    let deleted = app.delete_many(vec![a]).unwrap();
     assert_eq!(deleted.items, 1);
+    assert!(deleted.failures.is_empty());
     assert_eq!(deleted.totals.size.apparent, 1000);
     assert_eq!(deleted.view.node, dcim);
     assert!(rig.daemon.messages().contains(&ClientMsg::Delete {
         path: b"/storage/emulated/0/a.txt".to_vec(),
         hint: None
     }));
-    assert_eq!(app.delete(a).unwrap_err().code, ErrorCode::Removed);
+    assert_eq!(
+        app.delete_many(vec![a]).unwrap_err().code,
+        ErrorCode::Removed
+    );
 }
 
 fn copy_folder(rig: &Rig, dcim: NodeRef) {
@@ -158,7 +165,7 @@ fn copy_folder(rig: &Rig, dcim: NodeRef) {
         b"jpeg".to_vec(),
         0o644,
     );
-    let copied = app.copy_to_desktop(dcim, None).unwrap();
+    let copied = app.copy_many(vec![dcim], None).unwrap();
     assert_eq!((copied.files, copied.bytes, copied.skipped), (1, 4, 1));
     let local = rig.dir.join("Desktop").join("DCIM").join("pic.jpg");
     assert_eq!(std::fs::read(&local).unwrap(), b"jpeg");

@@ -36,14 +36,13 @@
 //! host port that something has to clean up (a crashed host would leak it in
 //! the long-lived adb server) and a window in which another local process can
 //! connect to it. The direct service has neither, so it is the only approach
-//! implemented. The forward helpers ([`AdbTransport::forward_any`],
-//! [`AdbTransport::forward_remove`]) exist for diagnostics.
+//! implemented.
 //!
 //! # Pull
 //!
-//! Uses sync `RCV2` (adb's RECV2) when the device advertises the `sendrecv_v2`
-//! feature, else v1 `RECV`. Both answer with `DATA` chunks then `DONE`, or
-//! `FAIL`. Bytes go to `<local>.part`, which is renamed over `local` on success
+//! Uses sync `RCV2` (adb's RECV2), which every adbd from Android 11 (the
+//! minimum) advertises as `sendrecv_v2`; it answers with `DATA` chunks then
+//! `DONE`, or `FAIL`. Bytes go to `<local>.part`, which is renamed over `local` on success
 //! and deleted on failure. The mtime is restored from a `STAT` made first on
 //! the same sync connection, which also turns a missing file into a clear
 //! error before any data flows.

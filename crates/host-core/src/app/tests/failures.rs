@@ -110,7 +110,7 @@ fn progress_shows_the_view_asked_for_by_focus_and_get_view_does_not_change_it() 
     assert_eq!(view.node, dcim);
     assert!(view.rows.is_empty(), "{view:?}");
 
-    // Reading a view, whatever its cap, leaves that alone: `delete` answers
+    // Reading a view, whatever its cap, leaves that alone: `delete_many` answers
     // with the focused folder under the same cap.
     let full = app
         .get_view(Some(dcim), Some(10), None, None, None)
@@ -120,7 +120,7 @@ fn progress_shows_the_view_asked_for_by_focus_and_get_view_does_not_change_it() 
         &app.get_view(None, None, None, None, None).unwrap(),
         "a.txt",
     );
-    let deleted = app.delete(a).unwrap();
+    let deleted = app.delete_many(vec![a]).unwrap();
     assert_eq!(deleted.view.node, dcim);
     assert!(deleted.view.rows.is_empty(), "{:?}", deleted.view);
 }

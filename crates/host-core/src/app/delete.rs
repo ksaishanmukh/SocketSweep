@@ -2,9 +2,7 @@
 
 use std::collections::HashMap;
 
-use socketsweep_gui_contract::{
-    DeleteFailure, Deleted, DeletedMany, NodeId, NodeRef, Size, Totals, View,
-};
+use socketsweep_gui_contract::{DeleteFailure, DeletedMany, NodeId, NodeRef, Size, Totals, View};
 
 use super::errors::{client_err, tree_err, CmdResult};
 use super::state::{Busy, Inner, Scan};
@@ -17,18 +15,6 @@ struct Target {
     id: NodeId,
     path: Vec<u8>,
     display: String,
-}
-
-pub(super) fn delete(inner: &Inner, node: NodeRef) -> CmdResult<Deleted> {
-    let done = delete_many(inner, vec![node])?;
-    if let Some(failure) = done.failures.into_iter().next() {
-        return Err(failure.error);
-    }
-    Ok(Deleted {
-        items: done.items,
-        totals: done.totals,
-        view: done.view,
-    })
 }
 
 pub(super) fn delete_many(inner: &Inner, nodes: Vec<NodeRef>) -> CmdResult<DeletedMany> {

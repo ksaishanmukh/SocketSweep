@@ -96,9 +96,6 @@ fn delete_many_skips_nested_nodes_and_reports_each_failure() {
     let names: Vec<_> = left.rows.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["com.b"]);
     assert_eq!(done.totals.files, 2);
-
-    // The single delete is the same path, failing as a whole.
-    assert_eq!(rig.app.delete(b).unwrap_err().code, ErrorCode::Daemon);
 }
 
 #[test]

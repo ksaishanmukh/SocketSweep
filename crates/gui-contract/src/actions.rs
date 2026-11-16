@@ -1,24 +1,10 @@
-//! What `delete`, `deleteMany`, `copyToDesktop` and `copyMany` answer.
+//! What `deleteMany` and `copyMany` answer.
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use specta_typescript::Number;
 
 use crate::{CommandError, NodeRef, Size, Totals, View};
-
-/// The answer to `delete`, once the phone confirms.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Deleted {
-    /// Files and folders removed.
-    #[specta(type = Number)]
-    pub items: u64,
-    /// The whole tree's totals afterwards.
-    pub totals: Totals,
-    /// The focused folder, refreshed; its nearest surviving ancestor if it
-    /// was inside what was deleted.
-    pub view: View,
-}
 
 /// The answer to `deleteMany`, once the phone has answered for every node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -36,7 +22,8 @@ pub struct DeletedMany {
     pub failures: Vec<DeleteFailure>,
     /// The whole tree's totals afterwards.
     pub totals: Totals,
-    /// As on [`Deleted`].
+    /// The focused folder, refreshed; its nearest surviving ancestor if it
+    /// was inside what was deleted.
     pub view: View,
 }
 
@@ -49,7 +36,7 @@ pub struct DeleteFailure {
     pub error: CommandError,
 }
 
-/// The answer to `copyToDesktop` and `copyMany`, once every file is copied.
+/// The answer to `copyMany`, once every file is copied.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CopyResult {
