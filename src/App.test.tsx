@@ -106,7 +106,7 @@ describe("App", () => {
 
     act(() => emit.connectionLost({ serial: "s", message: "The phone stopped answering." }));
 
-    expect(await screen.findByRole("button", { name: /Connect Device/ })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Scan this phone" })).toBeTruthy();
     expect(screen.getByText(/The phone stopped answering\./)).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Overview" })).toBeNull();
   });

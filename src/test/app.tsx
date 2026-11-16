@@ -57,6 +57,9 @@ export async function renderBrowsing({
   tab?: "overview" | "explorer";
 } = {}) {
   const user = userEvent.setup();
+  commands.listDevices.mockResolvedValue([
+    { serial: "s", model: "Pixel", state: "ready", usable: true, hint: null },
+  ]);
   commands.connect.mockResolvedValue(connected());
   commands.startScan.mockResolvedValue(started());
   commands.getView.mockResolvedValue(view);
@@ -65,7 +68,7 @@ export async function renderBrowsing({
   commands.overview.mockResolvedValue(overview);
 
   render(<App />);
-  await user.click(await screen.findByRole("button", { name: /Connect Device/ }));
+  await user.click(await screen.findByRole("button", { name: "Scan this phone" }));
   await act(async () => emit.scanProgress(progress({ totals: totals({ files: 3 }) })));
   await screen.findByRole("tab", { name: "Overview" });
   if (tab === "explorer") {
