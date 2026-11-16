@@ -1,9 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ViewSort } from "../api";
-import { DEFAULT_SORT, NO_FILTERS, filtersOf, viewFilter, type Filters } from "../lib/viewOptions";
+import { readPrefs } from "../lib/prefs";
+import { filtersOf, viewFilter, type Filters } from "../lib/viewOptions";
 import type { ViewOptions } from "./types";
 
-const DEFAULT_OPTIONS: ViewOptions = { sort: DEFAULT_SORT, filter: viewFilter(NO_FILTERS, "") };
+/** Sort and filters start as last left; the search box always starts empty. */
+function initialOptions(): ViewOptions {
+  const { sort, filters } = readPrefs();
+  return { sort, filter: viewFilter(filters, "") };
+}
 
 /**
  * How the list is asked for: sort, filters and the search box.
@@ -16,8 +21,9 @@ const DEFAULT_OPTIONS: ViewOptions = { sort: DEFAULT_SORT, filter: viewFilter(NO
  * queries.
  */
 export function useViewOptions() {
-  const optionsRef = useRef<ViewOptions>(DEFAULT_OPTIONS);
-  const [options, setOptions] = useState<ViewOptions>(DEFAULT_OPTIONS);
+  const [initial] = useState(initialOptions);
+  const optionsRef = useRef<ViewOptions>(initial);
+  const [options, setOptions] = useState<ViewOptions>(initial);
   const [text, setText] = useState("");
   const [everywhere, setEverywhere] = useState(false);
   const filters = useMemo(() => filtersOf(options.filter), [options.filter]);
