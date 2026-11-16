@@ -12,16 +12,10 @@ use socketsweep_engine::{Fs, RecordingSink, Scan};
 use socketsweep_sim::{Checker, RandomShape, SimFs, SlowFs};
 use socketsweep_wire::{DirId, Outcome, ScanEvent, ScanMode, ScanOpts};
 
-fn small_opts(workers: u8, max_depth: u16, mode: ScanMode) -> ScanOpts {
+fn small_opts(workers: u8, mode: ScanMode) -> ScanOpts {
     ScanOpts {
         workers: Some(workers),
-        max_depth,
         mode,
-        // Small trees scan in tens of milliseconds: scale the ramp and the
-        // skeleton budget down with them.
-        ramp_ms: 5,
-        skeleton_budget_ms: 10,
-        ..ScanOpts::default()
     }
 }
 
@@ -125,13 +119,12 @@ proptest! {
         workers in 1u8..=8,
         script in steps(),
         deletes in any::<bool>(),
-        max_depth in prop_oneof![Just(64u16), 1u16..5],
         mode in prop_oneof![Just(ScanMode::Focus), Just(ScanMode::Plain)],
     ) {
         let fs = slow(SimFs::random(tree, RandomShape::default()));
-        let opts = small_opts(workers, max_depth, mode);
+        let opts = small_opts(workers, mode);
         let (events, pruned) = run_script(&fs, &opts, &script, deletes);
-        common::check_complete(&fs.inner, &opts, &events, pruned == 0);
+        common::check_complete(&fs.inner, &events, pruned == 0);
         let n = events.iter().filter(|e| matches!(e, ScanEvent::Pruned { .. })).count();
         prop_assert_eq!(n, pruned);
     }
@@ -141,9 +134,9 @@ proptest! {
     fn hardlinks_count_once(tree in any::<u64>(), workers in 1u8..=8) {
         let shape = RandomShape { hardlinks: true, ..RandomShape::default() };
         let fs = slow(SimFs::random(tree, shape));
-        let opts = small_opts(workers, 64, ScanMode::Focus);
+        let opts = small_opts(workers, ScanMode::Focus);
         let (events, _) = run_script(&fs, &opts, &[], false);
-        common::check_complete(&fs.inner, &opts, &events, false);
+        common::check_complete(&fs.inner, &events, false);
     }
 
     /// A cancelled scan still ends with `Finished { Cancelled }` (or completes
@@ -152,7 +145,7 @@ proptest! {
     #[test]
     fn cancel_ends_cleanly(tree in any::<u64>(), workers in 1u8..=8, after_us in 0u64..20_000) {
         let fs = slow(SimFs::random(tree, RandomShape::default()));
-        let opts = small_opts(workers, 64, ScanMode::Focus);
+        let opts = small_opts(workers, ScanMode::Focus);
         let sink = Arc::new(RecordingSink::new());
         let scan = Scan::new(fs.root(fs.inner.root_path()).unwrap(), &opts, Arc::clone(&sink));
         let runner = {

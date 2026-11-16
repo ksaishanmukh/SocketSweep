@@ -2,14 +2,14 @@
 #![allow(dead_code)]
 
 use socketsweep_sim::{done_totals, Checker, SimFs};
-use socketsweep_wire::{Outcome, ScanEvent, ScanOpts, Totals};
+use socketsweep_wire::{Outcome, ScanEvent, Totals};
 
 /// Everything a complete scan must satisfy: G1–G3, totals equal to the ground
 /// truth of the live tree (every directory when `per_dir`, else the root),
 /// and each directory listed and each entry stat'ed exactly once. Without
 /// `per_dir` (deletes, hardlinks) flags may be a superset and the newest mtime
 /// higher: a prune clears neither (wire `Totals::subtract`).
-pub fn check_complete(fs: &SimFs, opts: &ScanOpts, events: &[ScanEvent], per_dir: bool) {
+pub fn check_complete(fs: &SimFs, events: &[ScanEvent], per_dir: bool) {
     Checker::check(events).unwrap_or_else(|e| panic!("event stream: {e}"));
     let Some(ScanEvent::Finished {
         outcome, totals, ..
@@ -18,7 +18,7 @@ pub fn check_complete(fs: &SimFs, opts: &ScanOpts, events: &[ScanEvent], per_dir
         panic!("no Finished at the end");
     };
     assert_eq!(*outcome, Outcome::Complete);
-    let truth = fs.truth(opts.max_depth, opts.one_filesystem);
+    let truth = fs.truth();
     let want = truth.root();
     if per_dir {
         assert_eq!(*totals, want, "root totals");

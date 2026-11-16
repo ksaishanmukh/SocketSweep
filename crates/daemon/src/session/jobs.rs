@@ -29,16 +29,14 @@ impl Shared {
         }
     }
 
-    pub(super) fn start_scan(self: &Arc<Self>, id: ReqId, root: Vec<u8>, mut opts: ScanOpts) {
+    pub(super) fn start_scan(self: &Arc<Self>, id: ReqId, root: Vec<u8>, opts: ScanOpts) {
         let Some((resolved, info)) = self.open_scan_root(id, &root) else {
             return;
         };
-        let limits = self.cfg.limits;
-        opts.max_depth = opts.max_depth.min(limits.max_depth);
         let workers = opts
             .workers
             .unwrap_or(self.cfg.workers)
-            .clamp(1, limits.max_workers);
+            .clamp(1, self.cfg.limits.max_workers);
         let sink = ScanSink {
             id,
             outbox: Arc::clone(&self.outbox),

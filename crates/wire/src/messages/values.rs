@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(doc)]
-use super::{ScanEvent, ScanOpts, ServerMsg};
+use super::{ScanEvent, ServerMsg};
 use crate::{DirId, BLOCK_SIZE};
 
 /// One directory entry.
@@ -71,10 +71,11 @@ pub struct Totals {
 impl Totals {
     /// Some directory in the subtree could not be read, so the sums are low.
     pub const UNREADABLE: u8 = 1 << 0;
-    /// Some directory lay beyond [`ScanOpts::max_depth`] and was not walked.
+    /// Some directory lay beyond the daemon's depth limit (64 below the
+    /// root) and was not walked.
     pub const DEPTH_LIMIT: u8 = 1 << 1;
-    /// Some mount point was not crossed because of
-    /// [`ScanOpts::one_filesystem`].
+    /// Some mount point was not crossed: the scan stays on the root's file
+    /// system.
     pub const OTHER_FS: u8 = 1 << 2;
 
     /// Add a child's totals into these.

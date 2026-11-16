@@ -1,6 +1,6 @@
 //! What a worker is handed and what it gives back.
 
-use socketsweep_wire::{DirId, FsOp, Tier};
+use socketsweep_wire::{DirId, FsOp};
 
 #[cfg(doc)]
 use super::ScanState;
@@ -22,8 +22,6 @@ pub enum TaskKind {
 pub struct Task {
     pub dir: DirId,
     pub kind: TaskKind,
-    /// The tier the task was taken from.
-    pub tier: Tier,
     /// The directory's full path.
     pub path: Vec<u8>,
     /// [`TaskKind::StatDir`] only: the names to stat, in order.

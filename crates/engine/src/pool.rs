@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use socketsweep_wire::{DirId, Limits, Outcome, ScanOpts, Totals};
 
 use crate::fs::{Fs, Interrupt, RootInfo};
-use crate::sched::{Micros, Pick, ScanState, TierSnapshot};
+use crate::sched::{Micros, Pick, ScanState};
 use crate::sink::EventSink;
 
 /// How long a worker waits before looking again when the sink is congested.
@@ -151,12 +151,6 @@ impl<S: EventSink> Scan<S> {
     /// The root's totals so far.
     pub fn totals(&self) -> Totals {
         self.lock().root_totals()
-    }
-
-    /// The current allocation between tiers.
-    pub fn tiers(&self) -> TierSnapshot {
-        let now = self.now();
-        self.lock().tiers(now)
     }
 
     /// The path of a directory this scan has introduced.

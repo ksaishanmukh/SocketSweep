@@ -9,6 +9,6 @@ mod server;
 mod values;
 
 pub use client::{ClientFrame, ClientMsg};
-pub use options::{Limits, ScanMode, ScanOpts, Tier, TierCfg};
+pub use options::{Limits, ScanMode, ScanOpts};
 pub use server::{ErrCode, FsOp, Outcome, ScanEvent, ServerFrame, ServerMsg};
 pub use values::{CopyItem, Entry, Kind, Stat, Totals};

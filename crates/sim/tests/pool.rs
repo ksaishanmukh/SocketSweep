@@ -7,9 +7,9 @@ mod common;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use socketsweep_engine::{Fs, RecordingSink, Scan};
-use socketsweep_sim::{Checker, RandomShape, SimFs, SlowFs};
-use socketsweep_wire::{DirId, Outcome, ScanEvent, ScanOpts};
+use socketsweep_engine::{Fs, RecordingSink, Scan, MAX_DEPTH};
+use socketsweep_sim::{Checker, RandomShape, SimFs, SlowFs, TreeBuilder};
+use socketsweep_wire::{DirId, Outcome, ScanEvent, ScanMode, ScanOpts, Totals};
 
 fn opts(workers: u8) -> ScanOpts {
     ScanOpts {
@@ -60,7 +60,7 @@ fn pool_is_exact_on_random_trees() {
             let sink = Arc::new(RecordingSink::new());
             let scan = Scan::new(fs.root(fs.root_path()).unwrap(), &o, Arc::clone(&sink));
             assert_eq!(scan.run(&fs), Outcome::Complete);
-            common::check_complete(&fs, &o, &sink.events(), true);
+            common::check_complete(&fs, &sink.events(), true);
         }
     }
 }
@@ -120,7 +120,7 @@ fn pool_handles_focus_prune_and_congestion_from_another_thread() {
             }
         }
         assert_eq!(runner.join().unwrap(), Outcome::Complete);
-        common::check_complete(&fs.inner, &o, &sink.events(), pruned == 0);
+        common::check_complete(&fs.inner, &sink.events(), pruned == 0);
         total_pruned += pruned;
     }
     assert!(total_pruned > 0, "no prune happened during a scan");
@@ -168,5 +168,34 @@ fn pool_cancel_ends_with_finished_cancelled() {
     ));
     for id in 0..fs.inner.len() as u32 {
         assert!(fs.inner.lists(id) <= 1 && fs.inner.stats(id) <= 1);
+    }
+}
+
+/// A chain deeper than the depth limit: the directory past it is counted as
+/// an entry but not walked, and the flag reaches the root.
+#[test]
+fn depth_limit_stops_the_walk() {
+    let mut b = TreeBuilder::new();
+    let mut d = 0;
+    for l in 0..u32::from(MAX_DEPTH) + 6 {
+        b.file(d, format!("f{l}"), 100);
+        d = b.dir(d, format!("d{l}"));
+    }
+    let fs = b.build(b"/sdcard");
+    for mode in [ScanMode::Focus, ScanMode::Plain] {
+        let sink = Arc::new(RecordingSink::new());
+        let o = ScanOpts {
+            workers: Some(3),
+            mode,
+        };
+        let scan = Scan::new(fs.root(fs.root_path()).unwrap(), &o, Arc::clone(&sink));
+        assert_eq!(scan.run(&fs), Outcome::Complete);
+        let events = sink.events();
+        common::check_complete(&fs, &events, true);
+        let Some(ScanEvent::Finished { totals, .. }) = events.last() else {
+            panic!("no Finished");
+        };
+        assert_ne!(totals.flags & Totals::DEPTH_LIMIT, 0);
+        fs.reset_counters();
     }
 }
