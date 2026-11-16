@@ -102,6 +102,8 @@ export const listenerCount = () => ({
 
 /** Call from `beforeEach`: forgets every call and answer, and drops all subscribers. */
 export function resetApi() {
+  // Remembered preferences must not leak from one test into the next.
+  globalThis.localStorage?.clear();
   for (const name of COMMAND_NAMES) commands[name].mockReset();
   events.scanProgress.mockReset().mockImplementation(subscribe(listeners.scanProgress));
   events.copyProgress.mockReset().mockImplementation(subscribe(listeners.copyProgress));

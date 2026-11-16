@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import type { Category, NodeRef, Row, SizeMetric, SortKey } from "../api";
+import { storePrefs } from "../lib/prefs";
 import { NO_FILTERS, nextSort, toggleOption, type FilterOption } from "../lib/viewOptions";
 import type { SessionDeps } from "./types";
 import type { useDisplayChoice, Mode } from "./useDisplayChoice";
@@ -34,7 +35,9 @@ export function useViewControls({ options, parts, storeMetric, deps }: ControlDe
 
   const setSortKey = useCallback(
     (key: SortKey) => {
-      storeSort(nextSort(sort, key));
+      const next = nextSort(sort, key);
+      storeSort(next);
+      storePrefs({ sort: next });
       requery();
     },
     [requery, sort, storeSort],
@@ -42,7 +45,9 @@ export function useViewControls({ options, parts, storeMetric, deps }: ControlDe
 
   const toggleFilter = useCallback(
     (option: FilterOption) => {
-      storeFilters(toggleOption(filters, option));
+      const next = toggleOption(filters, option);
+      storeFilters(next);
+      storePrefs({ filters: next });
       requery();
     },
     [filters, requery, storeFilters],
@@ -50,6 +55,7 @@ export function useViewControls({ options, parts, storeMetric, deps }: ControlDe
 
   const clearFilters = useCallback(() => {
     storeFilters(NO_FILTERS);
+    storePrefs({ filters: NO_FILTERS });
     requery();
   }, [requery, storeFilters]);
 
