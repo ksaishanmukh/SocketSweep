@@ -114,11 +114,10 @@ impl Tree {
                 stack.push(child);
                 child = self.nodes[child as usize].next_sibling;
             }
-            if dir != NONE {
-                if let Some(Some(rec)) = self.dirs.get_mut(dir as usize) {
-                    rec.state = DirState::Gone;
-                    rec.entries = Vec::new();
-                }
+            let rec = self.dirs.get_mut(dir as usize).filter(|_| dir != NONE);
+            if let Some(Some(rec)) = rec {
+                rec.state = DirState::Gone;
+                rec.entries = Vec::new();
             }
         }
         self.sub_up(parent, &contribution);
@@ -138,16 +137,15 @@ impl Tree {
             return;
         }
         let mut cur = self.nodes[parent as usize].first_child;
-        while cur != NONE {
-            let after = self.nodes[cur as usize].next_sibling;
-            if after == id {
-                self.nodes[cur as usize].next_sibling = next;
-                if self.nodes[parent as usize].last_child == id {
-                    self.nodes[parent as usize].last_child = cur;
-                }
-                return;
-            }
-            cur = after;
+        while cur != NONE && self.nodes[cur as usize].next_sibling != id {
+            cur = self.nodes[cur as usize].next_sibling;
+        }
+        if cur == NONE {
+            return;
+        }
+        self.nodes[cur as usize].next_sibling = next;
+        if self.nodes[parent as usize].last_child == id {
+            self.nodes[parent as usize].last_child = cur;
         }
     }
 }

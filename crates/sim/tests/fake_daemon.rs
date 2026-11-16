@@ -36,11 +36,10 @@ impl Host {
         let mut reader = stream.try_clone().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            while let Ok(Some(f)) = read_frame::<_, ServerFrame>(&mut reader) {
-                if tx.send(f).is_err() {
-                    return;
-                }
-            }
+            let mut frames =
+                std::iter::from_fn(|| read_frame::<_, ServerFrame>(&mut reader).ok()?);
+            // Stops at the end of the stream or when the test drops `rx`.
+            let _ = frames.try_for_each(|f| tx.send(f));
         });
         Host {
             out: stream,
@@ -185,13 +184,12 @@ impl Observer {
     fn await_delete(&mut self, host: &Host, del: ReqId) -> (u64, Totals) {
         let mut deleted = None;
         while !self.finished() || deleted.is_none() {
-            if let Some(f) = self.take(host) {
-                assert_eq!(f.id, del, "{f:?}");
-                if let ServerMsg::Deleted { items, totals } = f.msg {
-                    deleted = Some((items, totals));
-                } else if !matches!(f.msg, ServerMsg::DeleteProgress { .. }) {
-                    panic!("delete failed: {f:?}");
-                }
+            let Some(f) = self.take(host) else { continue };
+            assert_eq!(f.id, del, "{f:?}");
+            match f.msg {
+                ServerMsg::Deleted { items, totals } => deleted = Some((items, totals)),
+                ServerMsg::DeleteProgress { .. } => {}
+                _ => panic!("delete failed: {f:?}"),
             }
         }
         deleted.unwrap()

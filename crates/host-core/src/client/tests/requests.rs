@@ -50,14 +50,16 @@ fn cancel_names_the_scan_and_the_scan_still_finishes() {
         ClientMsg::StartScan { .. } => {
             let (id, out, flag) = (frame.id, out.clone(), Arc::clone(&flag));
             std::thread::spawn(move || {
-                while !flag.load(Ordering::SeqCst) {
-                    let progress = ScanEvent::Progress {
+                let progress = || {
+                    let p = ScanEvent::Progress {
                         listed: 1,
                         known: 2,
                     };
-                    if !out.send(id, ServerMsg::Scan(vec![progress])) {
-                        return;
-                    }
+                    ServerMsg::Scan(vec![p])
+                };
+                // Until cancelled, or until the host is gone (then the last
+                // send fails too, harmlessly).
+                while !flag.load(Ordering::SeqCst) && out.send(id, progress()) {
                     std::thread::sleep(Duration::from_millis(5));
                 }
                 out.send(id, ServerMsg::Scan(vec![finished(Outcome::Cancelled)]));

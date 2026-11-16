@@ -13,7 +13,7 @@ pub mod rng;
 pub mod simfs;
 pub mod slowfs;
 
-pub use checker::{done_totals, Checker};
+pub use checker::{done_totals, join_path, Checker};
 pub use fake_daemon::{FakeDaemon, SimActions};
 pub use rng::Rng;
 pub use simfs::{NodeId, RandomShape, SimFs, TreeBuilder, Truth};

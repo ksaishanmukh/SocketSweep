@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use socketsweep_engine::{Fs, RecordingSink, Scan, MAX_DEPTH};
-use socketsweep_sim::{Checker, RandomShape, SimFs, SlowFs, TreeBuilder};
+use socketsweep_sim::{join_path, Checker, RandomShape, SimFs, SlowFs, TreeBuilder};
 use socketsweep_wire::{DirId, Outcome, ScanEvent, ScanMode, ScanOpts, Totals};
 
 fn opts(workers: u8) -> ScanOpts {
@@ -26,17 +26,12 @@ fn known_dirs(events: &[ScanEvent]) -> Vec<(DirId, Vec<u8>)> {
         match e {
             ScanEvent::Started { root, .. } => paths = vec![root.clone()],
             ScanEvent::Listing { dir, entries, .. } => {
-                for en in entries {
-                    if let Some(id) = en.id {
-                        let mut p = paths[*dir as usize].clone();
-                        p.push(b'/');
-                        p.extend_from_slice(&en.name);
-                        if paths.len() <= id as usize {
-                            paths.resize(id as usize + 1, Vec::new());
-                        }
-                        paths[id as usize] = p.clone();
-                        out.push((id, p));
-                    }
+                let base = paths[*dir as usize].clone();
+                for (id, name) in entries.iter().filter_map(|en| Some((en.id?, &en.name))) {
+                    let p = join_path(&base, name);
+                    paths.resize(paths.len().max(id as usize + 1), Vec::new());
+                    paths[id as usize] = p.clone();
+                    out.push((id, p));
                 }
             }
             _ => {}
@@ -104,13 +99,11 @@ fn pool_handles_focus_prune_and_congestion_from_another_thread() {
             seq += 1;
             let (d, _) = &known[seq as usize * 7 % known.len()];
             scan.focus(seq, *d);
-            if seq % 4 == 0 && pruned < 2 {
-                // As the session does: prune first, then delete.
-                let (d, path) = &known[known.len() - 1 - seq as usize % known.len()];
-                if scan.prune(*d) {
-                    assert!(fs.inner.delete(path));
-                    pruned += 1;
-                }
+            // As the session does: prune first, then delete.
+            let (d, path) = &known[known.len() - 1 - seq as usize % known.len()];
+            if seq % 4 == 0 && pruned < 2 && scan.prune(*d) {
+                assert!(fs.inner.delete(path));
+                pruned += 1;
             }
             if !congested_once && seq == 3 {
                 sink.set_congested(true);

@@ -115,6 +115,24 @@ fn lstat(p: &std::path::Path) -> StatResult {
         .map_err(|e| errno_of(&e))
 }
 
+/// An entry's kind, and its stat when `with_stats` or when the type is
+/// unknown (the equivalent of `DT_UNKNOWN`: stat it now).
+fn kind_and_stat(ent: &fs::DirEntry, with_stats: bool) -> (Kind, Option<StatResult>) {
+    let ftype = ent.file_type();
+    if !with_stats {
+        if let Ok(t) = ftype {
+            return (kind_of(t), None);
+        }
+    }
+    let st = lstat(&ent.path());
+    let kind = match (&st, ftype) {
+        (Ok(s), _) => s.kind,
+        (Err(_), Ok(t)) if with_stats => kind_of(t),
+        (Err(_), _) => Kind::Other,
+    };
+    (kind, Some(st))
+}
+
 impl StdFs {
     fn read(&self, dir: &[u8], with_stats: bool, intr: Interrupt<'_>) -> Result<DirRead, FsError> {
         let path = to_path(dir);
@@ -136,24 +154,7 @@ impl StdFs {
             intr.poll(i)?;
             let ent = ent.map_err(|e| fail(FsOp::ReadDir, e))?;
             let name = name_bytes(&ent.file_name());
-            let (kind, stat) = if with_stats {
-                let st = lstat(&ent.path());
-                let kind = match (&st, ent.file_type()) {
-                    (Ok(s), _) => s.kind,
-                    (Err(_), Ok(t)) => kind_of(t),
-                    (Err(_), Err(_)) => Kind::Other,
-                };
-                (kind, Some(st))
-            } else {
-                match ent.file_type() {
-                    Ok(t) => (kind_of(t), None),
-                    // The equivalent of DT_UNKNOWN: stat it now.
-                    Err(_) => {
-                        let st = lstat(&ent.path());
-                        (st.as_ref().map_or(Kind::Other, |s| s.kind), Some(st))
-                    }
-                }
-            };
+            let (kind, stat) = kind_and_stat(&ent, with_stats);
             entries.push(FsEntry { name, kind, stat });
         }
         Ok(DirRead { dev, entries })

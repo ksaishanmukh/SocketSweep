@@ -7,6 +7,9 @@ use super::category::dominant;
 use super::nodes::entry_kind;
 use super::{metric, Node, Tree, TreeError, NONE};
 
+/// Most treemap tiles per level, by depth below the requested node.
+const TREEMAP_CAPS: [usize; 3] = [48, 12, 6];
+
 impl Tree {
     pub(super) fn files_of(n: &Node) -> u32 {
         if n.is_dir() {
@@ -80,16 +83,14 @@ impl Tree {
         by: SizeMetric,
     ) -> Result<TreemapNode, TreeError> {
         self.live(id)?;
-        const CAPS: [usize; 3] = [48, 12, 6];
-        let depth = (depth as usize).min(CAPS.len());
-        Ok(self.treemap_at(id, depth, &CAPS, 0, by))
+        let depth = (depth as usize).min(TREEMAP_CAPS.len());
+        Ok(self.treemap_at(id, depth, 0, by))
     }
 
     fn treemap_at(
         &self,
         id: NodeId,
         remaining: usize,
-        caps: &[usize],
         level: usize,
         by: SizeMetric,
     ) -> TreemapNode {
@@ -110,11 +111,11 @@ impl Tree {
         }
         let mut kids = self.children_of(id);
         self.order(&mut kids, ViewSort::default(), by);
-        kids.truncate(caps.get(level).copied().unwrap_or(0));
+        kids.truncate(TREEMAP_CAPS.get(level).copied().unwrap_or(0));
         out.children = kids
             .into_iter()
             .filter(|k| metric(self.nodes[*k as usize].size(), by) > 0)
-            .map(|k| self.treemap_at(k, remaining - 1, caps, level + 1, by))
+            .map(|k| self.treemap_at(k, remaining - 1, level + 1, by))
             .collect();
         out
     }

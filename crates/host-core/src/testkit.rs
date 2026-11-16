@@ -107,11 +107,10 @@ impl FakeDaemon {
         while let Ok(Some(frame)) = read_frame::<_, ClientFrame>(&mut input) {
             lock(&self.received).push(frame.clone());
             match frame.msg {
-                ClientMsg::Ping { nonce } => {
-                    if self.greeting != Greeting::AcceptThenSilent {
-                        responder.send(frame.id, ServerMsg::Pong { nonce });
-                    }
+                ClientMsg::Ping { nonce } if self.greeting != Greeting::AcceptThenSilent => {
+                    responder.send(frame.id, ServerMsg::Pong { nonce });
                 }
+                ClientMsg::Ping { .. } => {}
                 ClientMsg::Shutdown => return,
                 _ => (self.handler)(&frame, &responder),
             }
@@ -126,18 +125,20 @@ impl FakeDaemon {
         let daemon = self.clone();
         let serial_owned = serial.to_string();
         transport.on_shell(serial, move |command| {
-            if let Some(launch) = parse_launch_command(command) {
-                let t = weak.upgrade()?;
-                let token = token_from_hex(&launch.token_hex)?;
-                let d = daemon.clone();
-                t.on_tunnel(&serial_owned, &launch.socket, move |end| {
-                    d.serve(end, token)
-                });
-            }
-            Some(Output {
+            let ok = Some(Output {
                 exit: Some(0),
                 ..Output::default()
-            })
+            });
+            let Some(launch) = parse_launch_command(command) else {
+                return ok;
+            };
+            let t = weak.upgrade()?;
+            let token = token_from_hex(&launch.token_hex)?;
+            let d = daemon.clone();
+            t.on_tunnel(&serial_owned, &launch.socket, move |end| {
+                d.serve(end, token)
+            });
+            ok
         });
     }
 }

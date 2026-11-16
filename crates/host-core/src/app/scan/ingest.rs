@@ -10,7 +10,7 @@ use socketsweep_gui_contract::{
 };
 use socketsweep_wire::{Outcome, ScanEvent, ServerMsg};
 
-use crate::app::state::{Inner, Scan};
+use crate::app::state::{Inner, Scan, ScanMeta};
 use crate::app::HostEvent;
 use crate::lock;
 use crate::tree::{Ingested, TreeError, ROOT};
@@ -90,52 +90,8 @@ impl Scan {
         let mut tree = lock(&self.tree);
         let mut meta = lock(&self.meta);
         for event in events {
-            match tree.ingest(event)? {
-                Ingested::Tree => {}
-                Ingested::SkeletonReady {
-                    listed,
-                    frontier,
-                    elapsed_ms,
-                } => {
-                    meta.skeleton = Some(SkeletonReady {
-                        listed,
-                        frontier,
-                        elapsed_ms,
-                    });
-                    if meta.phase == ScanPhase::Skeleton {
-                        meta.phase = ScanPhase::Measuring;
-                    }
-                }
-                Ingested::FocusState { seq, node, settled } => {
-                    if meta.daemon_focus.is_none_or(|(s, ..)| seq >= s) {
-                        meta.daemon_focus = Some((seq, node, settled));
-                    }
-                }
-                Ingested::Progress { listed, known } => {
-                    meta.listed = listed;
-                    meta.known = known;
-                }
-                Ingested::Finished {
-                    outcome,
-                    elapsed_ms,
-                    ..
-                } => {
-                    let (outcome, message) = match outcome {
-                        Outcome::Complete => (ScanOutcome::Complete, None),
-                        Outcome::Cancelled => (ScanOutcome::Cancelled, None),
-                        Outcome::Aborted { code } => (
-                            ScanOutcome::Failed,
-                            Some(format!("The phone stopped the scan ({code:?}).")),
-                        ),
-                    };
-                    meta.finished = Some(ScanFinished {
-                        outcome,
-                        elapsed_ms,
-                        message,
-                    });
-                    meta.phase = ScanPhase::Finished;
-                    return Ok(true);
-                }
+            if note(&mut meta, tree.ingest(event)?) {
+                return Ok(true);
             }
         }
         Ok(false)
@@ -169,4 +125,57 @@ impl Scan {
             view: tree.view_query(watching, &meta.view).ok(),
         }
     }
+}
+
+/// Record what the tree reported about one event in `meta`; `true` once the
+/// scan has finished.
+fn note(meta: &mut ScanMeta, ingested: Ingested) -> bool {
+    match ingested {
+        Ingested::Tree => {}
+        Ingested::SkeletonReady {
+            listed,
+            frontier,
+            elapsed_ms,
+        } => {
+            meta.skeleton = Some(SkeletonReady {
+                listed,
+                frontier,
+                elapsed_ms,
+            });
+            if meta.phase == ScanPhase::Skeleton {
+                meta.phase = ScanPhase::Measuring;
+            }
+        }
+        Ingested::FocusState { seq, node, settled } => {
+            if meta.daemon_focus.is_none_or(|(s, ..)| seq >= s) {
+                meta.daemon_focus = Some((seq, node, settled));
+            }
+        }
+        Ingested::Progress { listed, known } => {
+            meta.listed = listed;
+            meta.known = known;
+        }
+        Ingested::Finished {
+            outcome,
+            elapsed_ms,
+            ..
+        } => {
+            let (outcome, message) = match outcome {
+                Outcome::Complete => (ScanOutcome::Complete, None),
+                Outcome::Cancelled => (ScanOutcome::Cancelled, None),
+                Outcome::Aborted { code } => (
+                    ScanOutcome::Failed,
+                    Some(format!("The phone stopped the scan ({code:?}).")),
+                ),
+            };
+            meta.finished = Some(ScanFinished {
+                outcome,
+                elapsed_ms,
+                message,
+            });
+            meta.phase = ScanPhase::Finished;
+            return true;
+        }
+    }
+    false
 }

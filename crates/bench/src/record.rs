@@ -185,15 +185,13 @@ impl Recorder {
         seen.0 += entries.len() as u64;
         seen.1 += entries.iter().filter(|e| e.stat.is_none()).count() as u64;
         self.entries += entries.len() as u64;
-        for en in entries {
-            if let Some(id) = en.id {
-                let mut p = base.clone();
-                if p.last() != Some(&b'/') {
-                    p.push(b'/');
-                }
-                p.extend_from_slice(&en.name);
-                self.introduce(id, p, depth + 1)?;
+        for (id, name) in entries.iter().filter_map(|en| Some((en.id?, &en.name))) {
+            let mut p = base.clone();
+            if p.last() != Some(&b'/') {
+                p.push(b'/');
             }
+            p.extend_from_slice(name);
+            self.introduce(id, p, depth + 1)?;
         }
         if last {
             self.listed += 1;

@@ -22,4 +22,4 @@ socketsweep-host-core.workspace = true
 socketsweep-transport-adb.workspace = true
 
 [lints.clippy]
-too_many_lines = "warn"
+excessive_nesting = "warn"

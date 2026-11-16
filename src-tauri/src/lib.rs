@@ -22,6 +22,8 @@ use tauri::{Emitter, Manager, State};
 macro_rules! shell_commands {
     ($(fn $name:ident($($arg:ident: $ty:ty),* $(,)?) -> $ret:ty;)*) => {
         $(
+            // The contract command's parameters, plus the app state.
+            #[allow(clippy::too_many_arguments)]
             #[tauri::command]
             async fn $name(
                 app: State<'_, Arc<App>>,

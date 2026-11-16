@@ -48,6 +48,9 @@ macro_rules! commands {
         pub trait Commands: Send + Sync {
             $(
                 $(#[doc = $doc])*
+                // The parameters are the GUI command's, one per key the
+                // generated bindings send.
+                #[allow(clippy::too_many_arguments)]
                 fn $name(&self, $($arg: $ty),*) -> Result<$ret, CommandError>;
             )*
         }

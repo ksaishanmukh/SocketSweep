@@ -53,7 +53,11 @@ pub fn run(
         .collect();
     warm_up(client, cfg, &none, &mut records, log)?;
     measured_runs(client, cfg, &scripts, &mut records, log)?;
-    Ok(build_report(client, device, cfg, root, &scripts, records))
+    Ok(Report {
+        device: device.to_string(),
+        daemon_build: client.welcome().daemon_build.clone(),
+        ..build_report(cfg, root, &scripts, records)
+    })
 }
 
 fn warm_up(
@@ -114,20 +118,14 @@ fn measured_runs(
     Ok(())
 }
 
-fn build_report(
-    client: &Client,
-    device: &str,
-    cfg: &Config,
-    root: String,
-    scripts: &[Script],
-    records: Vec<RunRecord>,
-) -> Report {
+/// The report of these runs; the caller fills in the device and daemon.
+fn build_report(cfg: &Config, root: String, scripts: &[Script], records: Vec<RunRecord>) -> Report {
     let summary = crate::summary::summarise(&records);
     let criteria = crate::summary::criteria(&records);
     Report {
         root,
-        device: device.to_string(),
-        daemon_build: client.welcome().daemon_build.clone(),
+        device: String::new(),
+        daemon_build: String::new(),
         workers: cfg.workers,
         runs: cfg.runs,
         seed: cfg.seed,
