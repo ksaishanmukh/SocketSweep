@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/socket_sweep_logo.png" alt="SocketSweep Logo" width="200" />
+  <img src="src-tauri/icons/128x128@2x.png" alt="SocketSweep icon" width="128" />
   <h1>SocketSweep</h1>
   <p><strong>See what is using your Android storage, fast, over USB. No app to install on the phone.</strong></p>
 
@@ -12,31 +12,36 @@
 
 ---
 
-## Status
+## Download
 
-> [!IMPORTANT]
-> **The v4 rebuild is in progress on this branch (`rebuild/v4`). Nothing here is released yet.**
->
-> The current working app is the **v3 code on `main`**. This branch is being
-> rebuilt around the architecture in [docs/architecture.md](docs/architecture.md),
-> so parts of this README describe the design being built, not something you can
-> run today. Performance figures in the spec are **targets**, not measurements.
->
-> If you want a working build today, use the [upstream releases](https://github.com/VishnuSrivatsava/SocketSweep/releases).
+Get the installer for Windows, macOS or Linux from the
+[releases page](https://github.com/ksaishanmukh/SocketSweep/releases).
+The builds are not code-signed, so Windows SmartScreen and macOS Gatekeeper
+will ask you to confirm the first launch.
 
 ## Why
 
 Browsing a phone's storage over MTP is slow: folder sizes take minutes to
 calculate, and there is no fast way to find the largest files. SocketSweep skips
 MTP. It runs a small native program on the phone, reached through `adb`, and
-shows the result as an interactive treemap on your desktop.
+reads the whole of shared storage in well under a second once the phone's file
+cache is warm (see [Benchmarks](#benchmarks)).
 
-<div align="center">
-  <img src="assets/ui.png" alt="Connection dashboard (v3)" width="45%" />
-  <img src="assets/tree.png" alt="Treemap (v3)" width="45%" />
-  <br />
-  <em>v3 screenshots. The v4 interface will differ.</em>
-</div>
+## What you get
+
+- **Overview.** Space by category (video, photos, audio, documents, archives,
+  other), the biggest files, space by app with the app's real name and icon,
+  and what changed since the last scan. Leftover folders of uninstalled apps
+  are flagged.
+- **Explorer.** A sortable list of the current folder with a resizable treemap
+  strip above it. Breadcrumbs with back and forward, search within the folder,
+  and filters by category, files or folders, and when they last changed.
+- **Multi-select actions.** Tick several files or folders, then delete them on
+  the phone or copy them to your computer.
+- **Live from the first moment.** The folder tree appears almost at once and
+  sizes fill in as the scan runs, with the folder you are looking at scanned
+  first.
+- **Calm, readable theme** that follows your system's light or dark setting.
 
 ## How it works
 
@@ -44,11 +49,11 @@ shows the result as an interactive treemap on your desktop.
    Rust binary to `/data/local/tmp` on the phone and starts it. Nothing is
    installed as an app, and no root is needed.
 2. **An adb tunnel carries the traffic.** The daemon listens on an abstract unix
-   socket, and the desktop reaches it through `adb forward`. There is no network
-   port on the phone.
-3. **The scan is skeleton-first.** The daemon first lists the top few levels of
-   the tree, so the treemap has something to draw almost at once. Sizes (file
-   stats) are filled in afterwards, and folder totals climb as they arrive.
+   socket, and the desktop reaches it through adb. There is no network port on
+   the phone.
+3. **The scan is skeleton-first.** The daemon first lists the top levels of the
+   tree, so there is something to show almost at once. Sizes (file stats) are
+   filled in afterwards, and folder totals climb as they arrive.
 4. **Workers move toward where you are looking.** A pool of worker threads walks
    the storage in parallel. The daemon splits them into three groups, by
    distance from the folder you have open:
@@ -60,12 +65,45 @@ shows the result as an interactive treemap on your desktop.
    it gradually as they finish their current task: a folder you only pass through
    gets little help, and one you stay in gets more. Nothing is interrupted
    part-way, and no worker sits idle while there is work left.
-5. **Delete and copy.** Delete runs on the phone, inside the scanned root, and the
+5. **App names and icons come from a tiny helper.** A few Java classes, run with
+   `app_process` as the adb shell user, list installed apps with their labels
+   and icons, so `Android/data/com.whatsapp` shows as WhatsApp.
+6. **Delete and copy.** Delete runs on the phone, inside the scanned root, and the
    scan updates its totals as it goes. Copy-to-desktop gets a file list from the
    daemon and pulls the bytes with adb sync, over a few parallel connections.
 
 Supported phones: Android 11 (API 30) or newer. The daemon is built for 64-bit
 ARM (phones) and x86_64 (the emulator, used for end-to-end tests).
+
+## Benchmarks
+
+Measured with `socketsweep-bench` (below) on a OnePlus CPH2649, Android 17
+(API 37), scanning all of shared storage (`/sdcard`): **110,068 files in
+14,041 folders, 83.2 GB**, with the default 8 workers.
+
+| Scan | Whole tree sized | First folder listing |
+|---|---|---|
+| Cold: first scan after a reboot | 4.9 s | 105 ms |
+| Warm: phone's file cache populated | **0.60 s** median, 0.67 s p90 | **45 ms** |
+
+The cold run is a single measurement after a reboot (108,136 files at the
+time); only a reboot empties the phone's cache without root. The warm rows are
+the median and 90th percentile of 5 runs.
+
+**Focus costs nothing measurable.** Steering workers towards the open folder is
+compared against the engine's plain mode (no skeleton, no focus), which serves
+as the baseline:
+
+| Script | Focus vs plain, total time (median) | Directory opens |
+|---|---|---|
+| a: scan only | 1.018× | 1.002× |
+| b: open Music at 300 ms, a subfolder at 2 s | 1.021× | 1.002× |
+| c: jump between folders | 0.997× | 1.002× |
+
+On a warm cache the whole tree is sized before the first scripted click, so
+focus has nothing to speed up there. Its benefit shows on cold scans: in one
+cold-ish run, Music settled 36 ms after it was opened with focus, against 87 ms
+without it.
 
 ## Architecture
 
@@ -77,16 +115,17 @@ To find your way around the code, start with the **[code tour](docs/code-tour.md
 
 ```
 React GUI ──► src-tauri (thin shell) ──► host-core ──► transport-adb ──► phone daemon
+                                                                     └─► app helper
 ```
 
 | Boundary | Contract | Fake |
 |---|---|---|
 | GUI and host | `crates/gui-contract`: command and event types, with generated TypeScript bindings | `src/api` mock in vitest |
 | Host and transport | `crates/transport`: the `Transport` and `Duplex` traits | `FakeTransport` |
-| Host and phone | `crates/wire`: protocol v5, checked by golden byte tests | `FakeDaemon` (in `crates/sim`) |
+| Host and phone | `crates/wire`: protocol v5, checked by golden byte tests; the app helper's line format | `FakeDaemon` (in `crates/sim`) |
 | Daemon internals | The `Fs` and `EventSink` traits; the scheduler is a pure state machine | `SimFs`, a recording sink |
 
-### Workspace layout (target)
+### Workspace layout
 
 | Path | Role |
 |---|---|
@@ -94,15 +133,14 @@ React GUI ──► src-tauri (thin shell) ──► host-core ──► transpo
 | `crates/gui-contract` | GUI and host command and event types |
 | `crates/transport` | `Transport` trait and `FakeTransport` |
 | `crates/transport-adb` | adb implementation: smart sockets, shell v2, sync, USB and wireless |
-| `crates/host-core` | Tree index, session client, focus debounce, delete and copy orchestration |
-| `crates/daemon` | Phone binary: listener, session, scheduler, aggregation, worker pool, filesystem walk, actions |
+| `crates/host-core` | Tree index, session client, focus debounce, overview, filters, delete and copy orchestration |
+| `crates/engine` | The scan scheduler and aggregation, pure and shared by the daemon and the simulator |
+| `crates/daemon` | Phone binary: listener, session, worker pool, filesystem walk, actions |
+| `android-helper` | Java helper reporting installed apps' names and icons |
 | `crates/sim` | Dev only: simulated filesystem, simulator, baseline walker, `FakeDaemon` |
+| `crates/bench` | Benchmark and end-to-end runner against a phone or emulator |
 | `src-tauri` | Thin shell that maps generated commands to `host-core` |
 | `src/` | React features, importing only the generated bindings through `src/api/` |
-| `crates/bench` | Benchmark and end-to-end runner against a phone or emulator |
-
-The benchmark baseline is the engine's plain mode (no skeleton, no deferred
-stats, no focus), so both sides of the comparison share one code path.
 
 ## Security
 
@@ -110,9 +148,9 @@ The daemon runs on your phone and can delete files, so how it is reached and wha
 it will act on both matter.
 
 - **Abstract socket, no network port.** The daemon binds an abstract unix socket
-  and the desktop reaches it through `adb forward`. An installed app cannot
-  connect to a socket owned by the `shell` SELinux domain, which loopback TCP
-  would not prevent.
+  and the desktop reaches it through adb. An installed app cannot connect to a
+  socket owned by the `shell` SELinux domain, which loopback TCP would not
+  prevent.
 - **Token handshake.** The desktop generates 32 random bytes per session and
   gives them to the daemon through the `SOCKETSWEEP_TOKEN` environment variable,
   not on the command line. Every connection begins with a `Hello` carrying the
@@ -123,16 +161,18 @@ it will act on both matter.
   directory is resolved and the final path component is removed as it sits.
 - **Reuses your adb server.** The host talks to an already-running adb server
   instead of restarting it.
-
-None of the v4 security design has been verified on hardware yet.
+- **The helper only reads.** It lists apps and renders icons for the current
+  user; it changes nothing on the phone.
 
 ## Using the app
 
 1. Enable **USB debugging** on the phone: Settings, About phone, tap Build number
    seven times, then Settings, Developer options, USB debugging.
-2. Connect the phone with a USB cable and open SocketSweep.
-3. Click **Connect**, then **Scan**. Click blocks in the treemap to drill down.
-   Delete from the app, or copy a folder to your desktop.
+2. Connect the phone with a USB cable, open SocketSweep, and tap **Allow** on the
+   phone when it asks.
+3. Click **Scan this phone**. Start from the Overview, or open the Explorer to
+   browse folders, sort, filter and search. Tick items to delete them or copy
+   them to your computer.
 
 Troubleshooting:
 
@@ -141,6 +181,8 @@ Troubleshooting:
   itself. Some phone makers need an extra toggle, for example Xiaomi's "USB
   debugging (Security settings)".
 - **Samsung, USB debugging greyed out:** turn off Settings, Security, Auto Blocker.
+- **Apps show as package names:** the app helper could not run (for example on a
+  work profile). Sizes are unaffected.
 
 ## Building from source
 
@@ -157,16 +199,15 @@ You do not need adb on your `PATH`; the setup script fetches a pinned copy.
 npm install
 npm run setup           # downloads pinned platform-tools, verifies its SHA-256, puts adb in src-tauri/bin/
 npm run build:daemon    # cross-compiles the phone daemon (needs the NDK)
+npm run build:helper    # compiles the app helper (needs a JDK 17+ and the Android SDK)
 npm run tauri dev       # run the desktop app with a phone plugged in
 ```
 
-`npm run build:helper` compiles the on-phone app-info helper (`android-helper/`,
-a few Java files that report installed apps' names and icons) to
-`src-tauri/bin/socketsweep-helper.dex`. It needs a JDK 17+ and an Android SDK
-with a platform (API 30+) and build-tools, found through `ANDROID_HOME` or
-`ANDROID_SDK_ROOT`. Instead of building either the daemon or the helper, you
-can download them from the `daemon` and `helper` artifacts of a CI run into
-`src-tauri/bin`.
+`npm run build:helper` writes `src-tauri/bin/socketsweep-helper.dex`. It needs
+an Android SDK with a platform (API 30+) and build-tools, found through
+`ANDROID_HOME` or `ANDROID_SDK_ROOT`. Instead of building either the daemon or
+the helper, you can download them from the `daemon` and `helper` artifacts of a
+CI run into `src-tauri/bin`.
 
 `npm run build:daemon` writes gzip-compressed `src-tauri/bin/daemon-arm64.gz` and
 `src-tauri/bin/daemon-x86_64.gz`; both are bundled with the app (compressed so
@@ -186,8 +227,8 @@ daemon first, it is picked from `src-tauri/bin` by the device's ABI):
 
 ```bash
 # The engine's focus mode against its plain mode (the baseline), scripts a/b/c,
-# median and p90 table, results in socketsweep-bench.json
-cargo run --release -p socketsweep-bench -- run --serial <serial> --runs 10
+# median and p90 table, results in socketsweep-bench.json. Read-only.
+cargo run --release -p socketsweep-bench -- run --serial <serial> --runs 5
 # The seeded fixture (50,000 files, 3,000 folders) pushed to /sdcard/ssfixture
 cargo run --release -p socketsweep-bench -- fixture --seed 1
 # Connect, scan, focus, delete, copy and disconnect through host-core, on that fixture
@@ -197,10 +238,13 @@ cargo run --release -p socketsweep-bench -- e2e --seed 1
 The `Emulator end-to-end` workflow runs the last two (and a three-run benchmark)
 on an x86_64 emulator nightly; start it by hand from the Actions tab.
 
+Releases are built by CI: pushing a `v*` tag builds Windows, macOS and Linux
+installers and attaches them to a draft release.
+
 ## Origins and credit
 
 SocketSweep was created by **[VishnuSrivatsava](https://github.com/VishnuSrivatsava/SocketSweep)**.
-This fork started from that project and is being rebuilt with the architecture
+This fork started from that project and has been rebuilt with the architecture
 above. The idea of pushing a native binary over adb and talking to it through a
 local socket was inspired by [scrcpy](https://github.com/Genymobile/scrcpy).
 
