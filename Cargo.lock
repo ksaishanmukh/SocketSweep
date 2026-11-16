@@ -3180,7 +3180,6 @@ dependencies = [
 name = "socketsweep-sim"
 version = "1.0.0"
 dependencies = [
- "postcard",
  "proptest",
  "socketsweep-daemon",
  "socketsweep-engine",

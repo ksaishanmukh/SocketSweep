@@ -42,7 +42,7 @@ Every contract has a **fake** implementation, so each side can be tested alone.
 | `crates/host-core`     | Tree index, session client, focus debounce, delete/copy orchestration, history                                            |
 | `crates/daemon`        | Phone binary (lib + bin): `listener`, `session`, `outbox`, `fs_rustix` (`fswalk`), `actions`; the scan is `crates/engine` |
 | `crates/engine`        | `sched`, `aggregate`, `pool`, `trait Fs`, `trait EventSink`, `StdFs`                                                      |
-| `crates/sim`           | Dev-only: `SimFs`, discrete-event simulator, jwalk-like baseline, `FakeDaemon`                                            |
+| `crates/sim`           | Dev-only: `SimFs`, the G1–G3 checker, `SlowFs`, `FakeDaemon`                                                              |
 | `crates/bench`         | Dev-only: on-device benchmark (focus vs plain mode), the seeded device fixture, the emulator end-to-end test              |
 | `src-tauri`            | Thin shell: maps generated commands to host-core and emits events                                                         |
 | `src/`                 | React features that import only `src/bindings.ts`, through `src/api/`                                                     |
@@ -496,30 +496,25 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
 
 ## 5. Testing
 
-- **Simulator (`crates/sim`):**
+- **Test tools (`crates/sim`):**
   - `SimFs` generates seeded `/sdcard`-shaped trees: about 300 packages under
     `Android/data`, a 5,000-file camera folder, one 60,000-file folder, deep
     chains, and thousands of empty directories.
-  - The latency model has separate costs for listing names and for stats,
-    multiplied by a contention factor.
-  - A discrete-event simulator with a virtual clock and W virtual workers.
-  - A jwalk-like baseline engine (per-worker LIFO, stealing the oldest) to
-    check that the engine's plain mode (section 6) is a fair baseline: on
-    the standard tree it must finish within 1.10× of it.
-- **Properties (proptest):**
+  - A checker for G1–G3, written from the host's point of view.
+  - `SlowFs` wraps an `Fs` with real delays, so the pool's tasks overlap.
+- **Properties (proptest, on the real threaded pool over `SimFs`):** random
+  trees, worker counts, depth limits and both scan modes, with focus changes,
+  clears and deletes (a prune, then the delete) played from another thread:
   - each directory is listed and stat'ed exactly once;
   - totals match the ground truth, including after deletes;
   - G1–G3 hold;
-  - after the ramp, each tier's active count is within 1 of its target within
-    one task length;
-  - the Back floor holds whenever Back has work;
-  - `SkeletonReady` arrives within 1 s of virtual time.
+  - a scan cancelled at any moment still ends with `Finished`.
 
-  Golden traces catch scheduling regressions.
+  The scheduler's tier targets and floors are unit-tested in `engine/sched`.
 
 - **Integration:**
-  - the threaded pool runs against `RealFs` and a `SlowFs` wrapper that adds
-    delays;
+  - the threaded pool runs against `StdFs` on a temporary tree, and against
+    `SimFs` under `SlowFs`;
   - host-core runs against `FakeDaemon` and `FakeTransport`;
   - an emulator end-to-end CI job (`.github/workflows/e2e.yml`, on an
     `e2e-*` tag or by hand) boots an API 33 x86_64 emulator, builds
@@ -546,9 +541,6 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
     host works unchanged;
   - workers spread over the root's subtrees (fewest workers, then most known
     work) and walk each depth first, as with no focus in focus mode.
-
-  The v3 jwalk engine is gone; the simulator keeps a jwalk-like walk only to
-  check that the plain mode is not a straw man (section 5).
 
 - **Tool:** `socketsweep-bench` (`crates/bench`) runs both modes on one
   connection over adb and prints a median/p90 table plus the criteria below,

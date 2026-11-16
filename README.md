@@ -134,10 +134,10 @@ React GUI ──► src-tauri (thin shell) ──► host-core ──► transpo
 | `crates/transport` | `Transport` trait and `FakeTransport` |
 | `crates/transport-adb` | adb implementation: smart sockets, shell v2, sync, USB and wireless |
 | `crates/host-core` | Tree index, session client, focus debounce, overview, filters, delete and copy orchestration |
-| `crates/engine` | The scan scheduler and aggregation, pure and shared by the daemon and the simulator |
+| `crates/engine` | The scan scheduler and aggregation, pure and shared by the daemon and the tests |
 | `crates/daemon` | Phone binary: listener, session, worker pool, filesystem walk, actions |
 | `android-helper` | Java helper reporting installed apps' names and icons |
-| `crates/sim` | Dev only: simulated filesystem, simulator, baseline walker, `FakeDaemon` |
+| `crates/sim` | Dev only: simulated filesystem, G1–G3 checker, `FakeDaemon` |
 | `crates/bench` | Benchmark and end-to-end runner against a phone or emulator |
 | `src-tauri` | Thin shell that maps generated commands to `host-core` |
 | `src/` | React features, importing only the generated bindings through `src/api/` |

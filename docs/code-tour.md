@@ -15,7 +15,7 @@ unless a link says otherwise.
 | [`crates/engine`](../crates/engine)               | The scan brain on the phone: scheduler, aggregation, worker pool, `Fs`.     | [`pool.rs`](../crates/engine/src/pool.rs), [`sched/`](../crates/engine/src/sched), [`aggregate/`](../crates/engine/src/aggregate), [`fs.rs`](../crates/engine/src/fs.rs), [`sink.rs`](../crates/engine/src/sink.rs)  |
 | [`crates/daemon`](../crates/daemon)               | The phone binary: listener, session, outbox, delete/metadata actions.       | [`listener.rs`](../crates/daemon/src/listener.rs), [`session/`](../crates/daemon/src/session), [`outbox/`](../crates/daemon/src/outbox), [`actions/`](../crates/daemon/src/actions)                                  |
 | [`crates/host-core`](../crates/host-core)         | Everything the desktop does, with no Tauri: tree index, client, actions.    | [`app/`](../crates/host-core/src/app), [`apps/`](../crates/host-core/src/apps), [`client/`](../crates/host-core/src/client), [`tree/`](../crates/host-core/src/tree), [`focus.rs`](../crates/host-core/src/focus.rs) |
-| [`crates/sim`](../crates/sim)                     | Dev only: simulated filesystem, simulator, checkers, `FakeDaemon`.          | [`simfs.rs`](../crates/sim/src/simfs.rs), [`fake_daemon.rs`](../crates/sim/src/fake_daemon.rs), [`des.rs`](../crates/sim/src/des.rs), [`checker.rs`](../crates/sim/src/checker.rs)                                   |
+| [`crates/sim`](../crates/sim)                     | Dev only: simulated filesystem, G1–G3 checker, `FakeDaemon`.                | [`simfs/`](../crates/sim/src/simfs), [`fake_daemon.rs`](../crates/sim/src/fake_daemon.rs), [`checker/`](../crates/sim/src/checker), [`tests/properties.rs`](../crates/sim/tests/properties.rs)                       |
 | [`crates/bench`](../crates/bench)                 | Benchmark, fixture and end-to-end runner against a real device.             | [`main.rs`](../crates/bench/src/main.rs) (usage), [`bench.rs`](../crates/bench/src/bench.rs), [`e2e.rs`](../crates/bench/src/e2e.rs), [`fixture.rs`](../crates/bench/src/fixture.rs)                                 |
 | [`src-tauri`](../src-tauri)                       | Thin Tauri shell: one Tauri command per contract command, event forwarding. | [`src/lib.rs`](../src-tauri/src/lib.rs) (`shell_commands!`, `forward`), [`tauri.conf.json`](../src-tauri/tauri.conf.json)                                                                                            |
 | [`src/`](../src)                                  | The React GUI.                                                              | [`api/index.ts`](../src/api/index.ts), [`hooks/`](../src/hooks), [`components/`](../src/components), [`lib/`](../src/lib)                                                                                            |
@@ -246,7 +246,7 @@ npm run lint && npm run typecheck && npm run format:check
 npm test               # vitest
 cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo test -p socketsweep-sim      # one crate, e.g. the simulator tests
+cargo test -p socketsweep-sim      # one crate, e.g. the pool property tests
 ```
 
 Against a real phone or emulator (build the daemon first; the options are

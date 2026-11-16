@@ -1,6 +1,6 @@
 [package]
 name = "socketsweep-sim"
-description = "Dev-only: SimFs, a discrete-event simulator of the v4 engine, a jwalk-like baseline, and FakeDaemon"
+description = "Dev-only: SimFs, the G1-G3 checker and FakeDaemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,6 @@ socketsweep-engine = { workspace = true }
 socketsweep-wire = { workspace = true }
 socketsweep-daemon = { workspace = true }
 socketsweep-transport = { workspace = true, features = ["fake"] }
-postcard = { workspace = true }
 
 [dev-dependencies]
 proptest = "1.5"

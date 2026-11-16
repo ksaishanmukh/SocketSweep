@@ -2,7 +2,7 @@
 //! files in 3,000 directories, one of which holds 30,000 files, shaped like
 //! a small `/sdcard`.
 //!
-//! The tree is built with the simulator's [`TreeBuilder`] and [`Rng`], so the
+//! The tree is built with the sim crate's [`TreeBuilder`] and [`Rng`], so the
 //! same seed gives the same tree on the device (pushed as a tar archive and
 //! extracted there), in [`SimFs`] for offline tests, and in the end-to-end
 //! test's expectations. File contents are pseudo-random bytes derived from

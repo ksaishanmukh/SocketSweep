@@ -1,4 +1,4 @@
-//! Shared checks for the simulator and pool tests.
+//! Shared checks for the pool tests.
 #![allow(dead_code)]
 
 use socketsweep_sim::{done_totals, Checker, SimFs};

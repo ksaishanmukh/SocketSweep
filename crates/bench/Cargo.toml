@@ -21,7 +21,7 @@ socketsweep-gui-contract = { workspace = true }
 socketsweep-transport = { workspace = true }
 socketsweep-transport-adb = { workspace = true }
 socketsweep-wire = { workspace = true }
-# The fixture tree is built with the simulator's seeded generator, so the
+# The fixture tree is built with the sim crate's seeded generator, so the
 # device fixture, its expected totals and the offline tests agree.
 socketsweep-sim = { workspace = true }
 postcard = { workspace = true }
