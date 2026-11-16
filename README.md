@@ -55,16 +55,12 @@ cache is warm (see [Benchmarks](#benchmarks)).
    tree, so there is something to show almost at once. Sizes (file stats) are
    filled in afterwards, and folder totals climb as they arrive.
 4. **Workers move toward where you are looking.** A pool of worker threads walks
-   the storage in parallel. The daemon splits them into three groups, by
-   distance from the folder you have open:
-   - **open folder**: the folder you are browsing;
-   - **neighbours**: its siblings;
-   - **background**: everything else, so the whole scan keeps moving.
-
-   When you open a folder, the desktop tells the daemon. Workers shift towards
-   it gradually as they finish their current task: a folder you only pass through
-   gets little help, and one you stay in gets more. Nothing is interrupted
-   part-way, and no worker sits idle while there is work left.
+   the storage in parallel. When you open a folder, the desktop tells the
+   daemon, and each worker that finishes its current task takes work from that
+   folder next, except for a quarter of them (at least one), which keep the
+   rest of the scan moving. Nothing is interrupted part-way, and no worker sits
+   idle while there is work left: once the open folder is measured, every
+   worker goes back to the rest.
 5. **App names and icons come from a tiny helper.** A few Java classes, run with
    `app_process` as the adb shell user, list installed apps with their labels
    and icons, so `Android/data/com.whatsapp` shows as WhatsApp.
@@ -122,7 +118,7 @@ React GUI ──► src-tauri (thin shell) ──► host-core ──► transpo
 |---|---|---|
 | GUI and host | `crates/gui-contract`: command and event types, with generated TypeScript bindings | `src/api` mock in vitest |
 | Host and transport | `crates/transport`: the `Transport` and `Duplex` traits | `FakeTransport` |
-| Host and phone | `crates/wire`: protocol v6; the app helper's line format | `FakeDaemon` (in `crates/sim`) |
+| Host and phone | `crates/wire`: protocol v7; the app helper's line format | `FakeDaemon` (in `crates/sim`) |
 | Daemon internals | The `Fs` and `EventSink` traits; the scheduler is a pure state machine | `SimFs`, a recording sink |
 
 ### Workspace layout

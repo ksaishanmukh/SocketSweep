@@ -39,7 +39,7 @@ edit it.
 2. **Phone side.** Start with the pure parts.
    - [`engine/fs.rs`](../crates/engine/src/fs.rs) (`Fs`), then
      [`engine/sched/`](../crates/engine/src/sched): a pure state machine.
-     Read `mod.rs`, `task.rs`, `tiers.rs`, `pick.rs`, `focus.rs`.
+     Read `mod.rs`, `task.rs`, `focus.rs` (the rule), `pick.rs`, `table.rs`.
    - [`engine/aggregate/`](../crates/engine/src/aggregate) and
      [`pool.rs`](../crates/engine/src/pool.rs): what workers emit and how
      threads drive the scheduler.
@@ -122,13 +122,15 @@ signal.
    (`Scan::focus`) takes the scheduler lock and calls `set_focus` in
    [`sched/focus.rs`](../crates/engine/src/sched/focus.rs). A `seq` lower than
    one already seen is ignored.
-9. **Tiers and seats.** Folders are sorted into tiers (open, near, back) by
-   their relation to the focus; see `tier_of`, `targets` and `choose_tier` in
-   [`sched/tiers.rs`](../crates/engine/src/sched/tiers.rs). Each tier gets a
-   share of the worker seats.
+9. **The rule.** Waiting work is either focused (the folder's subtree, plus
+   its parent's deferred stats) or background. Free workers take focused
+   work, except a floor of `max(1, W/4)` kept on the background; see
+   `choose_lane` and `bg_floor` in
+   [`sched/focus.rs`](../crates/engine/src/sched/focus.rs).
 10. **Pick.** An idle worker (`Scan::worker` in `pool.rs`) asks the scheduler
     to `pick` ([`sched/pick.rs`](../crates/engine/src/sched/pick.rs)), which
-    chooses a tier and then a task inside it (`find_task`, `start_task`).
+    chooses a side and then a task on it (`find_focused`,
+    `find_background`, `start_task`).
 11. **Read.** The worker runs the task against the `Fs` trait
     ([`engine/fs.rs`](../crates/engine/src/fs.rs)): the real implementation is
     [`daemon/fs_rustix.rs`](../crates/daemon/src/fs_rustix.rs), tests use
@@ -191,12 +193,14 @@ message, a daemon handler) holds for delete and for starting a scan.
   send it from [`host-core/client/requests.rs`](../crates/host-core/src/client/requests.rs).
   Bump the protocol version whenever the wire format changes, and handle it in
   [`sim/fake_daemon.rs`](../crates/sim/src/fake_daemon.rs).
-- **Change scheduling behaviour.** Defaults (tier weights, ramp times, skeleton
-  limits) are in [`wire/messages/options.rs`](../crates/wire/src/messages/options.rs)
-  (`ScanOpts`, `TierCfg`); the logic is in
-  [`engine/sched/tiers.rs`](../crates/engine/src/sched/tiers.rs) and
-  [`pick.rs`](../crates/engine/src/sched/pick.rs). Check with the sim tests
-  and the bench.
+- **Change scheduling behaviour.** The constants (skeleton limits, depth
+  limit, big-job size) are in [`engine/sched/mod.rs`](../crates/engine/src/sched/mod.rs);
+  the focus rule and its floor in
+  [`focus.rs`](../crates/engine/src/sched/focus.rs), the choice of task in
+  [`pick.rs`](../crates/engine/src/sched/pick.rs), with unit tests in
+  `tests.rs`. The host sends only `ScanOpts { workers, mode }`
+  ([`wire/messages/options.rs`](../crates/wire/src/messages/options.rs)).
+  Check with the sim tests and the bench.
 - **Change what a folder listing contains.**
   [`engine/aggregate/`](../crates/engine/src/aggregate), then `tree/ingest` on
   the host.

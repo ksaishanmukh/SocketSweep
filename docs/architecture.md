@@ -28,7 +28,7 @@ Every contract has a **fake** implementation, so each side can be tested alone.
 | ---------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------- |
 | GUI ↔ host       | `crates/gui-contract`: command and event types                 | `tauri-specta` generates `src/bindings.ts`; CI fails if it is stale. React code imports only `src/api/` | `src/api` mock in vitest           |
 | host ↔ transport | `crates/transport`: `trait Transport`, `trait Duplex`          | Rust trait; host-core depends on the trait only                                                         | `FakeTransport` (in-memory device) |
-| host ↔ phone     | `crates/wire`: protocol v6                                     | One crate for both ends; the version must match exactly                                                 | `FakeDaemon` (in `crates/sim`)     |
+| host ↔ phone     | `crates/wire`: protocol v7                                     | One crate for both ends; the version must match exactly                                                 | `FakeDaemon` (in `crates/sim`)     |
 | daemon internals | `trait Fs`, `trait EventSink`; `sched` is a pure state machine | Rust traits                                                                                             | `SimFs`, a recording sink          |
 
 ### Workspace layout
@@ -51,7 +51,7 @@ The daemon is built for `aarch64-linux-android` (phones) and
 `x86_64-linux-android` (emulator, for end-to-end tests), at API 30 (Android 11)
 and above. One phone at a time, but every contract carries a session id.
 
-## 2. Wire protocol v6 (host ↔ phone)
+## 2. Wire protocol v7 (host ↔ phone)
 
 ### Framing
 
@@ -65,7 +65,7 @@ fresh daemon every session, so the two always come from the same build and
 there is nothing to negotiate: the version must match exactly.
 
 ```rust
-pub const PROTOCOL_VERSION: u16 = 6;
+pub const PROTOCOL_VERSION: u16 = 7;
 pub type ReqId = u32;      // chosen by the host, never 0; 0 = session-level
 pub type DirId = u32;      // assigned by the daemon per scan, dense, root = 0
 pub type SessionId = [u8; 16];
@@ -99,10 +99,7 @@ pub enum ClientMsg {
     PrepareCopy { path: Vec<u8> },
     Shutdown,
 }
-pub struct ScanOpts { workers: Option<u8>, max_depth: u16, skeleton_budget_ms: u16,
-                      skeleton_min_depth: u8, skeleton_max_depth: u8,
-                      one_filesystem: bool, tiers: [TierCfg; 3], ramp_ms: u16,
-                      mode: ScanMode }
+pub struct ScanOpts { workers: Option<u8>, mode: ScanMode }  // the rest is the daemon's
 pub enum ScanMode { Focus, Plain }   // Plain: the benchmark baseline (section 6)
 
 pub struct ServerFrame { id: ReqId, msg: ServerMsg }  // id 0 = session-level
@@ -186,7 +183,7 @@ W worker threads.
 | `listener`  | Bind the abstract socket and accept connections                                                       | An authenticated new connection replaces the old one                                                                                                                               |
 | `session`   | Handshake, reader thread, writer thread with two queues                                               | `trait EventSink { fn bulk(&self, Vec<ScanEvent>); fn control(&self, ServerFrame); fn congested(&self) -> bool; }`                                                                 |
 | `fswalk`    | Read a directory and stat its entries                                                                 | `trait Fs { fn read_names(..); fn stat_all(..); fn list_full(..); }`. The real version uses rustix: `openat(O_DIRECTORY\|O_NOFOLLOW)`, `getdents64`, `statat(AT_SYMLINK_NOFOLLOW)` |
-| `sched`     | Directory table, tiers, allocation, choosing work. Pure: no threads, time passed in                   | inputs → `Vec<ScanEvent>`                                                                                                                                                          |
+| `sched`     | Directory table, the focus rule, choosing work. Pure: no threads, time passed in                      | inputs → `Vec<ScanEvent>`                                                                                                                                                          |
 | `aggregate` | Running totals, open-child counts, the completion cascade                                             | Lives in `ScanState` under the same lock as `sched`                                                                                                                                |
 | `pool`      | Worker threads                                                                                        | `loop { lock; pick; unlock; do task; lock; apply; unlock }`                                                                                                                        |
 | `actions`   | Delete (symlink-safe guard: canonicalise the parent, never follow the final component), copy manifest | —                                                                                                                                                                                  |
@@ -282,12 +279,13 @@ struct DirRec {
   `SubtreeDone(D)`, adds D's totals to its parent, and decrements the parent's
   `open_children`.
 - **Failures and limits:** a directory that fails to open emits `DirFailed` and
-  completes with `errors: 1` and `UNREADABLE`. A subdirectory beyond
-  `max_depth` is not walked: it is listed with `id: None` (so it never gets a
-  `DirId`), counted as an entry, and its parent gets `DEPTH_LIMIT`. With
-  `one_filesystem`, a directory whose own device (from the open handle; a
-  `Names` listing has no stats) differs from the root's is listed as empty and
-  completes with `OTHER_FS`; its entries were read once and are discarded.
+  completes with `errors: 1` and `UNREADABLE`. A subdirectory more than 64
+  levels below the root (`engine::MAX_DEPTH`) is not walked: it is listed with
+  `id: None` (so it never gets a `DirId`), counted as an entry, and its parent
+  gets `DEPTH_LIMIT`. The scan stays on the root's file system: a directory
+  whose own device (from the open handle; a `Names` listing has no stats)
+  differs from the root's is listed as empty and completes with `OTHER_FS`;
+  its entries were read once and are discarded.
 - **`None` stats:** a `None` stat in a `Listing` always promises a `Stats` slot.
   For a `Full` listing, entries whose `lstat` failed are sent straight after
   the listing as `Stats` runs of `None`. If a `StatDir` cannot reopen its
@@ -299,109 +297,83 @@ struct DirRec {
 
 ### Skeleton phase (breadth-first without barriers)
 
-- **Ordering:** the Back tier (or, with no focus, everything) hands out `Names`
-  tasks shallowest-first, using per-depth FIFO buckets. No worker ever waits
-  for a level to finish. With a focus, the Open and Near tiers use `Full`
-  tasks even during the skeleton phase.
+- **Ordering:** background work (with no focus, everything) is handed out as
+  `Names` tasks shallowest-first, using per-depth FIFO buckets. No worker ever
+  waits for a level to finish. Focused work uses `Full` tasks even during the
+  skeleton phase: its sizes are what the user is waiting for.
 - **Phase end:** the skeleton phase ends when one of these holds: the frontier
-  holds at least 4 × W directories **and** the depth reached is at least
-  `skeleton_min_depth` (2), the 1 s budget runs out, or the depth reaches
-  `skeleton_max_depth` (4). The _frontier_ is the directories known but not
-  yet listed (waiting or being read); the _depth reached_ is the shallowest
-  depth that still has such a directory, so every level above it is listed.
+  holds at least 4 × W directories **and** the depth reached is at least 2,
+  the 1 s budget runs out, or the depth reaches 4 (engine constants
+  `SKELETON_MIN_DEPTH`, `SKELETON_BUDGET`, `SKELETON_MAX_DEPTH`). The
+  _frontier_ is the directories known but not yet listed (waiting or being
+  read); the _depth reached_ is the shallowest depth that still has such a
+  directory, so every level above it is listed.
 - **After the skeleton:** remaining work is depth-first (preferring the highest
   `DirId`), using `Full` tasks. Skeleton directories still owe a `StatDir`.
 - **Big jobs:** a skeleton listing tells the size of its deferred stats. A
-  `StatDir` of at least 2,048 entries is handed out before anything else in its
-  tier, largest first, so one huge folder does not become the scan's tail.
+  `StatDir` of at least 2,048 entries is handed out before other work on its
+  side of the focus, largest first, so one huge folder does not become the
+  scan's tail.
 
-### Proximity allocation (gradual hiring)
+### Focus rule
 
-The three tiers are defined relative to the open folder F and its parent P. Each
-tier's pending work is O(1), from the counters:
+With a focus F below the root, the waiting work splits in two, in O(1) from
+the counters:
 
-| Tier   | Contents                     | Pending work                           |
-| ------ | ---------------------------- | -------------------------------------- |
-| `Open` | subtree(F)                   | `pending_desc(F)`                      |
-| `Near` | the subtrees of F's siblings | `pending_desc(P) − pending_desc(F)`    |
-| `Back` | everything else              | `pending_desc(root) − pending_desc(P)` |
+| Side         | Contents                                            | Pending work                                   |
+| ------------ | --------------------------------------------------- | ---------------------------------------------- |
+| `Focused`    | subtree(F), plus the deferred stats of F's parent P | `pending_desc(F)` + P's own `StatDir`, if owed |
+| `Background` | everything else, F's siblings included              | `pending_desc(root)` − focused                 |
 
-With no focus, or with the focus at the root, everything is `Open`. The
-scheduler then behaves like a plain parallel walk, choosing anchors by the Back
-rule (fewest workers, then most work).
-
-```rust
-struct TierCfg { weight: f32, floor: u8, cap: u8 }
-// Defaults: Open { 3.0, 0, MAX } (ramps from 1.0), Near { 1.0, 1, 2 },
-//           Back { 4.0, max(1, W/4), MAX }
-```
-
-**Dwell ramp.** `w_open(t) = 1 + 2 · min(1, dwell / ramp)`, with `ramp` = 400 ms.
-A folder the user has just opened gets one worker; it gets its full share only
-if the user stays.
-
-**Seats (D'Hondt), recomputed in O(W) on every pick:**
-
-1. Give the floors first.
-2. Give each remaining seat to the tier with the highest
-   `weight / (seats + 1)`, among tiers that are below their cap and still have
-   work. Ties go to the nearer tier.
-3. Seats a tier cannot use go to the other tiers, so no worker sits idle while
-   any work exists. A tier "can use" its running workers plus its waiting
-   tasks. Seats left over after every tier reaches its cap go, by the same
-   quotient, to tiers that still have work beyond their cap.
-
-If the floors exceed W, they are given Back first, then Near, then Open.
-
-| W           | Steady state (open / near / back) | First 400 ms after a click | Focus fully measured |
-| ----------- | --------------------------------- | -------------------------- | -------------------- |
-| 8 (default) | 3 / 1 / 4                         | 1 / 1 / 6                  | 0 / 1 / 7            |
-
-The last column follows from the rule: once Open has no work, Near's quotient
-`1 / 2` never beats Back's `4 / 8`, so Near keeps only its floor.
-
-As the user moves closer to a folder X, X's share grows: about 0.3 → 1 → 1–2 →
-3 workers.
+P's stats belong to the focus because F cannot finish before them (G2). With
+no focus, a focus at the root, or in plain mode, everything is background and
+the scheduler is a plain parallel walk.
 
 **`pick(worker)`:**
 
-1. Release the worker's seat. Wait if the queue is congested or the scan is
-   cancelled.
-2. If Back has work and is below its floor, choose Back. Otherwise, a tier
-   with work below its floor; otherwise the tier with the largest
-   `target − active`. Only tiers with waiting tasks count. Ties go first to the
-   worker's previous tier, then to the nearer tier.
-3. **Anchor.** Keep the previous anchor if it is still in that tier and has
-   work. Otherwise:
-   - Open: among F's children, the one with the fewest workers, then the least
-     work.
-   - Near: among the siblings, the one with the fewest workers.
-   - Back: outside P, the subtree with the fewest workers, then the **most**
-     work, so the biggest jobs start first and the scan's tail stays short.
-   - A tier root whose subtree straddles tiers (F, P, or an ancestor of P) is
-     never an anchor; its own task (a `StatDir`, which gates its children's
-     completion) is taken directly, before any anchor.
-4. **Descent:** shallowest-first for skeleton work in Back, otherwise
-   depth-first: a directory's own task first, then the highest-id child with
-   work.
+1. Wait if the queue is congested or the scan is cancelled.
+2. **Side.** Background if it has work and either fewer running tasks than
+   the floor are background, or nothing focused is waiting; otherwise
+   focused. The floor is `max(1, W/4)`, never all W: two of the default
+   eight. Every free worker goes to the focus except the floor, which keeps
+   the rest of the scan moving and its largest jobs starting early, and no
+   worker idles while either side has work.
+3. **Task within the side,** in order:
+   - big `StatDir` jobs (focused work first takes P's stats, then F's own
+     read);
+   - background only, during the skeleton phase: `Names` from the buckets;
+   - background only: the own task of the nearest ancestor of F above P (an
+     ancestor straddles both sides, so nobody descends into it);
+   - the worker's previous anchor, if it still has work on this side;
+     otherwise a new anchor: for the focus, the child of F with the fewest
+     workers, then the **least** work (small folders finish and go final);
+     for the background, a subtree beside the path from F to the root with
+     the fewest workers, then the **most** work (the biggest jobs start first
+     and the scan's tail stays short);
+   - **descent** from the anchor, depth-first: a directory's own task first,
+     then the highest-id child with work.
 
-**Focus change.** Only the focus is replaced. Each in-flight worker's tier is
-recomputed from where it currently is. Workers move one at a time as they
-finish tasks, until the counts match the targets. Each task moves from waiting
-to in-progress exactly once, under the lock, so nothing is lost or done twice.
+A focused folder not yet read is already introduced (its parent is listed),
+so it is its own first task: it is read with `Full` at once, even in the
+skeleton phase.
+
+**Focus change.** Only the focus is replaced; it takes effect at once, with
+no ramp. Each running task's side is recomputed from where it is; workers
+move as they finish tasks. Each task moves from waiting to in-progress exactly
+once, under the lock, so nothing is lost or done twice.
 
 **Avoiding churn:**
 
 - the host combines focus changes over 150 ms and sends only the last;
-- the dwell ramp;
-- workers keep their tier and anchor when they can;
+- workers keep their anchor while it has work on their side;
 - `seq` ordering discards stale focus messages (a `seq` not above the last
   `Focus` or `ClearFocus` seen; an unknown or pruned `DirId` uses up its `seq`
   and is ignored);
-- focusing the folder already open keeps its dwell;
-- moves happen only at task boundaries.
+- moves happen only at task boundaries. A worker sent into a folder the user
+  only passes through still does useful work there.
 
-**Worker count:** `W = clamp(2 × cores, 4, 8)`, which `ScanOpts` can override.
+**Worker count:** `W = clamp(2 × cores, 4, 8)`, which `ScanOpts.workers` can
+override.
 The limit is the phone's storage service (MediaProvider), not the CPU.
 
 ### Delete during a scan
@@ -503,14 +475,16 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   - A checker for G1–G3, written from the host's point of view.
   - `SlowFs` wraps an `Fs` with real delays, so the pool's tasks overlap.
 - **Properties (proptest, on the real threaded pool over `SimFs`):** random
-  trees, worker counts, depth limits and both scan modes, with focus changes,
+  trees, worker counts and both scan modes, with focus changes,
   clears and deletes (a prune, then the delete) played from another thread:
   - each directory is listed and stat'ed exactly once;
   - totals match the ground truth, including after deletes;
   - G1–G3 hold;
   - a scan cancelled at any moment still ends with `Finished`.
 
-  The scheduler's tier targets and floors are unit-tested in `engine/sched`.
+  The focus rule (the floor, falling back to the other side, clearing, the
+  parent's stats, an unread focus) is unit-tested in `engine/sched`; the depth
+  limit by a pool test on a chain deeper than 64.
 
 - **Integration:**
   - the threaded pool runs against `StdFs` on a temporary tree, and against
@@ -572,15 +546,15 @@ Acceptance criteria:
    (handles reopened for deferred stats).
 2. Script (a): total time ≤ 1.05× the baseline at the median, ≤ 1.10× at the
    90th percentile.
-3. Script (c): total time ≤ 1.10× the baseline, and the Back floor always
-   holds.
+3. Script (c): total time ≤ 1.10× the baseline, and the background floor
+   always holds.
 4. `SkeletonReady` within 1.0 s, covering at least 2 levels.
 5. Script (b): the open folder's answer at ≤ 0.5× the baseline's time.
 6. Daemon CPU ≤ 1.2× the baseline; peak memory ≤ 32 MB at 100,000
    directories; scheduler time < 1% of worker time.
 
 If criterion 2 fails, try these in order: turn off deferred stats outside the
-Open tier, retune the weights, then revisit the design.
+focus, raise the background floor, then revisit the design.
 
 ## 7. Open risks
 
@@ -593,7 +567,7 @@ Open tier, retune the weights, then revisit the design.
 - One huge directory pins one worker. A 60,000-file directory takes about 6 s.
   Splitting it into chunks is a later option.
 - Hardlinks are counted once per `(dev, ino)` when the link count is above 1.
-  `one_filesystem` handles bind mounts.
+  Staying on the root's file system handles bind mounts.
 - A dropped wireless adb connection cancels the scan. Resuming it is a later
   feature.
 - A snapshot cache comes later: it would key on the path relative to the root,
