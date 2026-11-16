@@ -1,26 +1,28 @@
 //! Handing a worker its next task.
 //!
 //! Once [`choose_lane`](ScanState::choose_lane) has picked a side of the
-//! focus, the task inside it is, in order:
+//! focus F, the task on it is the first of:
 //!
-//! 1. **Big jobs.** A `StatDir` of at least [`BIG_JOB_ENTRIES`] entries,
-//!    largest first. (Focused work takes its gating tasks, step 3, first.)
-//! 2. **Skeleton** (background only, while the phase lasts): `Names` tasks,
-//!    shallowest first from per-depth FIFO buckets, so no worker waits for a
-//!    level to finish. A focused folder is read with `Full` even now: its
-//!    sizes are what the user is waiting for.
-//! 3. **Gating tasks.** Focused: the deferred stats of F's parent, then F's
-//!    own read. Background: the own task of F's nearest ancestor above the
-//!    parent that has one. These directories straddle both sides, so nobody
-//!    descends into them; their tasks are taken directly.
-//! 4. **Anchor and descent.** A worker keeps the subtree it last worked in
-//!    while that has work on the same side. Otherwise it takes a new one: a
-//!    child of F with the fewest workers, then the least work (small folders
-//!    finish and their rows go final); in the background, a subtree beside
-//!    the path from F to the root with the fewest workers, then the most
-//!    work (big jobs start early, so the tail stays short). It then descends
-//!    depth-first: a directory's own task, else the highest-id child with
-//!    work.
+//! - **Focused:** the deferred stats of F's parent, F's own read (with
+//!   `Full`, even in the skeleton phase: its sizes are what the user is
+//!   waiting for), a big job, then the anchor.
+//! - **Background:** a big job, a skeleton `Names` read while the phase
+//!   lasts, the own task of F's nearest ancestor above its parent, then the
+//!   anchor.
+//!
+//! *Big jobs* are `StatDir`s of at least [`BIG_JOB_ENTRIES`] entries, largest
+//! first, so one huge folder does not become the tail. *Skeleton* reads come
+//! shallowest first from per-depth FIFO buckets, so no worker waits for a
+//! level to finish. F's ancestors straddle both sides, so nobody descends
+//! into them; their own tasks are taken directly.
+//!
+//! **Anchor and descent.** A worker keeps the subtree it last worked in while
+//! that has work on the same side. Otherwise it takes a new one: a child of F
+//! with the fewest workers, then the least work (small folders finish and
+//! their rows go final); in the background, a subtree beside the path from F
+//! to the root with the fewest workers, then the most work (big jobs start
+//! early, so the tail stays short). It then descends depth-first: a
+//! directory's own task, else the highest-id child with work.
 //!
 //! With no focus everything is background, scheduled from the root.
 
