@@ -19,9 +19,7 @@ export function ConnectingSteps({ status }: { status: string }) {
       <ol className="flex flex-col gap-3">
         {STEPS.map((label, i) => (
           <li key={label} className="flex items-center gap-3 text-[14px]">
-            <StepMark
-              state={i === 0 || i < current ? "done" : i === current ? "active" : "pending"}
-            />
+            <StepMark state={i < current ? "done" : i === current ? "active" : "pending"} />
             <span className={i > current ? "text-faint" : "text-fg"}>{label}</span>
           </li>
         ))}
