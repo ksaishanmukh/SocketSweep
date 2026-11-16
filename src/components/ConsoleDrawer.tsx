@@ -8,10 +8,12 @@ import { useEffect, useRef } from "react";
  */
 export function ConsoleDrawer({
   logs,
+  version,
   open,
   onToggle,
 }: {
   logs: string[];
+  version: string | null;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -23,19 +25,22 @@ export function ConsoleDrawer({
 
   return (
     <div className="shrink-0 border-t border-line bg-panel">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-2 px-4 py-1.5 text-[11px] font-mono text-muted
+      <div className="flex items-center">
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-2 px-4 py-1.5 text-[11px] font-mono text-muted
           hover:text-fg"
-        aria-expanded={open}
-        aria-controls="console-log"
-      >
-        <span className={`transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
-          ›
-        </span>
-        Activity
-        {logs.length > 0 && <span className="text-faint">({logs.length})</span>}
-      </button>
+          aria-expanded={open}
+          aria-controls="console-log"
+        >
+          <span className={`transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
+            ›
+          </span>
+          Activity
+          {logs.length > 0 && <span className="text-faint">({logs.length})</span>}
+        </button>
+        {version && <span className="px-4 text-[11px] font-mono text-faint">v{version}</span>}
+      </div>
 
       {open && (
         <div

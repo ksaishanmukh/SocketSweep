@@ -7,6 +7,8 @@ import { SetupScreen } from "./components/screens/setup/SetupScreen";
 import { ActionBar } from "./components/selection/ActionBar";
 import { DeleteDialog } from "./components/selection/DeleteDialog";
 import { Toasts } from "./components/Toasts";
+import { UpdateNotice } from "./components/UpdateNotice";
+import { useAppInfo } from "./hooks/useAppInfo";
 import { useScanSession, type ScanSession } from "./hooks/useScanSession";
 import { useToasts } from "./hooks/useToasts";
 import { inSession, type Target } from "./lib/selection";
@@ -15,6 +17,7 @@ import "./App.css";
 export default function App() {
   const { toasts, push, dismiss } = useToasts();
   const session = useScanSession(push);
+  const { version, update, dismissUpdate } = useAppInfo();
 
   // What the dialog lists is captured when it opens, because the live view
   // keeps changing under it. Its nodes carry their session: a rescan or
@@ -33,8 +36,10 @@ export default function App() {
     <div className="h-screen flex flex-col bg-bg overflow-hidden">
       <Toasts toasts={toasts} onDismiss={dismiss} />
 
+      {update && <UpdateNotice release={update} onDismiss={dismissUpdate} />}
+
       <main className="flex-1 flex flex-col min-h-0" inert={inert}>
-        <Screens session={session} onDelete={setRequest} />
+        <Screens session={session} version={version} onDelete={setRequest} />
       </main>
 
       <div inert={inert}>
@@ -52,6 +57,7 @@ export default function App() {
         {session.copy && <CopyBar copy={session.copy} onCancel={session.cancelCopy} />}
         <ConsoleDrawer
           logs={session.logs}
+          version={version}
           open={consoleOpen}
           onToggle={() => setConsoleOpen((v) => !v)}
         />
@@ -73,9 +79,11 @@ export default function App() {
 
 function Screens({
   session,
+  version,
   onDelete,
 }: {
   session: ScanSession;
+  version: string | null;
   onDelete: (targets: Target[]) => void;
 }) {
   if (session.phase === "setup" || session.phase === "connecting") {
@@ -84,6 +92,7 @@ function Screens({
         onConnect={session.connect}
         loading={session.phase === "connecting"}
         status={session.status}
+        version={version}
       />
     );
   }
