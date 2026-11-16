@@ -48,11 +48,19 @@ public final class Helper {
         List<ApplicationInfo> apps = AppLister.installed(pm);
 
         PrintStream out = new PrintStream(System.out, false, "UTF-8");
-        out.print("{\"v\":" + FORMAT_VERSION + "}\n");
+        printLine(out, "{\"v\":" + FORMAT_VERSION + "}");
         for (ApplicationInfo app : apps) {
-            out.print(AppLister.line(pm, app, options) + "\n");
+            printLine(out, AppLister.line(pm, app, options));
         }
-        out.flush();
         return 0;
+    }
+
+    /**
+     * Flushed per line so that a native crash on a later app, which no Java
+     * handler can catch, still leaves the earlier lines with the host.
+     */
+    private static void printLine(PrintStream out, String line) {
+        out.print(line + "\n");
+        out.flush();
     }
 }

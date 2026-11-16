@@ -29,7 +29,7 @@ final class AppLister {
         sb.append(",\"label\":");
         Json.appendString(sb, label(pm, app));
         sb.append(",\"system\":").append(isSystem(app));
-        if (options.iconPackages.contains(app.packageName)) {
+        if (options.iconPackages.contains(app.packageName) && hasIcon(app)) {
             String icon = IconRenderer.pngBase64(pm, app, options.iconSize);
             if (icon != null) {
                 sb.append(",\"icon\":\"").append(icon).append('"');
@@ -46,6 +46,11 @@ final class AppLister {
             // A broken resource table should cost one label, not the listing.
             return app.packageName;
         }
+    }
+
+    /** Overlays and icon-less packages only ever yield a placeholder, so skip them. */
+    private static boolean hasIcon(ApplicationInfo app) {
+        return app.icon != 0 && !app.isResourceOverlay();
     }
 
     private static boolean isSystem(ApplicationInfo app) {
