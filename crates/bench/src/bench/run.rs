@@ -129,7 +129,7 @@ fn build_report(
         root,
         device: device.to_string(),
         daemon_build: client.welcome().daemon_build.clone(),
-        workers: cfg.workers.unwrap_or(client.welcome().workers),
+        workers: cfg.workers,
         runs: cfg.runs,
         seed: cfg.seed,
         scripts: scripts

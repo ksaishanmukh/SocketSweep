@@ -3204,7 +3204,6 @@ name = "socketsweep-wire"
 version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
- "bitflags 2.13.1",
  "postcard",
  "serde",
  "serde_json",

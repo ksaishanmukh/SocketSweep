@@ -59,10 +59,9 @@ impl Default for ClientConfig {
 /// Why a call on the connection failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientError {
-    /// The daemon refused the token. Not worth retrying.
+    /// The daemon refused the token or the protocol version. Not worth
+    /// retrying.
     Refused,
-    /// The daemon is another version. Not worth retrying.
-    WrongVersion { daemon: u16 },
     /// The daemon echoed another session id.
     SessionMismatch,
     /// The connection is closed (or never opened): the reason.
@@ -90,10 +89,10 @@ impl ClientError {
 impl std::fmt::Display for ClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ClientError::Refused => write!(f, "The phone's daemon refused this computer."),
-            ClientError::WrongVersion { daemon } => write!(
+            ClientError::Refused => write!(
                 f,
-                "The phone runs daemon protocol {daemon}, but this app speaks {PROTOCOL_VERSION}."
+                "The phone's daemon refused this computer (wrong session token, or a daemon \
+                 built for another protocol than version {PROTOCOL_VERSION})."
             ),
             ClientError::SessionMismatch => {
                 write!(f, "The phone's daemon answered for another session.")

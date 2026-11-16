@@ -138,8 +138,6 @@ pub enum ErrCode {
     DuplicateId,
     /// Another request of this kind is running, and only one may.
     Busy,
-    /// The capability the request needs was not negotiated.
-    Unsupported,
     /// `ENOENT`.
     NotFound,
     /// `EACCES` or `EPERM`.

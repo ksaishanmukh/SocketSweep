@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use socketsweep_engine::Scan;
-use socketsweep_wire::{Caps, ClientFrame, ClientMsg, ErrCode, ReqId, ServerMsg, SESSION_LEVEL};
+use socketsweep_wire::{ClientFrame, ClientMsg, ErrCode, ReqId, ServerMsg, SESSION_LEVEL};
 
 use super::{lock, Active, Shared};
 use crate::actions::ActionError;
@@ -74,14 +74,8 @@ impl Shared {
         }
     }
 
-    /// `PrepareCopy`, if `COPY_MANIFEST` was negotiated.
     fn prepare_copy(self: &Arc<Self>, id: ReqId, path: Vec<u8>) {
-        if !self.caps.contains(Caps::COPY_MANIFEST) {
-            self.fail(
-                id,
-                ActionError::new(ErrCode::Unsupported, "COPY_MANIFEST was not negotiated"),
-            );
-        } else if self.claim(id) {
+        if self.claim(id) {
             self.start_copy(id, path);
         }
     }

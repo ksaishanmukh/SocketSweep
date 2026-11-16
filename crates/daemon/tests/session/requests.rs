@@ -5,14 +5,14 @@ use std::time::Duration;
 
 use socketsweep_daemon::session::End;
 use socketsweep_engine::{Fs, StdFs};
-use socketsweep_wire::{Caps, ClientMsg, ErrCode, Outcome, ScanOpts, ServerFrame, ServerMsg};
+use socketsweep_wire::{ClientMsg, ErrCode, Outcome, ScanOpts, ServerFrame, ServerMsg};
 
 use super::support::*;
 
 #[test]
 fn ping_shutdown_and_bad_ids() {
     let tmp = fixture();
-    let (t, mut host) = connect(config(), Arc::new(StdFs), &root_of(&tmp), Caps::all());
+    let (t, mut host) = connect(config(), Arc::new(StdFs), &root_of(&tmp));
     let id = host.send(ClientMsg::Ping { nonce: 42 });
     assert_eq!(
         host.reply(),
@@ -64,7 +64,7 @@ fn a_duplicate_id_is_refused_while_the_first_runs() {
     let tmp = fixture();
     let root = root_of(&tmp);
     let fs: Arc<dyn Fs> = Arc::new(SlowFs(Duration::from_millis(30)));
-    let (t, mut host) = connect(config(), fs, &root, Caps::all());
+    let (t, mut host) = connect(config(), fs, &root);
     let opts = ScanOpts::default();
     host.send_as(
         5,
@@ -100,7 +100,7 @@ fn a_duplicate_id_is_refused_while_the_first_runs() {
 fn a_scan_outside_the_root_fails_before_starting() {
     let tmp = fixture();
     let root = root_of(&tmp);
-    let (t, mut host) = connect(config(), Arc::new(StdFs), &root.join("a"), Caps::all());
+    let (t, mut host) = connect(config(), Arc::new(StdFs), &root.join("a"));
     let id = host.send(ClientMsg::StartScan {
         root: root_bytes(&root),
         opts: ScanOpts::default(),

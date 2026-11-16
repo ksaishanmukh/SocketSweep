@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use socketsweep_engine::Scan;
-use socketsweep_wire::{read_frame, Caps, ClientFrame};
+use socketsweep_wire::{read_frame, ClientFrame};
 
 use super::{lock, Active, Conn, End, Services, SessionConfig, Shared};
 use crate::outbox::{Outbox, ScanSink};
@@ -17,7 +17,7 @@ use crate::outbox::{Outbox, ScanSink};
 /// connection ends, or the host goes silent. Cancels and waits for
 /// everything the session started before returning, then shuts the
 /// connection.
-pub fn serve(conn: Conn, caps: Caps, cfg: &SessionConfig, services: Services) -> End {
+pub fn serve(conn: Conn, cfg: &SessionConfig, services: Services) -> End {
     let Conn {
         reader,
         writer,
@@ -28,7 +28,6 @@ pub fn serve(conn: Conn, caps: Caps, cfg: &SessionConfig, services: Services) ->
         outbox: Arc::clone(&outbox),
         services,
         cfg: cfg.clone(),
-        caps,
         active: Mutex::new(HashMap::new()),
         threads: Mutex::new(Vec::new()),
     });

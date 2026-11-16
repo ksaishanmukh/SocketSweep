@@ -27,12 +27,8 @@ pub(super) fn totals() -> Totals {
 
 pub(super) fn welcome() -> Welcome {
     Welcome {
-        version: PROTOCOL_VERSION,
         session: [0x11; 16],
-        caps: Caps::DISK_USAGE | Caps::COPY_MANIFEST,
         daemon_build: "v".into(),
-        workers: 8,
-        limits: Limits::default(),
     }
 }
 
@@ -59,21 +55,6 @@ pub(super) fn client_msgs() -> Vec<ClientMsg> {
         },
         ClientMsg::Shutdown,
     ]
-}
-
-/// The variant index each message must encode as. Exhaustive, so a new
-/// variant does not compile until it is given a sample and a golden encoding.
-pub(super) fn client_index(m: &ClientMsg) -> u8 {
-    match m {
-        ClientMsg::Ping { .. } => 0,
-        ClientMsg::StartScan { .. } => 1,
-        ClientMsg::Focus { .. } => 2,
-        ClientMsg::ClearFocus { .. } => 3,
-        ClientMsg::Cancel { .. } => 4,
-        ClientMsg::Delete { .. } => 5,
-        ClientMsg::PrepareCopy { .. } => 6,
-        ClientMsg::Shutdown => 7,
-    }
 }
 
 pub(super) fn scan_events() -> Vec<ScanEvent> {
@@ -150,21 +131,6 @@ fn scan_events_after_subtree_done() -> Vec<ScanEvent> {
     ]
 }
 
-pub(super) fn scan_index(e: &ScanEvent) -> u8 {
-    match e {
-        ScanEvent::Started { .. } => 0,
-        ScanEvent::Listing { .. } => 1,
-        ScanEvent::Stats { .. } => 2,
-        ScanEvent::DirFailed { .. } => 3,
-        ScanEvent::SubtreeDone { .. } => 4,
-        ScanEvent::SkeletonReady { .. } => 5,
-        ScanEvent::FocusState { .. } => 6,
-        ScanEvent::Pruned { .. } => 7,
-        ScanEvent::Progress { .. } => 8,
-        ScanEvent::Finished { .. } => 9,
-    }
-}
-
 pub(super) fn server_msgs() -> Vec<ServerMsg> {
     vec![
         ServerMsg::Pong { nonce: 9 },
@@ -194,32 +160,8 @@ pub(super) fn server_msgs() -> Vec<ServerMsg> {
     ]
 }
 
-pub(super) fn server_index(m: &ServerMsg) -> u8 {
-    match m {
-        ServerMsg::Pong { .. } => 0,
-        ServerMsg::Heartbeat => 1,
-        ServerMsg::Scan(_) => 2,
-        ServerMsg::DeleteProgress { .. } => 3,
-        ServerMsg::Deleted { .. } => 4,
-        ServerMsg::CopyManifest { .. } => 5,
-        ServerMsg::Failed { .. } => 6,
-    }
-}
-
 pub(super) fn hello_replies() -> Vec<HelloReply> {
-    vec![
-        HelloReply::Welcome(welcome()),
-        HelloReply::Refused,
-        HelloReply::WrongVersion { version: 5 },
-    ]
-}
-
-pub(super) fn reply_index(r: &HelloReply) -> u8 {
-    match r {
-        HelloReply::Welcome(_) => 0,
-        HelloReply::Refused => 1,
-        HelloReply::WrongVersion { .. } => 2,
-    }
+    vec![HelloReply::Welcome(welcome()), HelloReply::Refused]
 }
 
 pub(super) fn enc<T: Serialize>(v: &T) -> Vec<u8> {

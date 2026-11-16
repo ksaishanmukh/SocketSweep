@@ -64,7 +64,8 @@ pub struct Report {
     pub root: String,
     pub device: String,
     pub daemon_build: String,
-    pub workers: u8,
+    /// `None`: the daemon's default.
+    pub workers: Option<u8>,
     pub runs: usize,
     pub seed: u64,
     pub scripts: Vec<ScriptSetup>,

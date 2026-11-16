@@ -10,31 +10,23 @@
 //! [`write_frame`] and [`read_frame`].
 //!
 //! Postcard writes no field names and encodes each enum variant as its index,
-//! so **the order of fields and variants is the wire format**. Golden byte
-//! tests pin a representative frame of every enum, so an accidental reorder
-//! fails the build rather than a phone. Daemon and host ship together and the
-//! version must match exactly, so the format may change freely between
+//! so **the order of fields and variants is the wire format**. Daemon and
+//! host ship together, and the host pushes a fresh daemon every session, so the
+//! version must match exactly and the format may change freely between
 //! releases as long as [`PROTOCOL_VERSION`] is bumped with it.
 //!
 //! # Handshake
 //!
 //! 1. The host opens the tunnel and sends a standalone [`Hello`] frame.
-//! 2. The daemon checks, in this order: the token (in constant time), then the
-//!    version, which must equal [`PROTOCOL_VERSION`] exactly, then negotiates
-//!    capabilities. [`check_hello`] implements exactly this order.
+//! 2. The daemon checks the magic and the token (in constant time) and that
+//!    the version equals [`PROTOCOL_VERSION`] exactly. [`check_hello`] does it.
 //! 3. It answers with one [`HelloReply`] frame: [`HelloReply::Welcome`], after
 //!    which both sides exchange [`ClientFrame`]s and [`ServerFrame`]s; or
-//!    [`HelloReply::Refused`] / [`HelloReply::WrongVersion`], after which it
-//!    closes the connection.
+//!    [`HelloReply::Refused`], after which it closes the connection.
 //!
-//! The leading fields of [`Hello`] (`magic`, `version`, `token`) and the
-//! variant order of [`HelloReply`] are **frozen forever**, so that any future
-//! daemon can read an old host's version with [`HelloPrefix`], and any host can
-//! read why a daemon of another version turned it away.
-//!
-//! A wrong token is answered with a bare `Refused` that reveals nothing else,
-//! not even the daemon's version: anything on the desktop that can reach the
-//! tunnel can send a `Hello`, and the command set includes recursive delete.
+//! A bad magic, token or version is answered with a bare `Refused` that
+//! reveals nothing else: anything on the desktop that can reach the tunnel can
+//! send a `Hello`, and the command set includes recursive delete.
 //!
 //! The token is [`TOKEN_LEN`] random bytes the host generates per session. It
 //! reaches the daemon through the [`TOKEN_ENV`] environment variable,
@@ -117,7 +109,7 @@ mod token;
 mod tests;
 
 pub use framing::{encode_frame, read_frame, read_frame_body, write_frame, WireError};
-pub use handshake::{check_hello, Caps, Hello, HelloCheck, HelloPrefix, HelloReply, Welcome};
+pub use handshake::{check_hello, Hello, HelloReply, Welcome};
 pub use messages::{
     ClientFrame, ClientMsg, CopyItem, Entry, ErrCode, FsOp, Kind, Limits, Outcome, ScanEvent,
     ScanMode, ScanOpts, ServerFrame, ServerMsg, Stat, Tier, TierCfg, Totals,
@@ -126,10 +118,10 @@ pub use token::{token_from_hex, token_to_hex, tokens_match, Token, TOKEN_ENV, TO
 
 use std::time::Duration;
 
-/// Sent in [`Hello`] and [`Welcome`]. The daemon refuses a host of any other
-/// version, so a stale daemon left on the phone fails loudly instead of
-/// misreading frames. Bump it whenever the wire format changes.
-pub const PROTOCOL_VERSION: u16 = 5;
+/// Sent in [`Hello`]. The daemon refuses a host of any other version, so a
+/// stale daemon left on the phone fails loudly instead of misreading frames.
+/// Bump it whenever the wire format changes.
+pub const PROTOCOL_VERSION: u16 = 6;
 
 /// The first four bytes of every [`Hello`], so a daemon can tell a SocketSweep
 /// host from something else that connected to its socket.

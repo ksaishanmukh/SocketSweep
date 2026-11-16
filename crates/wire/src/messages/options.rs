@@ -5,13 +5,12 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(doc)]
 use super::{ScanEvent, ServerMsg, Totals};
-use crate::{MAX_FRAME_BYTES, MAX_LISTING_PART, MAX_SCAN_BATCH_BYTES};
 
 /// How a scan is run. [`Default`] is what the host normally sends.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScanOpts {
-    /// Worker threads. `None` uses [`Welcome::workers`](crate::Welcome::workers),
-    /// which is `clamp(2 × cores, 4, 8)`.
+    /// Worker threads. `None` uses the daemon's default, `clamp(2 × cores,
+    /// 4, 8)`.
     pub workers: Option<u8>,
     /// Directories deeper than this below the root are not walked; they
     /// complete at once with [`Totals::DEPTH_LIMIT`]. Clamped to
@@ -138,14 +137,9 @@ impl TierCfg {
     }
 }
 
-/// The daemon's limits, sent in [`Welcome`](crate::Welcome).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// The daemon's limits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
-    pub max_frame_bytes: u32,
-    /// Most entries in one listing part.
-    pub max_listing_part: u32,
-    /// Target bound on one [`ServerMsg::Scan`] batch, in encoded bytes.
-    pub max_batch_bytes: u32,
     /// Deepest [`ScanOpts::max_depth`] honoured. The daemon's counters walk
     /// the chain of parents on every change, so it is bounded.
     pub max_depth: u16,
@@ -156,9 +150,6 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Limits {
-            max_frame_bytes: MAX_FRAME_BYTES,
-            max_listing_part: MAX_LISTING_PART as u32,
-            max_batch_bytes: MAX_SCAN_BATCH_BYTES as u32,
             max_depth: 64,
             max_workers: 16,
         }

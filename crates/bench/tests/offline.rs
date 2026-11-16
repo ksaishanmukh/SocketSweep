@@ -7,21 +7,14 @@ use socketsweep_bench::bench::{self, Config, RunRecord, ScriptKind};
 use socketsweep_bench::{fixture, summary};
 use socketsweep_host_core::{Client, ClientConfig};
 use socketsweep_sim::{FakeDaemon, RandomShape, SimFs};
-use socketsweep_wire::{Caps, Token};
+use socketsweep_wire::Token;
 
 const TOKEN: Token = [5; 32];
 
 fn client(fs: SimFs, per_call: Duration) -> Client {
     let daemon = FakeDaemon::new(fs).with_latency(per_call, Duration::ZERO);
     let (end, _session) = daemon.connect(TOKEN);
-    Client::connect(
-        Box::new(end),
-        TOKEN,
-        [4; 16],
-        Caps::all(),
-        ClientConfig::default(),
-    )
-    .expect("handshake")
+    Client::connect(Box::new(end), TOKEN, [4; 16], ClientConfig::default()).expect("handshake")
 }
 
 /// One record of the report: same tree as the first, and the mode's and the

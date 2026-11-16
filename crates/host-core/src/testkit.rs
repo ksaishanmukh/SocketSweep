@@ -14,8 +14,8 @@ use std::time::Duration;
 use socketsweep_transport::fake::{FakeTransport, PipeEnd};
 use socketsweep_transport::{Duplex, Output};
 use socketsweep_wire::{
-    check_hello, encode_frame, read_frame, read_frame_body, token_from_hex, Caps, ClientFrame,
-    ClientMsg, HelloCheck, HelloReply, Limits, ServerFrame, ServerMsg, Token,
+    check_hello, encode_frame, read_frame, read_frame_body, token_from_hex, ClientFrame, ClientMsg,
+    HelloReply, ServerFrame, ServerMsg, Token,
 };
 
 use crate::daemon::parse_launch_command;
@@ -27,8 +27,6 @@ pub enum Greeting {
     Accept,
     /// Answer `Refused` whatever the token.
     Refuse,
-    /// Answer `WrongVersion` with this version.
-    WrongVersion(u16),
     /// Accept, then never answer `Ping`s (and send nothing unprompted).
     AcceptThenSilent,
 }
@@ -92,24 +90,15 @@ impl FakeDaemon {
         let Ok(Some(body)) = read_frame_body(&mut input) else {
             return;
         };
-        let check = match self.greeting {
-            Greeting::Refuse => HelloCheck::Refused,
-            Greeting::WrongVersion(v) => {
-                let bytes = encode_frame(&HelloReply::WrongVersion { version: v }).unwrap();
-                let _ = lock(&responder.out).write_all(&bytes);
-                return;
-            }
+        let hello = match self.greeting {
+            Greeting::Refuse => None,
             _ => check_hello(&body, &token),
         };
-        let hello = match check {
-            HelloCheck::Accepted(hello) => hello,
-            rejected => {
-                let reply = rejected.rejection().unwrap();
-                let _ = lock(&responder.out).write_all(&encode_frame(&reply).unwrap());
-                return;
-            }
+        let Some(hello) = hello else {
+            let _ = lock(&responder.out).write_all(&encode_frame(&HelloReply::Refused).unwrap());
+            return;
         };
-        let welcome = hello.welcome(Caps::all(), "fake".into(), 4, Limits::default());
+        let welcome = hello.welcome("fake".into());
         let bytes = encode_frame(&HelloReply::Welcome(welcome)).unwrap();
         if lock(&responder.out).write_all(&bytes).is_err() {
             return;

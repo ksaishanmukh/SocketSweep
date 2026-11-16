@@ -35,7 +35,7 @@ pub enum Kind {
 pub struct Stat {
     /// `st_size`.
     pub apparent: u64,
-    /// `st_blocks`, in [`BLOCK_SIZE`] units. See [`Caps::DISK_USAGE`](crate::Caps::DISK_USAGE).
+    /// `st_blocks`, in [`BLOCK_SIZE`] units.
     pub blocks: u64,
     /// `st_mtime`, Unix seconds.
     pub mtime: i64,
@@ -76,8 +76,6 @@ impl Totals {
     /// Some mount point was not crossed because of
     /// [`ScanOpts::one_filesystem`].
     pub const OTHER_FS: u8 = 1 << 2;
-    /// Some disk figure is estimated; see [`Caps::DISK_USAGE`](crate::Caps::DISK_USAGE).
-    pub const DISK_ESTIMATED: u8 = 1 << 3;
 
     /// Add a child's totals into these.
     pub fn add(&mut self, other: &Totals) {

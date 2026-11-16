@@ -10,8 +10,8 @@ use socketsweep_sim::{Checker, FakeDaemon, RandomShape, SimFs};
 use socketsweep_transport::fake::{FakeDevice, FakeTransport};
 use socketsweep_transport::{Duplex, Transport};
 use socketsweep_wire::{
-    encode_frame, read_frame, Caps, ClientFrame, ClientMsg, DirId, Hello, HelloReply, Outcome,
-    ReqId, ScanEvent, ScanOpts, ServerFrame, ServerMsg, Token, Totals, ROOT_DIR,
+    encode_frame, read_frame, ClientFrame, ClientMsg, DirId, Hello, HelloReply, Outcome, ReqId,
+    ScanEvent, ScanOpts, ServerFrame, ServerMsg, Token, Totals, ROOT_DIR,
 };
 
 const TOKEN: Token = [3; 32];
@@ -26,14 +26,13 @@ struct Host {
 impl Host {
     /// Handshake on `stream` as the host does, then read frames on a thread.
     fn connect(mut stream: Box<dyn Duplex>) -> Host {
-        let hello = Hello::new(TOKEN, [1; 16], Caps::all());
+        let hello = Hello::new(TOKEN, [1; 16]);
         stream.write_all(&encode_frame(&hello).unwrap()).unwrap();
         let reply: HelloReply = read_frame(&mut stream).unwrap().unwrap();
         let HelloReply::Welcome(w) = reply else {
             panic!("refused: {reply:?}")
         };
         assert_eq!(w.session, [1; 16]);
-        assert!(w.caps.contains(Caps::COPY_MANIFEST));
         let mut reader = stream.try_clone().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {

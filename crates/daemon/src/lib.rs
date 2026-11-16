@@ -28,7 +28,7 @@ pub mod fs_rustix;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub mod listener;
 
-/// The build string sent in `Welcome::daemon_build`.
+/// The build string sent in `Welcome`.
 pub const DAEMON_BUILD: &str = concat!("socketsweep-daemon ", env!("CARGO_PKG_VERSION"));
 
 /// Log one line to stderr, which the host redirects to the daemon's log file

@@ -9,8 +9,7 @@ use std::time::Instant;
 
 use socketsweep_transport::Duplex;
 use socketsweep_wire::{
-    encode_frame, read_frame, Caps, Hello, HelloReply, SessionId, Token, Welcome, WireError,
-    PROTOCOL_VERSION,
+    encode_frame, read_frame, Hello, HelloReply, SessionId, Token, Welcome, WireError,
 };
 
 use super::connection::{Inner, OnCloseSlot};
@@ -27,7 +26,6 @@ impl Client {
         stream: Box<dyn Duplex>,
         token: Token,
         session: SessionId,
-        caps: Caps,
         config: ClientConfig,
     ) -> Result<Client, ClientError> {
         let closed = |e: std::io::Error| ClientError::Closed(e.to_string());
@@ -41,7 +39,7 @@ impl Client {
         let control = stream.try_clone().map_err(closed)?;
         let mut reader = BufReader::with_capacity(256 * 1024, stream);
 
-        let hello = Hello::new(token, session, caps);
+        let hello = Hello::new(token, session);
         writer
             .write_all(&encode_frame(&hello).map_err(wire_err)?)
             .and_then(|()| writer.flush())
@@ -74,8 +72,7 @@ impl Client {
     }
 }
 
-/// Read the daemon's answer to `Hello` and check it is for this version and
-/// `session`.
+/// Read the daemon's answer to `Hello` and check it is for `session`.
 fn read_welcome(
     reader: &mut BufReader<Box<dyn Duplex>>,
     control: &dyn Duplex,
@@ -102,15 +99,7 @@ fn read_welcome(
     let welcome = match reply {
         HelloReply::Welcome(w) => w,
         HelloReply::Refused => return Err(ClientError::Refused),
-        HelloReply::WrongVersion { version } => {
-            return Err(ClientError::WrongVersion { daemon: version })
-        }
     };
-    if welcome.version != PROTOCOL_VERSION {
-        return Err(ClientError::WrongVersion {
-            daemon: welcome.version,
-        });
-    }
     if welcome.session != session {
         return Err(ClientError::SessionMismatch);
     }

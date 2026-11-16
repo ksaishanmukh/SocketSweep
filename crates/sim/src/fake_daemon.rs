@@ -219,7 +219,7 @@ impl FakeDaemon {
         self
     }
 
-    /// Adjust the session configuration (workers, caps, outbox timing). The
+    /// Adjust the session configuration (workers, outbox timing). The
     /// token is set per connection.
     pub fn with_config(mut self, f: impl FnOnce(&mut SessionConfig)) -> Self {
         f(&mut self.cfg);

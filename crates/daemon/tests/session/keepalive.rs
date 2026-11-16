@@ -7,7 +7,7 @@ use socketsweep_daemon::outbox::OutboxConfig;
 use socketsweep_daemon::session::End;
 use socketsweep_engine::{Fs, StdFs};
 use socketsweep_transport::Duplex;
-use socketsweep_wire::{Caps, ClientMsg, ScanOpts, ServerFrame, ServerMsg, SESSION_LEVEL};
+use socketsweep_wire::{ClientMsg, ScanOpts, ServerFrame, ServerMsg, SESSION_LEVEL};
 
 use super::support::*;
 
@@ -19,7 +19,7 @@ fn an_idle_session_sends_heartbeats() {
         heartbeat: Duration::from_millis(30),
         ..OutboxConfig::default()
     };
-    let (t, mut host) = connect(cfg, Arc::new(StdFs), &root_of(&tmp), Caps::all());
+    let (t, mut host) = connect(cfg, Arc::new(StdFs), &root_of(&tmp));
     for _ in 0..3 {
         assert_eq!(
             host.recv(),
@@ -41,7 +41,7 @@ fn a_silent_host_is_dropped() {
         dead_after: Duration::from_millis(200),
         ..OutboxConfig::default()
     };
-    let (t, host) = connect(cfg, Arc::new(StdFs), &root_of(&tmp), Caps::all());
+    let (t, host) = connect(cfg, Arc::new(StdFs), &root_of(&tmp));
     let end = t.join().unwrap().unwrap();
     assert!(
         matches!(&end, End::Closed(why) if why.contains("sent nothing")),
@@ -55,7 +55,7 @@ fn a_lost_connection_cancels_a_running_scan() {
     let tmp = fixture();
     let root = root_of(&tmp);
     let fs: Arc<dyn Fs> = Arc::new(SlowFs(Duration::from_millis(50)));
-    let (t, mut host) = connect(config(), fs, &root, Caps::all());
+    let (t, mut host) = connect(config(), fs, &root);
     let id = host.send(ClientMsg::StartScan {
         root: root_bytes(&root),
         opts: ScanOpts::default(),

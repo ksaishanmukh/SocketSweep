@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use socketsweep_engine::{Fs, StdFs};
-use socketsweep_wire::{Caps, ClientMsg, DirId, Outcome, ScanEvent, ScanMode, ScanOpts, ServerMsg};
+use socketsweep_wire::{ClientMsg, DirId, Outcome, ScanEvent, ScanMode, ScanOpts, ServerMsg};
 
 use super::support::*;
 
@@ -12,7 +12,7 @@ use super::support::*;
 fn a_scan_streams_every_directory_once_with_true_totals() {
     let tmp = fixture();
     let root = root_of(&tmp);
-    let (t, mut host) = connect(config(), Arc::new(StdFs), &root, Caps::all());
+    let (t, mut host) = connect(config(), Arc::new(StdFs), &root);
     let id = host.send(ClientMsg::StartScan {
         root: root_bytes(&root),
         opts: ScanOpts::default(),
@@ -47,7 +47,7 @@ fn a_scan_streams_every_directory_once_with_true_totals() {
 fn a_plain_scan_is_honoured() {
     let tmp = fixture();
     let root = root_of(&tmp);
-    let (t, mut host) = connect(config(), Arc::new(StdFs), &root, Caps::all());
+    let (t, mut host) = connect(config(), Arc::new(StdFs), &root);
     let id = host.send(ClientMsg::StartScan {
         root: root_bytes(&root),
         opts: ScanOpts {
@@ -101,7 +101,7 @@ fn focus_is_reported_and_cancel_ends_the_scan() {
     let tmp = fixture();
     let root = root_of(&tmp);
     let fs: Arc<dyn Fs> = Arc::new(SlowFs(Duration::from_millis(40)));
-    let (t, mut host) = connect(config(), fs, &root, Caps::all());
+    let (t, mut host) = connect(config(), fs, &root);
     let id = host.send(ClientMsg::StartScan {
         root: root_bytes(&root),
         opts: ScanOpts::default(),
