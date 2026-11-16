@@ -51,7 +51,7 @@ pub enum ClientMsg {
         hint: Option<(ReqId, DirId)>,
     },
     /// List everything under `path` for copying, answered with
-    /// [`ServerMsg::CopyManifest`] parts. Requires [`Caps::COPY_MANIFEST`](crate::Caps::COPY_MANIFEST).
+    /// [`ServerMsg::CopyManifest`] parts.
     PrepareCopy { path: Vec<u8> },
     /// Stop the daemon. Not answered; the connection closes.
     Shutdown,

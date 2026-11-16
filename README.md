@@ -122,7 +122,7 @@ React GUI ──► src-tauri (thin shell) ──► host-core ──► transpo
 |---|---|---|
 | GUI and host | `crates/gui-contract`: command and event types, with generated TypeScript bindings | `src/api` mock in vitest |
 | Host and transport | `crates/transport`: the `Transport` and `Duplex` traits | `FakeTransport` |
-| Host and phone | `crates/wire`: protocol v5, checked by golden byte tests; the app helper's line format | `FakeDaemon` (in `crates/sim`) |
+| Host and phone | `crates/wire`: protocol v6; the app helper's line format | `FakeDaemon` (in `crates/sim`) |
 | Daemon internals | The `Fs` and `EventSink` traits; the scheduler is a pure state machine | `SimFs`, a recording sink |
 
 ### Workspace layout
@@ -155,7 +155,7 @@ it will act on both matter.
   gives them to the daemon through the `SOCKETSWEEP_TOKEN` environment variable,
   not on the command line. Every connection begins with a `Hello` carrying the
   token and protocol version. The daemon compares the token in constant time and
-  answers a wrong one with a bare refusal.
+  answers a wrong token or version with a bare refusal.
 - **Delete guard.** The daemon validates every delete itself. The target must lie
   inside the scan root. Symlinks are unlinked and never followed: the parent
   directory is resolved and the final path component is removed as it sits.

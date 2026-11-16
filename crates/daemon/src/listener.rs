@@ -131,14 +131,14 @@ fn connection(
             return None;
         }
     };
-    let caps = match session::handshake(&mut conn, cfg) {
-        Ok((_, caps)) => caps,
+    match session::handshake(&mut conn, cfg) {
+        Ok(()) => {}
         Err(HandshakeError::Closed) => return None,
         Err(e) => {
             log!("connection {gen}: {e}");
             return None;
         }
-    };
+    }
     // Silence is now the writer's job (DAEMON_DEAD_AFTER); a write may block
     // that long on a host that stopped reading.
     let _ = stream.set_read_timeout(None);
@@ -160,7 +160,7 @@ fn connection(
         shut();
     }
     log!("connection {gen}: session started");
-    let end = session::serve(conn, caps, cfg, services);
+    let end = session::serve(conn, cfg, services);
     log!("connection {gen}: {end:?}");
     let mut slot = current.lock().unwrap_or_else(|e| e.into_inner());
     if slot.1.as_ref().is_some_and(|(g, _)| *g == gen) {

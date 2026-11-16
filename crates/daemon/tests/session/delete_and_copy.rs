@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use socketsweep_engine::{Fs, StdFs};
-use socketsweep_wire::{Caps, ClientMsg, ErrCode, Kind, Outcome, ScanEvent, ScanOpts, ServerMsg};
+use socketsweep_wire::{ClientMsg, ErrCode, Kind, Outcome, ScanEvent, ScanOpts, ServerMsg};
 
 use super::support::*;
 
@@ -15,7 +15,7 @@ fn a_hinted_delete_prunes_first_and_totals_add_up() {
     let (a_files, a_dirs, _) = truth(&root.join("a"));
     let (files, dirs, _) = truth(&root);
     let fs: Arc<dyn Fs> = Arc::new(SlowFs(Duration::from_millis(30)));
-    let (t, mut host) = connect(config(), fs, &root, Caps::all());
+    let (t, mut host) = connect(config(), fs, &root);
     let scan = host.send(ClientMsg::StartScan {
         root: root_bytes(&root),
         opts: ScanOpts::default(),
@@ -77,7 +77,7 @@ fn a_hinted_delete_prunes_first_and_totals_add_up() {
 fn deletes_are_guarded() {
     let tmp = fixture();
     let root = root_of(&tmp);
-    let (t, mut host) = connect(config(), Arc::new(StdFs), &root, Caps::all());
+    let (t, mut host) = connect(config(), Arc::new(StdFs), &root);
     let cases = [
         (root_bytes(&root), ErrCode::ProtectedRoot),
         (child_path(&root, "a/.."), ErrCode::BadRequest),
@@ -128,7 +128,7 @@ fn deletes_are_guarded() {
 fn a_copy_manifest_lists_the_subtree_in_parts() {
     let tmp = fixture();
     let root = root_of(&tmp);
-    let (t, mut host) = connect(config(), Arc::new(StdFs), &root, Caps::all());
+    let (t, mut host) = connect(config(), Arc::new(StdFs), &root);
     let id = host.send(ClientMsg::PrepareCopy {
         path: child_path(&root, "a"),
     });
@@ -168,27 +168,6 @@ fn a_copy_manifest_lists_the_subtree_in_parts() {
     }
     let (files, dirs, _) = truth(&root);
     assert_eq!(n as u32, files + dirs + 1, "the root itself may be copied");
-    host.send(ClientMsg::Shutdown);
-    t.join().unwrap().unwrap();
-}
-
-#[test]
-fn copy_needs_the_capability() {
-    let tmp = fixture();
-    let root = root_of(&tmp);
-    let (t, mut host) = connect(config(), Arc::new(StdFs), &root, Caps::DISK_USAGE);
-    let id = host.send(ClientMsg::PrepareCopy {
-        path: child_path(&root, "a"),
-    });
-    let f = host.reply();
-    assert_eq!(f.id, id);
-    assert!(matches!(
-        f.msg,
-        ServerMsg::Failed {
-            code: ErrCode::Unsupported,
-            ..
-        }
-    ));
     host.send(ClientMsg::Shutdown);
     t.join().unwrap().unwrap();
 }

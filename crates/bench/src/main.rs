@@ -143,9 +143,8 @@ fn run_bench(a: &Args) -> Result<(), String> {
     )?;
     let name = format!("{} ({serial}, API {}, {})", info.model, info.sdk, info.abi);
     log(&format!(
-        "daemon {} on {name}, {} workers by default",
-        daemon.client.welcome().daemon_build,
-        daemon.client.welcome().workers
+        "daemon {} on {name}",
+        daemon.client.welcome().daemon_build
     ));
     let report = bench::run(&daemon.client, &name, &cfg, &mut |l| log(l));
     daemon.stop(transport.as_ref());

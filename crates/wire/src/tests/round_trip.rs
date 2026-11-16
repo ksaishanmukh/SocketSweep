@@ -48,23 +48,10 @@ fn every_scan_event_and_outcome_round_trips() {
 
 #[test]
 fn handshake_messages_round_trip() {
-    round_trip(&Hello::new([0xA5; TOKEN_LEN], [0x11; 16], Caps::all()));
+    round_trip(&Hello::new([0xA5; TOKEN_LEN], [0x11; 16]));
     for reply in hello_replies() {
         round_trip(&reply);
     }
-}
-
-#[test]
-fn unknown_capability_bits_survive_decoding_and_are_intersected_away() {
-    let mut hello = Hello::new([1; TOKEN_LEN], [2; 16], Caps::DISK_USAGE);
-    hello.caps = Caps::from_bits_retain(Caps::DISK_USAGE.bits() | 1 << 40);
-    let back: Hello = postcard::from_bytes(&enc(&hello)).unwrap();
-    assert_eq!(back.caps.bits(), hello.caps.bits());
-
-    let welcome = back.welcome(Caps::all(), "b".into(), 8, Limits::default());
-    assert_eq!(welcome.caps, Caps::DISK_USAGE);
-    assert_eq!(welcome.session, [2; 16]);
-    assert_eq!(welcome.version, PROTOCOL_VERSION);
 }
 
 #[test]

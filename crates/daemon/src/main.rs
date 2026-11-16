@@ -8,7 +8,7 @@
 //! - `--root`: the storage root every request is confined to (default
 //!   `/sdcard`).
 //! - `--threads`: workers per scan unless the host's `ScanOpts` says
-//!   otherwise (default `clamp(2 × cores, 4, 8)`), reported in `Welcome`.
+//!   otherwise (default `clamp(2 × cores, 4, 8)`).
 //!
 //! The token comes from the environment, never argv, where any app could read
 //! it from `/proc`. Logs go to stderr.

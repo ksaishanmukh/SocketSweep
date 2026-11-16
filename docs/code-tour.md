@@ -184,11 +184,12 @@ message, a daemon handler) holds for delete and for starting a scan.
   `cargo run -p socketsweep-gui-contract --bin export-bindings` rewrites
   `src/bindings.ts`; CI fails if it is stale.
 - **Add a protocol message.** Add the variant in
-  [`wire/messages`](../crates/wire/src/messages); add or update its golden
-  byte test in [`wire/src/tests.rs`](../crates/wire/src/tests.rs); handle it in
+  [`wire/messages`](../crates/wire/src/messages); add it to the samples in
+  [`wire/src/tests/support.rs`](../crates/wire/src/tests/support.rs) so the
+  round-trip tests cover it; handle it in
   [`daemon/session/dispatch.rs`](../crates/daemon/src/session/dispatch.rs);
   send it from [`host-core/client/requests.rs`](../crates/host-core/src/client/requests.rs).
-  Bump the protocol version if old peers would misread it, and handle it in
+  Bump the protocol version whenever the wire format changes, and handle it in
   [`sim/fake_daemon.rs`](../crates/sim/src/fake_daemon.rs).
 - **Change scheduling behaviour.** Defaults (tier weights, ramp times, skeleton
   limits) are in [`wire/messages/options.rs`](../crates/wire/src/messages/options.rs)

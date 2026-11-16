@@ -14,7 +14,7 @@ use socketsweep_engine::{DirRead, Fs, FsError, Interrupt, RootInfo, StatResult, 
 use socketsweep_transport::fake::{pipe, PipeEnd};
 use socketsweep_transport::Duplex;
 use socketsweep_wire::{
-    encode_frame, read_frame, Caps, ClientFrame, ClientMsg, DirId, Entry, Hello, HelloReply, Kind,
+    encode_frame, read_frame, ClientFrame, ClientMsg, DirId, Entry, Hello, HelloReply, Kind,
     Outcome, ReqId, ScanEvent, ServerFrame, ServerMsg, Token, Totals, ROOT_DIR,
 };
 
@@ -156,14 +156,14 @@ pub fn start_with(cfg: SessionConfig, fs: Arc<dyn Fs>, root: &Path) -> (Session,
     (t, host)
 }
 
-pub fn hello(token: Token, caps: Caps) -> Hello {
-    Hello::new(token, [9; 16], caps)
+pub fn hello(token: Token) -> Hello {
+    Hello::new(token, [9; 16])
 }
 
 /// Handshake as the host does, then read frames on a thread.
-pub fn connect(cfg: SessionConfig, fs: Arc<dyn Fs>, root: &Path, caps: Caps) -> (Session, Host) {
+pub fn connect(cfg: SessionConfig, fs: Arc<dyn Fs>, root: &Path) -> (Session, Host) {
     let (t, mut end) = start_with(cfg, fs, root);
-    end.write_all(&encode_frame(&hello(TOKEN, caps)).unwrap())
+    end.write_all(&encode_frame(&hello(TOKEN)).unwrap())
         .unwrap();
     let reply: HelloReply = read_frame(&mut end).unwrap().unwrap();
     assert!(matches!(reply, HelloReply::Welcome(_)), "{reply:?}");

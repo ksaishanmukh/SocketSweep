@@ -42,7 +42,7 @@ use std::time::Duration;
 use socketsweep_engine::{default_workers, Fs, Scan};
 #[cfg(doc)]
 use socketsweep_wire::ClientFrame;
-use socketsweep_wire::{Caps, Limits, ReqId, Token};
+use socketsweep_wire::{Limits, ReqId, Token};
 
 use crate::actions::Actions;
 use crate::outbox::{Outbox, OutboxConfig, ScanSink};
@@ -55,22 +55,13 @@ mod serve;
 pub use handshake::{handshake, HandshakeError};
 pub use serve::serve;
 
-/// What this daemon can do, before intersecting with the host's `Hello`.
-pub const DAEMON_CAPS: Caps = Caps::DISK_USAGE
-    .union(Caps::LISTING_PARTS)
-    .union(Caps::DEFERRED_STAT)
-    .union(Caps::COPY_MANIFEST)
-    .union(Caps::DIR_MTIME);
-
 /// How one session behaves. [`SessionConfig::new`] gives the defaults.
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
     /// The session token from `SOCKETSWEEP_TOKEN`.
     pub token: Token,
-    pub caps: Caps,
     pub daemon_build: String,
-    /// Workers per scan unless `ScanOpts::workers` says otherwise; sent in
-    /// `Welcome::workers`.
+    /// Workers per scan unless `ScanOpts::workers` says otherwise.
     pub workers: u8,
     pub limits: Limits,
     pub outbox: OutboxConfig,
@@ -82,7 +73,6 @@ impl SessionConfig {
     pub fn new(token: Token) -> Self {
         SessionConfig {
             token,
-            caps: DAEMON_CAPS,
             daemon_build: crate::DAEMON_BUILD.to_string(),
             workers: default_workers(),
             limits: Limits::default(),
@@ -118,8 +108,8 @@ pub enum End {
 
 /// [`handshake`], then [`serve`].
 pub fn run(mut conn: Conn, cfg: &SessionConfig, services: Services) -> Result<End, HandshakeError> {
-    let (_, caps) = handshake(&mut conn, cfg)?;
-    Ok(serve(conn, caps, cfg, services))
+    handshake(&mut conn, cfg)?;
+    Ok(serve(conn, cfg, services))
 }
 
 enum Active<S: socketsweep_engine::EventSink> {
@@ -131,7 +121,6 @@ struct Shared {
     outbox: Arc<Outbox>,
     services: Services,
     cfg: SessionConfig,
-    caps: Caps,
     active: Mutex<HashMap<ReqId, Active<ScanSink>>>,
     threads: Mutex<Vec<JoinHandle<()>>>,
 }

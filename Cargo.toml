@@ -49,7 +49,6 @@ socketsweep-sim = { path = "crates/sim" }
 socketsweep-transport-adb = { path = "crates/transport-adb" }
 socketsweep-host-core = { path = "crates/host-core" }
 socketsweep-daemon = { path = "crates/daemon" }
-bitflags = { version = "2.13", features = ["serde"] }
 # Pinned exactly: specta 2 is still a release candidate and its RCs break each
 # other. These are the versions tauri-specta 2.0.0-rc.26 is built against, so
 # src-tauri can adopt tauri-specta without the contract crate changing.

@@ -101,9 +101,8 @@ pub fn read_frame<R: Read + ?Sized, T: DeserializeOwned>(
 /// Read one frame's body without decoding it, with the same end-of-stream and
 /// size rules as [`read_frame`].
 ///
-/// For the daemon's first frame, which it must inspect with
-/// [`check_hello`](crate::check_hello) before it knows the frame is a `Hello`
-/// of its own version.
+/// For the daemon's first frame, which it checks with
+/// [`check_hello`](crate::check_hello) before it knows the frame is a `Hello`.
 pub fn read_frame_body<R: Read + ?Sized>(r: &mut R) -> Result<Option<Vec<u8>>, WireError> {
     let mut len_buf = [0u8; 4];
     let mut filled = 0;

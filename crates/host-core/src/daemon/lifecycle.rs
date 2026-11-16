@@ -5,7 +5,6 @@ use std::time::Instant;
 
 use rand::Rng;
 use socketsweep_transport::{DeviceInfo, Transport, TransportError};
-use socketsweep_wire::Caps;
 
 use super::random::{random_session, random_socket_name, random_token};
 use super::{
@@ -67,13 +66,7 @@ impl Daemon {
             let attempt = match transport.open_tunnel(serial, &socket) {
                 Err(e) => Err(e.to_string()),
                 Ok(stream) => {
-                    match Client::connect(
-                        stream,
-                        token,
-                        session,
-                        Caps::all(),
-                        options.client.clone(),
-                    ) {
+                    match Client::connect(stream, token, session, options.client.clone()) {
                         Ok(client) => Ok(client),
                         Err(e) if e.retryable() => Err(e.to_string()),
                         Err(e) => return Err(LaunchError::Handshake(e)),

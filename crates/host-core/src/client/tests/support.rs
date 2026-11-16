@@ -2,7 +2,7 @@ use super::super::*;
 use crate::testkit::FakeDaemon;
 use socketsweep_transport::fake::{FakeDevice, FakeTransport};
 use socketsweep_transport::Transport;
-use socketsweep_wire::{Caps, Outcome, ScanEvent, SessionId, Token, Totals, TOKEN_LEN};
+use socketsweep_wire::{Outcome, ScanEvent, SessionId, Token, Totals, TOKEN_LEN};
 
 pub(super) const TOKEN: Token = [7; TOKEN_LEN];
 pub(super) const SESSION: SessionId = [1; 16];
@@ -27,7 +27,7 @@ pub(super) fn connect_with(
     let d = daemon.clone();
     t.on_tunnel("P1", "sock", move |end| d.serve(end, daemon_token));
     let stream = t.open_tunnel("P1", "sock").unwrap();
-    Client::connect(stream, TOKEN, SESSION, Caps::all(), config)
+    Client::connect(stream, TOKEN, SESSION, config)
 }
 
 pub(super) fn connect(daemon: &FakeDaemon) -> Client {

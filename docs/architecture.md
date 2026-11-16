@@ -28,7 +28,7 @@ Every contract has a **fake** implementation, so each side can be tested alone.
 | ---------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------- |
 | GUI ↔ host       | `crates/gui-contract`: command and event types                 | `tauri-specta` generates `src/bindings.ts`; CI fails if it is stale. React code imports only `src/api/` | `src/api` mock in vitest           |
 | host ↔ transport | `crates/transport`: `trait Transport`, `trait Duplex`          | Rust trait; host-core depends on the trait only                                                         | `FakeTransport` (in-memory device) |
-| host ↔ phone     | `crates/wire`: protocol v5                                     | One crate for both ends; golden byte tests; the version must match exactly                              | `FakeDaemon` (in `crates/sim`)     |
+| host ↔ phone     | `crates/wire`: protocol v6                                     | One crate for both ends; the version must match exactly                                                 | `FakeDaemon` (in `crates/sim`)     |
 | daemon internals | `trait Fs`, `trait EventSink`; `sched` is a pure state machine | Rust traits                                                                                             | `SimFs`, a recording sink          |
 
 ### Workspace layout
@@ -51,7 +51,7 @@ The daemon is built for `aarch64-linux-android` (phones) and
 `x86_64-linux-android` (emulator, for end-to-end tests), at API 30 (Android 11)
 and above. One phone at a time, but every contract carries a session id.
 
-## 2. Wire protocol v5 (host ↔ phone)
+## 2. Wire protocol v6 (host ↔ phone)
 
 ### Framing
 
@@ -60,28 +60,28 @@ frame. Large directory listings are split into parts of at most 4,096 entries.
 
 ### Handshake
 
-The first frame on every connection is a standalone `Hello`. Its first fields
-are **frozen forever**, so any future daemon can read the version with
-`postcard::take_from_bytes`.
+The first frame on every connection is a standalone `Hello`. The host pushes a
+fresh daemon every session, so the two always come from the same build and
+there is nothing to negotiate: the version must match exactly.
 
 ```rust
-pub const PROTOCOL_VERSION: u16 = 5;
+pub const PROTOCOL_VERSION: u16 = 6;
 pub type ReqId = u32;      // chosen by the host, never 0; 0 = session-level
 pub type DirId = u32;      // assigned by the daemon per scan, dense, root = 0
 pub type SessionId = [u8; 16];
 
 pub struct Hello   { magic: [u8; 4] /* b"SSWP" */, version: u16, token: Token,
-                     session: SessionId, caps: Caps }
-pub struct Welcome { version: u16, session: SessionId, caps: Caps,
-                     daemon_build: String, workers: u8, limits: Limits }
-// Caps (u64 bitflags): DISK_USAGE, LISTING_PARTS, DEFERRED_STAT, COPY_MANIFEST, DIR_MTIME, RESUME
+                     session: SessionId }
+pub enum HelloReply { Welcome(Welcome), Refused }
+pub struct Welcome { session: SessionId, daemon_build: String }
 ```
 
-- **Order of checks:** token (constant-time comparison) → version (must match
-  exactly; the daemon and host ship together) → capabilities.
-- **Wrong token:** the daemon replies `Refused` and reveals nothing else.
-- **Capabilities** describe what the phone can do, not compatibility between
-  releases.
+- **Checks:** magic, token (constant-time comparison) and version (exact
+  match), all before anything is decided.
+- **Anything wrong:** the daemon replies a bare `Refused`, whether the magic,
+  the token or the version, and closes the connection. A caller without the
+  token learns nothing about the daemon. The host's error for it names both
+  causes.
 - **Token:** 32 random bytes per session, passed to the daemon in the
   `SOCKETSWEEP_TOKEN` environment variable, never on argv.
 
@@ -218,7 +218,7 @@ SOCKETSWEEP_TOKEN=<64 hex> socketsweep-daemon --socket <abstract-name> [--root <
 ```
 
 `--root` (default `/sdcard`) confines every request; `--threads` sets the
-default workers per scan reported in `Welcome`. Logs go to stderr. Exit codes:
+default workers per scan. Logs go to stderr. Exit codes:
 0 after `Shutdown`, 1 if the socket cannot be bound, 2 for bad arguments, 3 for
 a missing or malformed token, 4 on a host that is not Linux or Android.
 
@@ -596,13 +596,13 @@ Open tier, retune the weights, then revisit the design.
   phone's storage service handles a limited number of requests at once.
   Measure W on real phones.
 - Whether `d_type` and `st_blocks` are reliable on shared storage. If
-  `blocks == 0` while the size is not, round the size up to 4 KiB and set a
-  capability flag.
+  `blocks == 0` while the size is not, round the size up to 4 KiB in the
+  daemon.
 - One huge directory pins one worker. A 60,000-file directory takes about 6 s.
   Splitting it into chunks is a later option.
 - Hardlinks are counted once per `(dev, ino)` when the link count is above 1.
   `one_filesystem` handles bind mounts.
-- A dropped wireless adb connection cancels the scan. Resuming it is the later
-  `RESUME` capability.
+- A dropped wireless adb connection cancels the scan. Resuming it is a later
+  feature.
 - A snapshot cache comes later: it would key on the path relative to the root,
   plus the directory's `mtime` and `(dev, ino)`.
