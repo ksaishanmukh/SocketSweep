@@ -61,11 +61,8 @@ impl Tree {
             let Some(area_id) = self.child_named(android, area) else {
                 continue;
             };
-            for id in self.children_of(area_id) {
-                if let Some(package) = self.package_of(id) {
-                    out.push((package, id));
-                }
-            }
+            let folders = self.children_of(area_id).into_iter();
+            out.extend(folders.filter_map(|id| Some((self.package_of(id)?, id))));
         }
         out
     }

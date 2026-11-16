@@ -7,7 +7,7 @@ mod handlers;
 
 use socketsweep_wire::{DirId, Outcome, ScanEvent};
 
-pub use done_totals::done_totals;
+pub use done_totals::{done_totals, join_path};
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct CDir {
@@ -131,14 +131,17 @@ impl Checker {
         let Some(outcome) = self.finished else {
             return Err("no Finished".into());
         };
-        if outcome == Outcome::Complete {
-            for (i, r) in self.dirs.iter().enumerate() {
-                if r.known && !r.done && !self.dead(i as DirId) {
-                    return Err(format!("G3: dir {i} never finished"));
-                }
-            }
+        if outcome != Outcome::Complete {
+            return Ok(());
         }
-        Ok(())
+        let open = (0..self.dirs.len()).find(|&i| {
+            let r = &self.dirs[i];
+            r.known && !r.done && !self.dead(i as DirId)
+        });
+        match open {
+            Some(i) => Err(format!("G3: dir {i} never finished")),
+            None => Ok(()),
+        }
     }
 
     /// Check a whole stream.

@@ -118,57 +118,57 @@ impl Job<'_> {
         if self.ctl.cancel.load(Ordering::SeqCst) {
             let _ = client.cancel(req);
         }
-        let manifest = self.receive_manifest(client, req, &rx, destination, before);
+        let manifest = Self::receive_manifest(client, req, &rx, |items| {
+            let totals = (
+                before.0 + files_in(items),
+                before.1 + items.iter().map(|i| i.size).sum::<u64>(),
+            );
+            self.emit(destination, &CopyTick::default(), totals, false);
+        });
         *lock(&self.ctl.prepare) = None;
         manifest
     }
 
-    /// Collect a manifest's parts, reporting the copy's totals so far after
-    /// each.
+    /// Collect a manifest's parts, calling `progress` with the items so far
+    /// after each.
     fn receive_manifest(
-        &self,
         client: &Client,
         req: ReqId,
         rx: &Receiver<ServerMsg>,
-        destination: &str,
-        before: (u32, u64),
+        progress: impl Fn(&[CopyItem]),
     ) -> CmdResult<(Vec<u8>, Vec<CopyItem>)> {
         let mut items = Vec::new();
         loop {
-            match rx.recv() {
-                Ok(ServerMsg::CopyManifest { root, files, last }) => {
-                    items.extend(files);
-                    let files_total = before.0 + files_in(&items);
-                    let bytes_total = before.1 + items.iter().map(|i| i.size).sum::<u64>();
-                    let tick = CopyTick::default();
-                    self.emit(destination, &tick, (files_total, bytes_total), false);
-                    if last {
-                        return Ok((root, items));
-                    }
-                }
-                Ok(ServerMsg::Failed {
+            let msg = rx.recv().map_err(|_| {
+                client_err(ClientError::Closed(
+                    client.closed_reason().unwrap_or_default(),
+                ))
+            })?;
+            let (root, files, last) = match msg {
+                ServerMsg::CopyManifest { root, files, last } => (root, files, last),
+                ServerMsg::Failed {
                     code,
                     errno,
                     message,
-                }) => {
+                } => {
                     return Err(client_err(ClientError::Failed {
                         code,
                         errno,
                         message,
                     }));
                 }
-                Ok(other) => {
+                other => {
                     let _ = client.cancel(req);
                     return Err(err(
                         ErrorCode::Daemon,
                         format!("Unexpected reply to the copy: {other:?}"),
                     ));
                 }
-                Err(_) => {
-                    return Err(client_err(ClientError::Closed(
-                        client.closed_reason().unwrap_or_default(),
-                    )));
-                }
+            };
+            items.extend(files);
+            progress(&items);
+            if last {
+                return Ok((root, items));
             }
         }
     }

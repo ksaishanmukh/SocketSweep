@@ -27,7 +27,6 @@ pub fn run_once(
     let t0 = Instant::now();
     let mut rec = Recorder::new(t0);
     let mut sent: SentClicks = vec![None; script.clicks.len()];
-    let mut seq = 0u32;
     let deadline = t0 + timeout;
     while !rec.is_done() {
         let now = Instant::now();
@@ -56,7 +55,7 @@ pub fn run_once(
                     .unwrap_or_else(|| "the scan's channel closed".into()))
             }
         }
-        send_due_clicks(client, req, script, t0, &rec, &mut sent, &mut seq)?;
+        send_due_clicks(client, req, script, &rec, &mut sent)?;
     }
     let end = rec.end.expect("done");
     if end.outcome != Outcome::Complete {
@@ -72,22 +71,22 @@ fn send_due_clicks(
     client: &Client,
     req: u32,
     script: &Script,
-    t0: Instant,
     rec: &Recorder,
     sent: &mut SentClicks,
-    seq: &mut u32,
 ) -> Result<(), String> {
-    let now = Instant::now();
+    // Each sent click used the next seq, so the count is the last one.
+    let mut seq = sent.iter().flatten().count() as u32;
+    let now = rec.elapsed(Instant::now());
     for (c, s) in script.clicks.iter().zip(sent.iter_mut()) {
-        if s.is_some() || now < t0 + c.at || rec.is_done() {
+        if s.is_some() || now < c.at || rec.is_done() {
             continue;
         }
         if let Some(dir) = rec.dir(&c.path) {
-            *seq += 1;
+            seq += 1;
             client
-                .focus(req, dir, *seq)
+                .focus(req, dir, seq)
                 .map_err(|e| format!("Focus: {e}"))?;
-            *s = Some((*seq, rec.elapsed(Instant::now())));
+            *s = Some((seq, rec.elapsed(Instant::now())));
         }
     }
     Ok(())

@@ -29,4 +29,4 @@ tempfile = "3"
 socketsweep-transport = { workspace = true, features = ["fake"] }
 
 [lints.clippy]
-too_many_lines = "warn"
+excessive_nesting = "warn"

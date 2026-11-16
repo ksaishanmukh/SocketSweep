@@ -56,20 +56,10 @@ impl ScanState {
         for e in read.entries {
             self.add_entry(d, &mut build, e);
         }
-        let ListingBuild {
-            first,
-            entries,
-            deferred,
-            tot,
-            n_children,
-            owed,
-            failed_at,
-            ..
-        } = build;
-        self.emit_listing(d, entries);
-        self.emit_failed_stats(d, &failed_at);
-        self.record_children(d, first, n_children, child_depth, &tot);
-        self.settle_listing(d, kind, n_children, owed, deferred, now);
+        self.emit_listing(d, std::mem::take(&mut build.entries));
+        self.emit_failed_stats(d, &build.failed_at);
+        self.record_children(d, &build);
+        self.settle_listing(d, build, now);
     }
 
     pub(super) fn on_dir_failed(&mut self, d: DirId, op: FsOp, errno: i32, now: Micros) {
@@ -193,73 +183,63 @@ impl ScanState {
 
     /// Link `d`'s new children into the table, its totals and the unlisted
     /// counts (and the skeleton buckets while they last).
-    fn record_children(
-        &mut self,
-        d: DirId,
-        first: DirId,
-        n_children: u32,
-        child_depth: u8,
-        tot: &Totals,
-    ) {
+    fn record_children(&mut self, d: DirId, build: &ListingBuild) {
+        let (first, n) = (build.first, build.n_children);
         let rec = &mut self.dirs[d as usize];
-        rec.first_child = if n_children > 0 { first } else { NONE };
-        rec.n_children = n_children;
-        rec.open_children = n_children;
-        rec.totals.add(tot);
-
-        if n_children > 0 {
-            let cd = usize::from(child_depth);
-            if self.unlisted_by_depth.len() <= cd {
-                self.unlisted_by_depth.resize(cd + 1, 0);
+        rec.first_child = if n > 0 { first } else { NONE };
+        rec.n_children = n;
+        rec.open_children = n;
+        rec.totals.add(&build.tot);
+        if n == 0 {
+            return;
+        }
+        let cd = usize::from(build.child_depth);
+        if self.unlisted_by_depth.len() <= cd {
+            self.unlisted_by_depth.resize(cd + 1, 0);
+        }
+        self.unlisted_by_depth[cd] += n;
+        self.unlisted += n;
+        if let Some(buckets) = self.skeleton.as_mut() {
+            if buckets.len() <= cd {
+                buckets.resize_with(cd + 1, Default::default);
             }
-            self.unlisted_by_depth[cd] += n_children;
-            self.unlisted += n_children;
-            if let Some(buckets) = self.skeleton.as_mut() {
-                if buckets.len() <= cd {
-                    buckets.resize_with(cd + 1, Default::default);
-                }
-                buckets[cd].extend(first..first + n_children);
-            }
+            buckets[cd].extend(first..first + n);
         }
     }
 
     /// The listing's effect on `d`'s state: owed stats become a `StatDir`
     /// task; otherwise the directory moves on at once.
-    fn settle_listing(
-        &mut self,
-        d: DirId,
-        kind: TaskKind,
-        n_children: u32,
-        owed: usize,
-        deferred: Vec<DeferredEnt>,
-        now: Micros,
-    ) {
-        let mut delta = i64::from(n_children);
-        if kind == TaskKind::Names && owed > 0 {
+    fn settle_listing(&mut self, d: DirId, build: ListingBuild, now: Micros) {
+        let ListingBuild {
+            kind,
+            n_children,
+            owed,
+            deferred,
+            ..
+        } = build;
+        let delta = i64::from(n_children);
+        if kind == TaskKind::Full {
+            self.add_pending(d, delta);
             let r = &mut self.dirs[d as usize];
-            r.state = St::NamesOnly;
-            r.stat = StatSt::Pending;
-            delta += 1;
-            if owed as u32 >= BIG_JOB_ENTRIES {
-                self.big.push((owed as u32, d));
-            }
-            self.deferred.insert(d, deferred);
-            self.add_pending(d, delta);
-        } else {
-            self.add_pending(d, delta);
-            if kind == TaskKind::Names {
-                // Every entry was stat'ed early (DT_UNKNOWN) or there are none:
-                // the deferred stats are already in hand.
-                self.dirs[d as usize].state = St::NamesOnly;
-                self.dirs[d as usize].stat = StatSt::InFlight;
-                self.deferred.insert(d, deferred);
-                self.on_stats(d, Ok(Vec::new()), now);
-            } else {
-                let r = &mut self.dirs[d as usize];
-                r.state = St::Listed;
-                r.stat = StatSt::Done;
-                self.try_complete(d, now);
-            }
+            r.state = St::Listed;
+            r.stat = StatSt::Done;
+            self.try_complete(d, now);
+            return;
         }
+        self.dirs[d as usize].state = St::NamesOnly;
+        self.deferred.insert(d, deferred);
+        if owed == 0 {
+            // Every entry was stat'ed early (DT_UNKNOWN) or there are none:
+            // the deferred stats are already in hand.
+            self.add_pending(d, delta);
+            self.dirs[d as usize].stat = StatSt::InFlight;
+            self.on_stats(d, Ok(Vec::new()), now);
+            return;
+        }
+        self.dirs[d as usize].stat = StatSt::Pending;
+        if owed as u32 >= BIG_JOB_ENTRIES {
+            self.big.push((owed as u32, d));
+        }
+        self.add_pending(d, delta + 1);
     }
 }

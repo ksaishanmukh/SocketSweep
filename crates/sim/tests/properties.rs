@@ -88,11 +88,9 @@ fn run_script(
                 scan.clear_focus(seq);
             }
             _ if deletes => {
-                if let Some(path) = scan.path_of(dir) {
-                    if scan.prune(dir) {
-                        assert!(fs.inner.delete(&path));
-                        pruned += 1;
-                    }
+                if let Some(path) = scan.path_of(dir).filter(|_| scan.prune(dir)) {
+                    assert!(fs.inner.delete(&path));
+                    pruned += 1;
                 }
             }
             _ => {}

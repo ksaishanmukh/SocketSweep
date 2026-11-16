@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use socketsweep_wire::{DirId, Limits, Outcome, ScanOpts, Totals};
 
 use crate::fs::{Fs, Interrupt, RootInfo};
-use crate::sched::{Micros, Pick, ScanState};
+use crate::sched::{Micros, Pick, ScanState, Task};
 use crate::sink::EventSink;
 
 /// How long a worker waits before looking again when the sink is congested.
@@ -174,29 +174,32 @@ impl<S: EventSink> Scan<S> {
 
     fn worker<F: Fs + ?Sized>(&self, fs: &F, w: usize) {
         let intr = Interrupt::new(&self.shared.cancel);
-        loop {
-            let task = {
-                let mut g = self.lock();
-                loop {
-                    if g.is_finished() {
-                        return;
-                    }
-                    if self.shared.sink.congested() {
-                        g = self.wait(g, CONGESTED_POLL);
-                        continue;
-                    }
-                    let now = self.now();
-                    let pick = g.pick(w, now);
-                    self.flush(&mut g);
-                    match pick {
-                        Pick::Run(t) => break t,
-                        Pick::Idle => g = self.wait(g, IDLE_POLL),
-                        Pick::Exit => return,
-                    }
-                }
-            };
+        while let Some(task) = self.next_task(w) {
             let output = task.run(fs, intr);
             self.update(|s, now| s.apply(w, output, now));
+        }
+    }
+
+    /// Worker `w`'s next task, waiting while the sink is congested or
+    /// nothing is runnable; `None` once the scan has finished.
+    fn next_task(&self, w: usize) -> Option<Task> {
+        let mut g = self.lock();
+        loop {
+            if g.is_finished() {
+                return None;
+            }
+            if self.shared.sink.congested() {
+                g = self.wait(g, CONGESTED_POLL);
+                continue;
+            }
+            let now = self.now();
+            let pick = g.pick(w, now);
+            self.flush(&mut g);
+            match pick {
+                Pick::Run(t) => return Some(t),
+                Pick::Idle => g = self.wait(g, IDLE_POLL),
+                Pick::Exit => return None,
+            }
         }
     }
 

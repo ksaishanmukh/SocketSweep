@@ -24,6 +24,7 @@ use socketsweep_transport::fake::{pipe, FakeTransport, PipeEnd};
 use socketsweep_transport::Duplex;
 use socketsweep_wire::{CopyItem, ErrCode, Kind, Token, Totals, BLOCK_SIZE};
 
+use crate::checker::join_path;
 use crate::simfs::{NodeId, SimFs};
 use crate::slowfs::SlowFs;
 
@@ -79,17 +80,13 @@ impl SimActions {
         let mut i = 0;
         while i < out.len() {
             let (x, rel) = out[i].clone();
-            if self.fs.node(x).kind == Kind::Dir {
-                for c in self.fs.children(x) {
-                    let mut r = rel.clone();
-                    if !r.is_empty() {
-                        r.push(b'/');
-                    }
-                    r.extend_from_slice(&self.fs.node(c).name);
-                    out.push((c, r));
-                }
-            }
             i += 1;
+            if self.fs.node(x).kind != Kind::Dir {
+                continue;
+            }
+            for c in self.fs.children(x) {
+                out.push((c, join_rel(&rel, &self.fs.node(c).name)));
+            }
         }
         out
     }
@@ -270,5 +267,14 @@ impl FakeDaemon {
         let d = self.clone();
         let t = std::thread::spawn(move || d.serve(daemon, token));
         (host, t)
+    }
+}
+
+/// `rel/name`, or `name` at the top of the walk.
+fn join_rel(rel: &[u8], name: &[u8]) -> Vec<u8> {
+    if rel.is_empty() {
+        name.to_vec()
+    } else {
+        join_path(rel, name)
     }
 }

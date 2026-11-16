@@ -37,7 +37,6 @@ impl SimFs {
         let mut rng = Rng::new(seed);
         let mut b = TreeBuilder::new();
         let mut frontier = vec![(0 as NodeId, 0u32)];
-        let mut dirs = 1u32;
         let mut files_made: Vec<NodeId> = Vec::new();
         let mut i = 0;
         while i < frontier.len() {
@@ -45,14 +44,7 @@ impl SimFs {
             i += 1;
             random_files(&mut b, &mut rng, shape, d, &mut files_made);
             if depth < shape.max_depth {
-                random_child_dirs(
-                    &mut b,
-                    &mut rng,
-                    shape,
-                    (d, depth),
-                    &mut dirs,
-                    &mut frontier,
-                );
+                random_child_dirs(&mut b, &mut rng, shape, (d, depth), &mut frontier);
             }
         }
         if shape.faults && frontier.len() > 3 {
@@ -100,13 +92,12 @@ fn random_files(
 }
 
 /// Subdirectories of `parent` (a directory and its depth), added to the
-/// frontier.
+/// frontier, which holds every directory made so far.
 fn random_child_dirs(
     b: &mut TreeBuilder,
     rng: &mut Rng,
     shape: RandomShape,
     parent: (NodeId, u32),
-    dirs: &mut u32,
     frontier: &mut Vec<(NodeId, u32)>,
 ) {
     let (d, depth) = parent;
@@ -116,10 +107,9 @@ fn random_child_dirs(
         rng.below(5)
     };
     for k in 0..fan {
-        if *dirs >= shape.max_dirs {
+        if frontier.len() as u32 >= shape.max_dirs {
             break;
         }
-        *dirs += 1;
         let c = b.dir(d, format!("d{k}"));
         if shape.faults {
             if rng.chance(0.03) {

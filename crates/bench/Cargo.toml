@@ -32,4 +32,4 @@ serde_json = { workspace = true }
 socketsweep-transport = { workspace = true, features = ["fake"] }
 
 [lints.clippy]
-too_many_lines = "warn"
+excessive_nesting = "warn"

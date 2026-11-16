@@ -146,15 +146,9 @@ impl Tree {
         ids.iter()
             .copied()
             .filter(|id| seen.insert(*id))
-            .filter(|id| {
-                let mut cur = self.parent(*id);
-                while let Some(p) = cur {
-                    if asked.contains(&p) {
-                        return false;
-                    }
-                    cur = self.parent(p);
-                }
-                true
+            .filter(|&id| {
+                let mut ancestors = std::iter::successors(self.parent(id), |&p| self.parent(p));
+                !ancestors.any(|p| asked.contains(&p))
             })
             .collect()
     }

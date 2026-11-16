@@ -27,12 +27,11 @@ impl Outbox {
         loop {
             let round = match self.next_round(last_tx, last_bulk) {
                 Ok(r) => r,
-                Err((why, dead)) => {
-                    if dead {
-                        on_dead();
-                    }
+                Err((why, true)) => {
+                    on_dead();
                     return why;
                 }
+                Err((why, false)) => return why,
             };
             let sent_bulk = !round.batches.is_empty();
             if let Err(e) = round.write(&mut out) {

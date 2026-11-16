@@ -140,9 +140,9 @@ impl Read for PipeEnd {
         loop {
             if !state.buf.is_empty() {
                 let n = out.len().min(state.buf.len());
-                for (slot, byte) in out.iter_mut().zip(state.buf.drain(..n)) {
-                    *slot = byte;
-                }
+                out.iter_mut()
+                    .zip(state.buf.drain(..n))
+                    .for_each(|(slot, byte)| *slot = byte);
                 drop(state);
                 channel.changed.notify_all();
                 return Ok(n);

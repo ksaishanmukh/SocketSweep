@@ -162,31 +162,28 @@ fn drive(shared: Arc<Shared>, send: Arc<Sender>) {
         if state.1 {
             return;
         }
-        match state.0.deadline() {
-            None => {
-                state = shared
-                    .changed
-                    .wait(state)
-                    .unwrap_or_else(|e| e.into_inner());
-            }
-            Some(due) => {
-                let now = Instant::now();
-                if now >= due {
-                    let out = state.0.poll(now);
-                    drop(state);
-                    if let Some(out) = out {
-                        send(out);
-                    }
-                    state = lock(&shared.state);
-                } else {
-                    state = shared
-                        .changed
-                        .wait_timeout(state, due - now)
-                        .unwrap_or_else(|e| e.into_inner())
-                        .0;
-                }
-            }
+        let Some(due) = state.0.deadline() else {
+            state = shared
+                .changed
+                .wait(state)
+                .unwrap_or_else(|e| e.into_inner());
+            continue;
+        };
+        let now = Instant::now();
+        if now < due {
+            state = shared
+                .changed
+                .wait_timeout(state, due - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+            continue;
         }
+        let out = state.0.poll(now);
+        drop(state);
+        if let Some(out) = out {
+            send(out);
+        }
+        state = lock(&shared.state);
     }
 }
 

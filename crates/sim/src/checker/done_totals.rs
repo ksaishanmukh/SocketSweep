@@ -14,18 +14,10 @@ pub fn done_totals<'a>(
             ScanEvent::Started { root, .. } => paths = vec![root.clone()],
             ScanEvent::Listing { dir, entries, .. } => {
                 let base = paths[*dir as usize].clone();
-                for en in entries {
-                    if let Some(id) = en.id {
-                        let mut p = base.clone();
-                        if p.last() != Some(&b'/') {
-                            p.push(b'/');
-                        }
-                        p.extend_from_slice(&en.name);
-                        if paths.len() <= id as usize {
-                            paths.resize(id as usize + 1, Vec::new());
-                        }
-                        paths[id as usize] = p;
-                    }
+                for (id, name) in entries.iter().filter_map(|en| Some((en.id?, &en.name))) {
+                    let id = id as usize;
+                    paths.resize(paths.len().max(id + 1), Vec::new());
+                    paths[id] = join_path(&base, name);
                 }
             }
             ScanEvent::SubtreeDone { dir, totals } => {
@@ -35,4 +27,14 @@ pub fn done_totals<'a>(
         }
     }
     out
+}
+
+/// `base/name`, without doubling a trailing slash (the root may be `/`).
+pub fn join_path(base: &[u8], name: &[u8]) -> Vec<u8> {
+    let mut p = base.to_vec();
+    if p.last() != Some(&b'/') {
+        p.push(b'/');
+    }
+    p.extend_from_slice(name);
+    p
 }

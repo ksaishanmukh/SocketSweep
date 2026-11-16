@@ -8,7 +8,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use socketsweep_gui_contract::{ErrorCode, NodeRef, ScanPhase, ScanStarted, SessionId};
+use socketsweep_gui_contract::{ErrorCode, NodeRef, ScanPhase, ScanStarted};
 use socketsweep_wire::{ErrCode, ReqId, ScanEvent, ServerMsg};
 
 use super::apps;
@@ -52,10 +52,8 @@ pub(super) fn start(inner: &Arc<Inner>, root: Option<String>) -> CmdResult<ScanS
         ));
     };
 
-    let session = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
-    let scan = Arc::new(new_scan(
-        inner, &conn, session, req, client, &root, resolved,
-    ));
+    let scan = Arc::new(new_scan(inner, &conn, req, &root, resolved));
+    let session = scan.session;
     let rest_failed = match scan.apply(&events[1..]) {
         Ok(_) => None,
         Err(e) => Some(e.to_string()),
@@ -114,16 +112,11 @@ fn first_batch(
     Ok(events)
 }
 
-/// The scan of request `req`, with its tree, metadata and focus driver.
-fn new_scan(
-    inner: &Inner,
-    conn: &Conn,
-    session: SessionId,
-    req: ReqId,
-    client: Client,
-    root: &str,
-    resolved: &[u8],
-) -> Scan {
+/// The scan of request `req` on `conn`, with a new GUI session id, its tree,
+/// metadata and focus driver.
+fn new_scan(inner: &Inner, conn: &Conn, req: ReqId, root: &str, resolved: &[u8]) -> Scan {
+    let session = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
+    let client = conn.daemon.client.clone();
     let mut tree = Tree::new(session, resolved, root);
     tree.set_apps(apps::initial_catalog(inner, conn));
     let previous = inner

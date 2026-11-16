@@ -17,4 +17,4 @@ socketsweep-transport = { workspace = true, features = ["fake"] }
 proptest = "1.5"
 
 [lints.clippy]
-too_many_lines = "warn"
+excessive_nesting = "warn"

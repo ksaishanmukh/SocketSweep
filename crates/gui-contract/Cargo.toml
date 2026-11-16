@@ -20,4 +20,4 @@ name = "export-bindings"
 path = "src/bin/export-bindings.rs"
 
 [lints.clippy]
-too_many_lines = "warn"
+excessive_nesting = "warn"

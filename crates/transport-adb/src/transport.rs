@@ -109,12 +109,7 @@ impl Transport for AdbTransport {
                     let _ = fs::remove_file(&part);
                     return Err(local_err(e));
                 }
-                if mtime > 0 {
-                    // Best effort: a copy with the wrong mtime is still a copy.
-                    if let Ok(f) = File::options().write(true).open(local) {
-                        let _ = f.set_modified(UNIX_EPOCH + Duration::from_secs(u64::from(mtime)));
-                    }
-                }
+                set_mtime(local, mtime);
                 let _ = stream.write_all(&sync_header(b"QUIT", 0));
                 Ok(n)
             }
@@ -134,5 +129,16 @@ impl Transport for AdbTransport {
         stream.set_read_timeout(None)?;
         stream.set_write_timeout(None)?;
         Ok(Box::new(stream))
+    }
+}
+
+/// Give a pulled file the phone's mtime (Unix seconds; 0 means unknown).
+/// Best effort: a copy with the wrong mtime is still a copy.
+fn set_mtime(local: &Path, mtime: u32) {
+    if mtime == 0 {
+        return;
+    }
+    if let Ok(f) = File::options().write(true).open(local) {
+        let _ = f.set_modified(UNIX_EPOCH + Duration::from_secs(u64::from(mtime)));
     }
 }

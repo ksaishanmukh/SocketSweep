@@ -180,15 +180,16 @@ impl SimFs {
         for id in 0..self.nodes.len() {
             let (l, s) = (self.lists(id as NodeId), self.stats(id as NodeId));
             let path = || String::from_utf8_lossy(&self.path_of(id as NodeId)).into_owned();
-            if self.is_deleted(id as NodeId) || truth.maybe[id] {
-                // Deleted during the scan, or below a mount point: touched at
-                // most once.
-                if l > 1 || s > 1 {
-                    return Err(format!(
-                        "{} (deleted): listed {l}, stat'ed {s} times",
-                        path()
-                    ));
-                }
+            // Deleted during the scan, or below a mount point: touched at
+            // most once.
+            let loose = self.is_deleted(id as NodeId) || truth.maybe[id];
+            if loose && (l > 1 || s > 1) {
+                return Err(format!(
+                    "{} (deleted): listed {l}, stat'ed {s} times",
+                    path()
+                ));
+            }
+            if loose {
                 continue;
             }
             if l != u32::from(truth.listed[id]) {
