@@ -523,8 +523,8 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   - the threaded pool runs against `RealFs` and a `SlowFs` wrapper that adds
     delays;
   - host-core runs against `FakeDaemon` and `FakeTransport`;
-  - an emulator end-to-end CI job (`.github/workflows/e2e.yml`, nightly and
-    by hand, not on pull requests) boots an API 33 x86_64 emulator, builds
+  - an emulator end-to-end CI job (`.github/workflows/e2e.yml`, on an
+    `e2e-*` tag or by hand) boots an API 33 x86_64 emulator, builds
     the x86_64 daemon and runs `socketsweep-bench e2e`: it pushes the seeded
     fixture (section 6) to `/sdcard/ssfixture` as a tar archive, then, through
     host-core's `App` as the GUI would: connect → scan → `SkeletonReady` →

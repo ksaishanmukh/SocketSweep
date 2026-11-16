@@ -1,11 +1,14 @@
 name: Build SocketSweep
 
+# Runs only when asked for, by tag, so documentation pushes cost nothing:
+#   check-<anything>  the fast gate alone
+#   build-<anything>  the gate, both phone binaries and the three desktop bundles
+#   v<version>        all of that, then a draft release
+# The Actions tab can start a full build by hand as well.
 on:
   push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
-    branches: [main]
+    tags: ['v*', 'check-*', 'build-*']
+  workflow_dispatch:
 
 jobs:
   # ── Fast gate ─────────────────────────────────────────────────────────────
@@ -73,6 +76,7 @@ jobs:
   # needed on the host: the daemon chmods the file after it is pushed to the phone.
   daemon:
     needs: check
+    if: ${{ !startsWith(github.ref_name, 'check-') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,6 +105,7 @@ jobs:
   # Android SDK in ANDROID_HOME) and share it with the bundle jobs.
   helper:
     needs: check
+    if: ${{ !startsWith(github.ref_name, 'check-') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

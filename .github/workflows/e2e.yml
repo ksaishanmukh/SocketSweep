@@ -1,23 +1,18 @@
 name: Emulator end-to-end
 
-# Slow (an emulator boot, a 50,000-file fixture, a few dozen scans), so not on
-# every pull request: nightly, by hand from the Actions tab, and on a pull
-# request that carries the `e2e` label.
+# Slow (an emulator boot, a 50,000-file fixture, a few dozen scans), so it runs
+# only on an `e2e-<anything>` tag or by hand from the Actions tab.
 on:
-  pull_request:
-    branches: [main]
-    types: [labeled, synchronize, reopened]
+  push:
+    tags: ['e2e-*']
   workflow_dispatch:
     inputs:
       runs:
         description: Measured benchmark runs per script and mode
         default: '3'
-  schedule:
-    - cron: '17 3 * * *'
 
 jobs:
   emulator:
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'e2e')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
