@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(doc)]
-use super::{ClientMsg, Tier};
+use super::ClientMsg;
 use super::{CopyItem, Entry, Stat, Totals};
 use crate::{DirId, ReqId};
 
@@ -55,8 +55,8 @@ pub enum ServerMsg {
 pub enum ScanEvent {
     /// The first event of every scan. `root` is the path the daemon resolved
     /// (`/sdcard` is a symlink chain to `/storage/emulated/0`), and it is
-    /// directory [`ROOT_DIR`](crate::ROOT_DIR). `dev` is its file system, for
-    /// `one_filesystem`; `workers` how many workers this scan uses.
+    /// directory [`ROOT_DIR`](crate::ROOT_DIR). `dev` is its file system, which
+    /// the scan stays on; `workers` how many workers this scan uses.
     Started {
         root: Vec<u8>,
         dev: u64,

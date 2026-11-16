@@ -1,61 +1,200 @@
 //! Handing a worker its next task.
+//!
+//! Once [`choose_lane`](ScanState::choose_lane) has picked a side of the
+//! focus, the task inside it is, in order:
+//!
+//! 1. **Big jobs.** A `StatDir` of at least [`BIG_JOB_ENTRIES`] entries,
+//!    largest first. (Focused work takes its gating tasks, step 3, first.)
+//! 2. **Skeleton** (background only, while the phase lasts): `Names` tasks,
+//!    shallowest first from per-depth FIFO buckets, so no worker waits for a
+//!    level to finish. A focused folder is read with `Full` even now: its
+//!    sizes are what the user is waiting for.
+//! 3. **Gating tasks.** Focused: the deferred stats of F's parent, then F's
+//!    own read. Background: the own task of F's nearest ancestor above the
+//!    parent that has one. These directories straddle both sides, so nobody
+//!    descends into them; their tasks are taken directly.
+//! 4. **Anchor and descent.** A worker keeps the subtree it last worked in
+//!    while that has work on the same side. Otherwise it takes a new one: a
+//!    child of F with the fewest workers, then the least work (small folders
+//!    finish and their rows go final); in the background, a subtree beside
+//!    the path from F to the root with the fewest workers, then the most
+//!    work (big jobs start early, so the tail stays short). It then descends
+//!    depth-first: a directory's own task, else the highest-id child with
+//!    work.
+//!
+//! With no focus everything is background, scheduled from the root.
 
-use socketsweep_wire::{DirId, Tier};
+use socketsweep_wire::{DirId, ROOT_DIR};
 
-use super::anchor::Anchor;
-use super::{Micros, Pick, Running, ScanState, St, StatSt, Task, TaskKind};
-use crate::alloc::floor_seats;
+use super::focus::Lane;
+#[cfg(doc)]
+use super::BIG_JOB_ENTRIES;
+use super::{Micros, Pick, Running, ScanState, St, StatSt, Task, TaskKind, NONE};
+
+/// How a candidate subtree is ranked after its worker count.
+#[derive(Debug, Clone, Copy)]
+enum Prefer {
+    LeastWork,
+    MostWork,
+}
 
 impl ScanState {
-    /// Hand worker `w` its next task. The worker must
-    /// have applied its previous result first; that released its seat.
-    /// Congestion is the driver's business: it does not call `pick` while
-    /// the sink is congested.
+    /// Hand worker `w` its next task. The worker must have applied its
+    /// previous result first. Congestion is the driver's business: it does
+    /// not call `pick` while the sink is congested.
     pub fn pick(&mut self, w: usize, now: Micros) -> Pick {
         self.tick(now);
         if self.is_finished() {
             return Pick::Exit;
         }
         assert!(self.workers[w].task.is_none(), "worker {w} picked twice");
-        let pending = self.tier_pending();
-        if pending.iter().all(|&p| p == 0) {
-            return Pick::Idle;
-        }
-        let active = self.tier_active();
-        let target = self.targets(now, active, pending);
-        let floors = floor_seats(self.cfg.workers, &self.tier_inputs(now, active, pending));
-        let tier = self.choose_tier(w, active, pending, target, floors);
-        let found = self.find_task(w, tier).or_else(|| {
-            debug_assert!(false, "tier {tier:?} has pending work but no task");
-            Tier::ALL
-                .into_iter()
-                .filter(|&t| t != tier && pending[t.index()] > 0)
-                .find_map(|t| self.find_task(w, t).map(|x| (x, t)))
-                .map(|(x, _)| x)
-        });
-        let Some((dir, kind)) = found else {
+        let f = self.steering();
+        let lane = match f {
+            None => (self.dirs[ROOT_DIR as usize].pending_desc > 0).then_some(Lane::Background),
+            Some(f) => self.choose_lane(f),
+        };
+        let Some(lane) = lane else {
             return Pick::Idle;
         };
-        let tier = self.tier_of(dir);
-        Pick::Run(self.start_task(w, dir, kind, tier))
+        let found = match lane {
+            Lane::Focused => self.find_focused(w, f.expect("a focused lane has a focus")),
+            Lane::Background => self.find_background(w, f),
+        };
+        let Some((dir, kind)) = found else {
+            debug_assert!(false, "{lane:?} has pending work but no task");
+            return Pick::Idle;
+        };
+        Pick::Run(self.start_task(w, dir, kind))
     }
 
-    /// Find a task in `tier`.
-    fn find_task(&mut self, w: usize, tier: Tier) -> Option<(DirId, TaskKind)> {
-        if let Some(d) = self.take_big(tier) {
+    fn find_focused(&mut self, w: usize, f: DirId) -> Option<(DirId, TaskKind)> {
+        let p = self.dirs[f as usize].parent;
+        for d in [p, f] {
+            if let Some(k) = self.own_task(d) {
+                return Some((d, k));
+            }
+        }
+        if let Some(d) = self.take_big(Some(f), Lane::Focused) {
             return Some((d, TaskKind::StatDir));
         }
-        if self.skeleton.is_some() && tier == self.skeleton_tier() {
-            if let Some(d) = self.bucket_pick(tier) {
-                return Some((d, TaskKind::Names));
-            }
+        let kept = self.workers[w].anchor.filter(|&a| self.within(a, f));
+        let a = self
+            .keep_anchor(kept)
+            .or_else(|| self.best_child(f, NONE, Prefer::LeastWork))?;
+        self.workers[w].anchor = Some(a);
+        Some(self.descend(a))
+    }
+
+    fn find_background(&mut self, w: usize, f: Option<DirId>) -> Option<(DirId, TaskKind)> {
+        if let Some(d) = self.take_big(f, Lane::Background) {
+            return Some((d, TaskKind::StatDir));
         }
-        match self.choose_anchor(w, tier)? {
-            Anchor::Own(d) => Some((d, self.own_task(d)?)),
-            Anchor::Sub(a) => {
-                self.workers[w].anchor = Some(a);
-                Some(self.descend(a))
+        if let Some(d) = self.bucket_pick(f) {
+            return Some((d, TaskKind::Names));
+        }
+        if let Some(d) = self.gating_ancestor(f) {
+            return Some((d, self.own_task(d)?));
+        }
+        let kept = self.workers[w].anchor.filter(|&a| match f {
+            None => true,
+            Some(f) => !self.within(a, f) && !self.within(f, a),
+        });
+        let a = self
+            .keep_anchor(kept)
+            .or_else(|| self.background_anchor(f))?;
+        self.workers[w].anchor = Some(a);
+        Some(self.descend(a))
+    }
+
+    /// The nearest directory on the path from F's grandparent (or, with no
+    /// focus, the root) up to the root that has its own task.
+    fn gating_ancestor(&self, f: Option<DirId>) -> Option<DirId> {
+        let mut a = match f {
+            None => ROOT_DIR,
+            Some(f) => self.dirs[self.dirs[f as usize].parent as usize].parent,
+        };
+        while a != NONE {
+            if self.own_task(a).is_some() {
+                return Some(a);
             }
+            a = self.dirs[a as usize].parent;
+        }
+        None
+    }
+
+    /// The previous anchor, if it still has work.
+    fn keep_anchor(&self, a: Option<DirId>) -> Option<DirId> {
+        a.filter(|&a| {
+            let r = &self.dirs[a as usize];
+            r.state != St::Pruned && r.pending_desc > 0
+        })
+    }
+
+    /// The best subtree beside the path from F up to the root (with no
+    /// focus, the best child of the root).
+    fn background_anchor(&self, f: Option<DirId>) -> Option<DirId> {
+        let Some(mut cur) = f else {
+            return self.best_child(ROOT_DIR, NONE, Prefer::MostWork);
+        };
+        let mut best = None;
+        while cur != ROOT_DIR {
+            let a = self.dirs[cur as usize].parent;
+            best = self.better(
+                best,
+                self.best_child(a, cur, Prefer::MostWork),
+                Prefer::MostWork,
+            );
+            cur = a;
+        }
+        best
+    }
+
+    /// The child of `parent` other than `skip` with work, fewest workers
+    /// first, then by `prefer`.
+    fn best_child(&self, parent: DirId, skip: DirId, prefer: Prefer) -> Option<DirId> {
+        self.dirs[parent as usize]
+            .children()
+            .filter(|&c| {
+                let r = &self.dirs[c as usize];
+                c != skip && r.pending_desc > 0 && r.state != St::Pruned
+            })
+            .fold(None, |best, c| self.better(best, Some(c), prefer))
+    }
+
+    /// The better of two candidate anchors; ties keep `a`.
+    fn better(&self, a: Option<DirId>, b: Option<DirId>, prefer: Prefer) -> Option<DirId> {
+        let key = |d: DirId| {
+            let r = &self.dirs[d as usize];
+            let work = i64::from(r.pending_desc);
+            let work = match prefer {
+                Prefer::LeastWork => work,
+                Prefer::MostWork => -work,
+            };
+            (r.active_desc, work)
+        };
+        match (a, b) {
+            (Some(x), Some(y)) if key(y) < key(x) => Some(y),
+            (None, y) => y,
+            (x, _) => x,
+        }
+    }
+
+    /// Depth-first from `a`: a directory's own task first, else the
+    /// highest-id child with work.
+    fn descend(&self, a: DirId) -> (DirId, TaskKind) {
+        let mut x = a;
+        loop {
+            if let Some(k) = self.own_task(x) {
+                return (x, k);
+            }
+            x = self.dirs[x as usize]
+                .children()
+                .rev()
+                .find(|&c| {
+                    let r = &self.dirs[c as usize];
+                    r.pending_desc > 0 && r.state != St::Pruned
+                })
+                .expect("pending_desc > 0 implies a task below");
         }
     }
 
@@ -70,22 +209,44 @@ impl ScanState {
         }
     }
 
-    /// The largest waiting big job in `tier`.
-    fn take_big(&mut self, tier: Tier) -> Option<DirId> {
+    /// The largest waiting big job on `lane` of focus `f`.
+    fn take_big(&mut self, f: Option<DirId>, lane: Lane) -> Option<DirId> {
         let dirs = &self.dirs;
         self.big.retain(|&(_, d)| {
             dirs[d as usize].state == St::NamesOnly && dirs[d as usize].stat == StatSt::Pending
         });
-        let mut best: Option<(u32, DirId)> = None;
-        for &(n, d) in &self.big {
-            if self.tier_of(d) == tier && best.is_none_or(|(bn, _)| n > bn) {
-                best = Some((n, d));
-            }
-        }
-        best.map(|b| b.1)
+        self.big
+            .iter()
+            .filter(|&&(_, d)| self.lane_of(d, f) == lane)
+            .max_by_key(|&&(n, _)| n)
+            .map(|&(_, d)| d)
     }
 
-    fn start_task(&mut self, w: usize, dir: DirId, kind: TaskKind, tier: Tier) -> Task {
+    /// The shallowest pending background directory from the skeleton
+    /// buckets (FIFO within a depth), while the skeleton phase lasts.
+    fn bucket_pick(&mut self, f: Option<DirId>) -> Option<DirId> {
+        let mut buckets = self.skeleton.take()?;
+        let mut found = None;
+        for b in &mut buckets {
+            while b
+                .front()
+                .is_some_and(|&d| self.dirs[d as usize].state != St::Pending)
+            {
+                b.pop_front();
+            }
+            let at = b.iter().position(|&d| {
+                self.dirs[d as usize].state == St::Pending && self.lane_of(d, f) == Lane::Background
+            });
+            found = at.and_then(|i| b.remove(i));
+            if found.is_some() {
+                break;
+            }
+        }
+        self.skeleton = Some(buckets);
+        found
+    }
+
+    fn start_task(&mut self, w: usize, dir: DirId, kind: TaskKind) -> Task {
         let names = match kind {
             TaskKind::Names | TaskKind::Full => {
                 debug_assert_eq!(self.dirs[dir as usize].state, St::Pending);
@@ -108,13 +269,10 @@ impl ScanState {
         };
         self.add_pending(dir, -1);
         self.add_active(dir, 1);
-        let slot = &mut self.workers[w];
-        slot.task = Some(Running { dir, kind });
-        slot.prev_tier = Some(tier);
+        self.workers[w].task = Some(Running { dir, kind });
         Task {
             dir,
             kind,
-            tier,
             path: self.path_of(dir),
             names,
         }

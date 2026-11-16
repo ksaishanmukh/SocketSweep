@@ -29,11 +29,13 @@
 //! inodes it removes, so a file hardlinked both inside and outside a pruned
 //! subtree stays uncounted.
 //!
-//! **Depth limit.** A subdirectory deeper than `max_depth` is not walked: it
-//! is listed with `id: None`, counted as an entry, and its parent's totals
-//! get [`Totals::DEPTH_LIMIT`].
+//! **Depth limit.** A subdirectory deeper than
+//! [`MAX_DEPTH`](crate::MAX_DEPTH) is not walked: it is listed with
+//! `id: None`, counted as an entry, and its parent's totals get
+//! [`Totals::DEPTH_LIMIT`].
 //!
-//! **Other file systems.** With `one_filesystem`, a directory whose own
+//! **Other file systems.** The scan stays on the root's file system (bind
+//! mounts would otherwise count twice): a directory whose own
 //! device differs from the root's is listed as empty (one `Listing` part
 //! with no entries) and finished with [`Totals::OTHER_FS`]. A `Names`
 //! listing has no stats, so the check uses the device of the opened

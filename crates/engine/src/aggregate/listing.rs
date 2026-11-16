@@ -5,7 +5,7 @@ use socketsweep_wire::{DirId, Entry, FsOp, Kind, ScanEvent, Totals, MAX_LISTING_
 
 use crate::fs::{errno, DirRead, FsEntry};
 use crate::sched::{
-    DeferredEnt, DirRec, Micros, ScanState, St, StatSt, TaskKind, BIG_JOB_ENTRIES, NONE,
+    DeferredEnt, DirRec, Micros, ScanState, St, StatSt, TaskKind, BIG_JOB_ENTRIES, MAX_DEPTH, NONE,
 };
 
 /// One listing on its way to wire entries, new child rows and totals.
@@ -33,7 +33,7 @@ impl ScanState {
 
     pub(super) fn on_listing(&mut self, d: DirId, kind: TaskKind, read: DirRead, now: Micros) {
         self.mark_listed(d);
-        if d != ROOT_DIR && self.cfg.one_fs && read.dev != self.root_dev {
+        if d != ROOT_DIR && read.dev != self.root_dev {
             self.finish_other_fs(d, now);
             return;
         }
@@ -43,7 +43,7 @@ impl ScanState {
         let n = read.entries.len();
         let mut build = ListingBuild {
             kind,
-            walk: child_depth <= self.cfg.max_depth,
+            walk: child_depth <= MAX_DEPTH,
             child_depth,
             first: self.dirs.len() as DirId,
             entries: Vec::with_capacity(n),

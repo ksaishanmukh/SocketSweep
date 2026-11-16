@@ -58,7 +58,8 @@ pub struct FsEntry {
 }
 
 /// A directory's entries, plus the device the directory itself is on (one
-/// `fstat` of the open handle), for `one_filesystem`.
+/// `fstat` of the open handle), so the scan can stay on the root's file
+/// system.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirRead {
     pub dev: u64,

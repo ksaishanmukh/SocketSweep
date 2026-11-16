@@ -14,7 +14,6 @@ fn opts_for(cfg: &Config, mode: ScanMode) -> ScanOpts {
     ScanOpts {
         workers: cfg.workers,
         mode,
-        ..ScanOpts::default()
     }
 }
 

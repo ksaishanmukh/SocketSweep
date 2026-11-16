@@ -112,7 +112,7 @@ pub use framing::{encode_frame, read_frame, read_frame_body, write_frame, WireEr
 pub use handshake::{check_hello, Hello, HelloReply, Welcome};
 pub use messages::{
     ClientFrame, ClientMsg, CopyItem, Entry, ErrCode, FsOp, Kind, Limits, Outcome, ScanEvent,
-    ScanMode, ScanOpts, ServerFrame, ServerMsg, Stat, Tier, TierCfg, Totals,
+    ScanMode, ScanOpts, ServerFrame, ServerMsg, Stat, Totals,
 };
 pub use token::{token_from_hex, token_to_hex, tokens_match, Token, TOKEN_ENV, TOKEN_LEN};
 
@@ -121,7 +121,7 @@ use std::time::Duration;
 /// Sent in [`Hello`]. The daemon refuses a host of any other version, so a
 /// stale daemon left on the phone fails loudly instead of misreading frames.
 /// Bump it whenever the wire format changes.
-pub const PROTOCOL_VERSION: u16 = 6;
+pub const PROTOCOL_VERSION: u16 = 7;
 
 /// The first four bytes of every [`Hello`], so a daemon can tell a SocketSweep
 /// host from something else that connected to its socket.

@@ -111,7 +111,6 @@ fn plain_mode_is_a_plain_walk() {
     let opts = ScanOpts {
         workers: Some(3),
         mode: ScanMode::Plain,
-        ..ScanOpts::default()
     };
     let scan = Scan::new(rootinfo, &opts, Arc::clone(&sink));
     // A directory not yet introduced is ignored, as in focus mode.

@@ -115,7 +115,7 @@ fn a_scan_through_the_fake_daemon_is_exact() {
             }
         }
         checker.finish().unwrap();
-        let truth = daemon.fs().truth(opts.max_depth, opts.one_filesystem);
+        let truth = daemon.fs().truth();
         let (outcome, totals) = finished(&events);
         assert_eq!(outcome, Outcome::Complete);
         assert_eq!(totals, truth.root(), "seed {seed}");
@@ -283,7 +283,7 @@ fn focus_and_a_hinted_delete_during_a_slow_scan() {
     assert_eq!(outcome, Outcome::Complete);
     // Pruned (normally) or deleted before the scan reached it: either way
     // the totals are those of the tree that is left.
-    let truth = daemon.fs().truth(opts.max_depth, opts.one_filesystem);
+    let truth = daemon.fs().truth();
     assert_eq!(totals, truth.root(), "pruned: {pruned}");
     daemon.fs().check_counters(&truth).unwrap();
 

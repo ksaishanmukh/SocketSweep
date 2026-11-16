@@ -1,9 +1,9 @@
-//! The directory table: one row per known directory, and the counters kept
-//! along each chain of parents.
+//! The directory table: one row per known directory, the counters kept
+//! along each chain of parents, and a from-scratch recount for tests.
 
-use socketsweep_wire::{DirId, Tier, Totals, ROOT_DIR};
+use socketsweep_wire::{DirId, Totals, ROOT_DIR};
 
-use super::{Micros, ScanState, TaskKind, NONE};
+use super::{ScanState, TaskKind, NONE};
 use crate::fs::StatResult;
 
 /// Where a directory is in its life.
@@ -114,8 +114,8 @@ pub(crate) struct Running {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WorkerSlot {
     pub task: Option<Running>,
-    pub prev_tier: Option<Tier>,
-    /// The subtree the worker last descended in.
+    /// The subtree the worker last descended in, kept while it stays on the
+    /// same side of the focus so workers do not hop between subtrees.
     pub anchor: Option<DirId>,
 }
 
@@ -123,7 +123,6 @@ pub(crate) struct WorkerSlot {
 pub(crate) struct Focus {
     pub seq: u32,
     pub dir: DirId,
-    pub since: Micros,
     pub settled_sent: bool,
 }
 
@@ -145,6 +144,14 @@ impl ScanState {
             p.extend_from_slice(name);
         }
         p
+    }
+
+    /// `d` and its ancestors, up to the root.
+    fn chain(&self, d: DirId) -> impl Iterator<Item = DirId> + '_ {
+        std::iter::successors(Some(d), |&x| {
+            let p = self.dirs[x as usize].parent;
+            (p != NONE).then_some(p)
+        })
     }
 
     /// Whether `d` is `a` or below it.
@@ -173,6 +180,83 @@ impl ScanState {
             let r = &mut self.dirs[x as usize];
             r.active_desc = (i32::from(r.active_desc) + delta) as u16;
             x = r.parent;
+        }
+    }
+}
+
+/// The counters recomputed from the table, one slot per directory.
+struct Recount {
+    pending: Vec<u32>,
+    active: Vec<u32>,
+    open: Vec<u32>,
+}
+
+impl ScanState {
+    /// Recompute every counter from scratch and compare (tests).
+    pub fn validate(&self) -> Result<(), String> {
+        let recount = self.recount();
+        for (i, r) in self.dirs.iter().enumerate() {
+            if r.state == St::Pruned {
+                continue;
+            }
+            if r.pending_desc != recount.pending[i] {
+                return Err(format!(
+                    "dir {i}: pending_desc {} != {}",
+                    r.pending_desc, recount.pending[i]
+                ));
+            }
+            if u32::from(r.active_desc) != recount.active[i] {
+                return Err(format!(
+                    "dir {i}: active_desc {} != {}",
+                    r.active_desc, recount.active[i]
+                ));
+            }
+            let listed = !matches!(r.state, St::Pending | St::InFlight);
+            if listed && r.open_children != recount.open[i] {
+                return Err(format!(
+                    "dir {i}: open_children {} != {}",
+                    r.open_children, recount.open[i]
+                ));
+            }
+        }
+        let unlisted = self
+            .dirs
+            .iter()
+            .filter(|r| matches!(r.state, St::Pending | St::InFlight))
+            .count() as u32;
+        if unlisted != self.unlisted {
+            return Err(format!("unlisted {} != {unlisted}", self.unlisted));
+        }
+        Ok(())
+    }
+
+    fn recount(&self) -> Recount {
+        let n = self.dirs.len();
+        let mut pending = vec![0u32; n];
+        let mut active = vec![0u32; n];
+        let mut open = vec![0u32; n];
+        for (i, r) in self.dirs.iter().enumerate() {
+            if r.state == St::Pruned {
+                continue;
+            }
+            let mut own = u32::from(r.state == St::Pending);
+            own += u32::from(r.state == St::NamesOnly && r.stat == StatSt::Pending);
+            for x in self.chain(i as DirId) {
+                pending[x as usize] += own;
+            }
+            if r.parent != NONE && r.state != St::Done {
+                open[r.parent as usize] += 1;
+            }
+        }
+        for t in self.workers.iter().filter_map(|w| w.task) {
+            for x in self.chain(t.dir) {
+                active[x as usize] += 1;
+            }
+        }
+        Recount {
+            pending,
+            active,
+            open,
         }
     }
 }

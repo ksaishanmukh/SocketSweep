@@ -15,7 +15,8 @@
 //! # Modes
 //!
 //! [`ScanOpts::mode`](socketsweep_wire::ScanOpts::mode) picks the scheduler.
-//! `Focus` uses a skeleton phase, deferred stats and proximity allocation.
+//! `Focus` uses a skeleton phase, deferred stats, and steers free workers to
+//! the folder the user has open, keeping a floor of workers on the rest.
 //! `Plain` is the benchmark baseline: no skeleton,
 //! `Full` tasks only, and the focus is acknowledged (`FocusState`) but does
 //! not steer the workers, which spread and descend as with no focus.
@@ -42,7 +43,6 @@
 //! ```
 
 pub mod aggregate;
-pub mod alloc;
 pub mod fs;
 pub mod pool;
 pub mod sched;
@@ -52,7 +52,7 @@ pub mod stdfs;
 pub use fs::{errno, DirRead, Fs, FsEntry, FsError, FsStat, Interrupt, RootInfo, StatResult};
 pub use pool::{default_workers, workers_for, Scan};
 pub use sched::{
-    Micros, Pick, ScanState, Task, TaskKind, TaskOutput, TierSnapshot, BIG_JOB_ENTRIES,
+    Micros, Pick, ScanState, Task, TaskKind, TaskOutput, BIG_JOB_ENTRIES, MAX_DEPTH,
     PROGRESS_INTERVAL,
 };
 pub use sink::{EventSink, RecordingSink};
