@@ -66,43 +66,15 @@ pub fn serve(listener: UnixListener, cfg: SessionConfig, services: Services) {
     let current: Arc<Current> = Arc::new(Mutex::new((0, None)));
     let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
 
-    let accept = {
-        let cfg = Arc::clone(&cfg);
-        let current = Arc::clone(&current);
-        let services = services.clone();
-        std::thread::Builder::new()
-            .name("ssd-accept".into())
-            .spawn(move || {
-                let mut generation = 0u64;
-                for stream in listener.incoming() {
-                    let stream = match stream {
-                        Ok(s) => s,
-                        Err(e) => {
-                            log!("accept failed: {e}");
-                            continue;
-                        }
-                    };
-                    generation += 1;
-                    let gen = generation;
-                    let cfg = Arc::clone(&cfg);
-                    let current = Arc::clone(&current);
-                    let services = services.clone();
-                    let done = done_tx.clone();
-                    let spawned = std::thread::Builder::new()
-                        .name("ssd-session".into())
-                        .spawn(move || {
-                            if connection(stream, gen, &cfg, services, &current)
-                                == Some(End::Shutdown)
-                            {
-                                let _ = done.send(());
-                            }
-                        });
-                    if let Err(e) = spawned {
-                        log!("cannot start a session thread: {e}");
-                    }
-                }
-            })
+    let shared = Shared {
+        cfg,
+        current,
+        services,
+        done: done_tx,
     };
+    let accept = std::thread::Builder::new()
+        .name("ssd-accept".into())
+        .spawn(move || accept_loop(&listener, &shared));
     if let Err(e) = accept {
         log!("cannot start the accept thread: {e}");
         return;
@@ -110,6 +82,46 @@ pub fn serve(listener: UnixListener, cfg: SessionConfig, services: Services) {
     // Wait for a `Shutdown`. The accept thread blocks in `accept` and is
     // ended with the process.
     let _ = done_rx.recv();
+}
+
+/// What every connection's thread needs from the listener.
+struct Shared {
+    cfg: Arc<SessionConfig>,
+    current: Arc<Current>,
+    services: Services,
+    done: std::sync::mpsc::Sender<()>,
+}
+
+fn accept_loop(listener: &UnixListener, shared: &Shared) {
+    let mut generation = 0u64;
+    for stream in listener.incoming() {
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => {
+                log!("accept failed: {e}");
+                continue;
+            }
+        };
+        generation += 1;
+        if let Err(e) = spawn_session(stream, generation, shared) {
+            log!("cannot start a session thread: {e}");
+        }
+    }
+}
+
+fn spawn_session(stream: UnixStream, gen: u64, shared: &Shared) -> std::io::Result<()> {
+    let cfg = Arc::clone(&shared.cfg);
+    let current = Arc::clone(&shared.current);
+    let services = shared.services.clone();
+    let done = shared.done.clone();
+    std::thread::Builder::new()
+        .name("ssd-session".into())
+        .spawn(move || {
+            if connection(stream, gen, &cfg, services, &current) == Some(End::Shutdown) {
+                let _ = done.send(());
+            }
+        })
+        .map(drop)
 }
 
 fn connection(
