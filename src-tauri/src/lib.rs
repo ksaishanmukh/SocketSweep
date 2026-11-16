@@ -132,6 +132,7 @@ fn build_app(handle: &tauri::AppHandle) -> Result<App, Box<dyn std::error::Error
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|tauri_app| {
             let host = Arc::new(build_app(tauri_app.handle())?);
             tauri_app.manage(host);

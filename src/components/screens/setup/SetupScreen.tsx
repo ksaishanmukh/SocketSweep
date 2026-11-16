@@ -10,11 +10,14 @@ export function SetupScreen({
   onConnect,
   loading,
   status = "Connecting…",
+  version = null,
 }: {
   onConnect: (serial?: string) => void;
   loading: boolean;
   /** What the host is doing while `loading`: connecting, then starting the scan. */
   status?: string;
+  /** The app's own version, shown quietly at the foot. */
+  version?: string | null;
 }) {
   const { devices, problem } = useDevices(loading);
   const usable = devices?.filter((d) => d.usable) ?? [];
@@ -45,6 +48,7 @@ export function SetupScreen({
         <p className="mt-5 text-xs text-faint text-center">
           Works over USB. Nothing is installed on your phone. Android 11 or newer.
         </p>
+        {version && <p className="mt-1 text-xs text-faint text-center">Version {version}</p>}
       </div>
     </div>
   );
