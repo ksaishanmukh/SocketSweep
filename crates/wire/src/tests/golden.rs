@@ -216,7 +216,7 @@ fn golden_scan_events() {
         vec![5, 1, 2, 0xAC, 0x02],
         vec![6, 4, 3, 1],
         vec![7, 3],
-        vec![8, 1, 2, 3, 4, 5, 3, 1, 4, 1, 7, 0xB9, 0x17],
+        vec![8, 1, 2],
         finished,
     ];
     let events = scan_events();

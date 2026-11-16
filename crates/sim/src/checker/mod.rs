@@ -119,12 +119,7 @@ impl Checker {
             ScanEvent::FocusState { dir, .. } => {
                 self.live(*dir)?;
             }
-            ScanEvent::Progress { stalled, .. } => {
-                for (d, _) in stalled {
-                    self.dir(*d)?;
-                }
-            }
-            ScanEvent::SkeletonReady { .. } => {}
+            ScanEvent::Progress { .. } | ScanEvent::SkeletonReady { .. } => {}
             ScanEvent::Finished { outcome, .. } => self.on_finished(*outcome)?,
         }
         Ok(())

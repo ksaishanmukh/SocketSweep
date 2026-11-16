@@ -1,4 +1,4 @@
-//! Talking to the adb server: connections, host queries, forwards, and
+//! Talking to the adb server: connections, host queries, and
 //! starting the bundled server when none is listening.
 
 use std::io;
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use socketsweep_transport::{Result, TransportError};
 
 use crate::errors::{host_fail, wire_to_error};
-use crate::wire::{read_forward_reply, read_hex_string, request, send, WireError};
+use crate::wire::{read_hex_string, request, WireError};
 use crate::{
     AdbTransport, CONNECT_DEVICE_TIMEOUT, CONNECT_TIMEOUT, IO_TIMEOUT, START_SERVER_TIMEOUT,
 };
@@ -32,38 +32,6 @@ impl AdbTransport {
         }
     }
 
-    /// `adb forward tcp:0 <remote>`: forward a host port of the server's
-    /// choosing to `remote` (e.g. `localabstract:name`), returning that port.
-    /// Not used by [`Transport::open_tunnel`], which connects to the service directly.
-    pub fn forward_any(&self, serial: &str, remote: &str) -> Result<u16> {
-        self.forward(serial, "tcp:0", remote)?.ok_or_else(|| {
-            TransportError::Protocol(format!(
-                "forwarding to {remote} succeeded but the ADB server did not say which port it chose"
-            ))
-        })
-    }
-
-    /// Remove the forward listening on host port `local_port`. Best effort: the
-    /// forward may already be gone with the device or the server.
-    pub fn forward_remove(&self, serial: &str, local_port: u16) {
-        let service = format!("host-serial:{serial}:killforward:tcp:{local_port}");
-        if let Ok(mut stream) = self.open(IO_TIMEOUT) {
-            let _ =
-                send(&mut stream, &service).and_then(|()| read_forward_reply(&mut stream, false));
-        }
-    }
-
-    fn forward(&self, serial: &str, local: &str, remote: &str) -> Result<Option<u16>> {
-        let ctx = format!("Cannot forward {local} to {remote} on {serial}");
-        let mut stream = self.open(IO_TIMEOUT)?;
-        send(
-            &mut stream,
-            &format!("host-serial:{serial}:forward:{local};{remote}"),
-        )
-        .map_err(|e| wire_to_error(e, &ctx))?;
-        read_forward_reply(&mut stream, local == "tcp:0").map_err(|e| wire_to_error(e, &ctx))
-    }
-
     /// A host request answered by one length-prefixed string.
     pub(super) fn host_query(&self, service: &str) -> Result<String> {
         let mut stream = self.open(IO_TIMEOUT)?;
@@ -73,13 +41,6 @@ impl AdbTransport {
                 WireError::Fail(msg) => host_fail(None, &msg),
                 e => TransportError::Server(format!("{service}: {e}")),
             })
-    }
-
-    /// Whether the phone speaks sync v2 (`RCV2`). A failed query means v1.
-    pub(super) fn has_sendrecv_v2(&self, serial: &str) -> bool {
-        self.host_query(&format!("host-serial:{serial}:features"))
-            .map(|f| f.trim().split(',').any(|f| f == "sendrecv_v2"))
-            .unwrap_or(false)
     }
 
     /// A connection bound to one device, ready for a device service request.

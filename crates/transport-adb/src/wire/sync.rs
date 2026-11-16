@@ -1,4 +1,4 @@
-//! The sync protocol: `SEND`, `STAT` and `RECV`/`RCV2`.
+//! The sync protocol: `SEND`, `STAT` and `RCV2`.
 
 use std::io::{self, Read, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -106,12 +106,12 @@ fn sync_stat<S: Read + Write>(s: &mut S, path: &[u8]) -> Wire<(u32, u32, u32)> {
 }
 
 /// Pull `remote` over an open sync session into `sink`, reporting bytes
-/// received so far. `v2` selects `RCV2` (adb's RECV2) over `RECV`. Returns the
-/// byte count and the file's mtime.
+/// received so far, with `RCV2` (adb's RECV2; the `sendrecv_v2` feature is in
+/// every adbd from Android 11, which is the minimum). Returns the byte count
+/// and the file's mtime.
 pub fn sync_recv<S: Read + Write>(
     s: &mut S,
     remote: &[u8],
-    v2: bool,
     sink: &mut impl Write,
     progress: &mut dyn FnMut(u64),
 ) -> std::result::Result<(u64, u32), RecvError> {
@@ -120,17 +120,13 @@ pub fn sync_recv<S: Read + Write>(
         return Err(WireError::Fail("No such file or directory".into()).into());
     }
 
-    if v2 {
-        // As upstream adb's client sends it: the usual path request under the
-        // v2 id, then a setup record of the id again and the flags (0: no
-        // compression).
-        sync_path_request(s, b"RCV2", remote)
-            .and_then(|()| s.write_all(b"RCV2"))
-            .and_then(|()| s.write_all(&0u32.to_le_bytes()))
-            .map_err(WireError::from)?;
-    } else {
-        sync_path_request(s, b"RECV", remote).map_err(WireError::from)?;
-    }
+    // As upstream adb's client sends it: the usual path request under the v2
+    // id, then a setup record of the id again and the flags (0: no
+    // compression).
+    sync_path_request(s, b"RCV2", remote)
+        .and_then(|()| s.write_all(b"RCV2"))
+        .and_then(|()| s.write_all(&0u32.to_le_bytes()))
+        .map_err(WireError::from)?;
 
     let mut total = 0u64;
     let mut buf = vec![0u8; SYNC_CHUNK];

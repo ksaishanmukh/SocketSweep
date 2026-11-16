@@ -47,17 +47,17 @@ afterEach(cleanup);
 describe("copy to computer", () => {
   it("copies by NodeRef, letting the host choose the destination", async () => {
     const { result } = setup();
-    api.copyToDesktop.mockResolvedValue(RESULT);
+    api.copyMany.mockResolvedValue(RESULT);
 
     await act(() => result.current.start([pick(row(2))]));
 
-    expect(api.copyToDesktop).toHaveBeenCalledWith(node(2));
+    expect(api.copyMany).toHaveBeenCalledWith([node(2)]);
   });
 
   it("follows copy-progress events while the copy runs, then toasts success", async () => {
     const { result, notify } = setup();
     const running = deferred<CopyResult>();
-    api.copyToDesktop.mockReturnValue(running.promise);
+    api.copyMany.mockReturnValue(running.promise);
 
     let copying!: Promise<void>;
     act(() => {
@@ -84,7 +84,7 @@ describe("copy to computer", () => {
 
   it("mentions links that were not copied and files that were renamed", async () => {
     const { result, notify } = setup();
-    api.copyToDesktop.mockResolvedValue({ ...RESULT, skipped: 2, renamed: 1 });
+    api.copyMany.mockResolvedValue({ ...RESULT, skipped: 2, renamed: 1 });
 
     await act(() => result.current.start([pick(row(2))]));
 
@@ -96,7 +96,7 @@ describe("copy to computer", () => {
 
   it("ignores progress for something other than the copy it started", async () => {
     const { result } = setup();
-    api.copyToDesktop.mockReturnValue(new Promise(() => {}));
+    api.copyMany.mockReturnValue(new Promise(() => {}));
     act(() => {
       void result.current.start([pick(row(2))]);
     });
@@ -109,7 +109,7 @@ describe("copy to computer", () => {
   it("asks the host to stop on cancel, and reports a cancelled copy as information", async () => {
     const { result, notify } = setup();
     const running = deferred<CopyResult>();
-    api.copyToDesktop.mockReturnValue(running.promise);
+    api.copyMany.mockReturnValue(running.promise);
     let copying!: Promise<void>;
     act(() => {
       copying = result.current.start([pick(row(2))]);
@@ -131,7 +131,7 @@ describe("copy to computer", () => {
 
   it("toasts the host's message when the copy fails", async () => {
     const { result, notify } = setup();
-    api.copyToDesktop.mockRejectedValue(commandError("io", "Cannot use C:\\Desktop: disk full"));
+    api.copyMany.mockRejectedValue(commandError("io", "Cannot use C:\\Desktop: disk full"));
 
     await act(() => result.current.start([pick(row(2))]));
 
@@ -141,14 +141,14 @@ describe("copy to computer", () => {
 
   it("runs one copy at a time", async () => {
     const { result, notify } = setup();
-    api.copyToDesktop.mockReturnValue(new Promise(() => {}));
+    api.copyMany.mockReturnValue(new Promise(() => {}));
     act(() => {
       void result.current.start([pick(row(2))]);
     });
 
     await act(() => result.current.start([pick(row(3))]));
 
-    expect(api.copyToDesktop).toHaveBeenCalledOnce();
+    expect(api.copyMany).toHaveBeenCalledOnce();
     expect(notify).toHaveBeenCalledWith(expect.stringMatching(/already running/), "info");
   });
 
@@ -157,7 +157,7 @@ describe("copy to computer", () => {
 
     await act(() => result.current.start([pick(row(2, { node: node(2, SESSION + 1) }))]));
 
-    expect(api.copyToDesktop).not.toHaveBeenCalled();
+    expect(api.copyMany).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(expect.stringMatching(/out of date/), "error");
   });
 
@@ -184,7 +184,7 @@ describe("copy to computer", () => {
 
   it("forgets the copy when the session is torn down", async () => {
     const { result } = setup();
-    api.copyToDesktop.mockReturnValue(new Promise(() => {}));
+    api.copyMany.mockReturnValue(new Promise(() => {}));
     act(() => {
       void result.current.start([pick(row(2))]);
     });

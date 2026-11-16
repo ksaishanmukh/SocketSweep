@@ -100,19 +100,8 @@ pub enum ScanEvent {
     /// and will not be mentioned again; its totals are already removed from
     /// its ancestors.
     Pruned { dir: DirId },
-    /// Periodic. Directories `listed` of `known`; `files` and `disk` counted
-    /// so far; `pending` tasks waiting; `alloc` workers per [`Tier`]; and the
-    /// directories being read for longer than
-    /// [`STALL_THRESHOLD`](crate::STALL_THRESHOLD), with milliseconds so far.
-    Progress {
-        listed: u32,
-        known: u32,
-        files: u64,
-        disk: u64,
-        pending: u32,
-        alloc: [u8; 3],
-        stalled: Vec<(DirId, u32)>,
-    },
+    /// Periodic. Directories `listed` of `known`.
+    Progress { listed: u32, known: u32 },
     /// The last event of every scan that started.
     Finished {
         outcome: Outcome,

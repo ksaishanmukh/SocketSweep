@@ -62,18 +62,6 @@ pub(crate) fn own_category(kind: Kind, name: &[u8]) -> Category {
     }
 }
 
-/// How the GUI's type breakdown names each category.
-pub(crate) fn label(category: Category) -> &'static str {
-    match category {
-        Category::Audio => "Audio",
-        Category::Video => "Video",
-        Category::Photo => "Photos",
-        Category::Archive => "Archives & APKs",
-        Category::Doc => "Documents",
-        Category::Other => "Other",
-    }
-}
-
 const PHOTO: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif", "dng", "raw",
     "avif", "svg",

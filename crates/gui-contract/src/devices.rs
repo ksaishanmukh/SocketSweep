@@ -40,7 +40,7 @@ pub struct Connected {
     pub model: String,
     /// The root that scans default to, as the user knows it (`/sdcard`).
     pub root: String,
-    /// Where `copyToDesktop` copies when no destination is given, as a path on
+    /// Where `copyMany` copies when no destination is given, as a path on
     /// this computer (the desktop), so the GUI can name the action up front.
     /// `null` when the host knows no default; a copy must then name one.
     pub copy_destination: Option<String>,

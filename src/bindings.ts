@@ -72,21 +72,6 @@ export const commands = {
   getTreemap: (node?: NodeRef | null, depth?: number | null, by?: SizeMetric | null): Promise<TreemapNode> =>
     invoke<TreemapNode>("get_treemap", { node, depth, by }),
   /**
-   * The largest files anywhere in the tree (default 100).
-   */
-  largestFiles: (limit?: number | null, by?: SizeMetric | null): Promise<Row[]> =>
-    invoke<Row[]>("largest_files", { limit, by }),
-  /**
-   * Total size per broad file category.
-   */
-  typeBreakdown: (by?: SizeMetric | null): Promise<TypeGroup[]> =>
-    invoke<TypeGroup[]>("type_breakdown", { by }),
-  /**
-   * Storage per app package (default 50).
-   */
-  appBreakdown: (limit?: number | null, by?: SizeMetric | null): Promise<AppUsage[]> =>
-    invoke<AppUsage[]>("app_breakdown", { limit, by }),
-  /**
    * Files and folders whose name contains `query`, case-insensitively, and
    * that pass `filter` (default none): inside folder `within`, or anywhere
    * when it is `null`. At most `limit` results (default 200), in order
@@ -108,32 +93,21 @@ export const commands = {
   appIcon: (app: string): Promise<string | null> =>
     invoke<string | null>("app_icon", { app }),
   /**
-   * Delete `node` and everything below it from the phone. Refused for a
-   * stale node and for the scan root. Allowed during a scan, which skips
-   * the deleted part.
-   */
-  delete: (node: NodeRef): Promise<Deleted> =>
-    invoke<Deleted>("delete", { node }),
-  /**
-   * Delete several nodes, one after another. Refused as a whole, before
-   * anything is deleted, if any node is stale, already deleted or the
-   * scan root. A node inside another one listed goes with it. One node the
-   * phone will not delete does not stop the others; it is reported in
-   * `failures`.
+   * Delete nodes and everything below them from the phone, one after
+   * another. Allowed during a scan, which skips the deleted part. Refused
+   * as a whole, before anything is deleted, if any node is stale, already
+   * deleted or the scan root. A node inside another one listed goes with
+   * it. One node the phone will not delete does not stop the others; it is
+   * reported in `failures`.
    */
   deleteMany: (nodes: NodeRef[]): Promise<DeletedMany> =>
     invoke<DeletedMany>("delete_many", { nodes }),
   /**
-   * Copy `node` (a file, or a folder and everything in it) to this
-   * computer, into `destination` (default: the desktop). Progress arrives
-   * as `copy-progress` events; resolves when the copy is complete.
-   */
-  copyToDesktop: (node: NodeRef, destination?: string | null): Promise<CopyResult> =>
-    invoke<CopyResult>("copy_to_desktop", { node, destination }),
-  /**
-   * Copy several nodes into `destination` (default: the desktop) as one
-   * copy, with one `copy-progress` stream and one result. A node inside
-   * another one listed goes with it. Refused as a whole for a stale node.
+   * Copy nodes (files, or folders and everything in them) to this computer
+   * into `destination` (default: the desktop) as one copy, with one
+   * `copy-progress` stream, resolving when the copy is complete. A node
+   * inside another one listed goes with it. Refused as a whole for a stale
+   * node.
    */
   copyMany: (nodes: NodeRef[], destination?: string | null): Promise<CopyResult> =>
     invoke<CopyResult>("copy_many", { nodes, destination }),
@@ -262,7 +236,7 @@ export type Connected = {
 	/**  The root that scans default to, as the user knows it (`/sdcard`). */
 	root: string,
 	/**
-	 *  Where `copyToDesktop` copies when no destination is given, as a path on
+	 *  Where `copyMany` copies when no destination is given, as a path on
 	 *  this computer (the desktop), so the GUI can name the action up front.
 	 *  `null` when the host knows no default; a copy must then name one.
 	 */
@@ -284,7 +258,7 @@ export type ConnectionLost = {
 };
 
 /**
- *  Emitted as `copy-progress` while `copyToDesktop` or `copyMany` runs. The
+ *  Emitted as `copy-progress` while `copyMany` runs. The
  *  counts cover every node of the copy together.
  */
 export type CopyProgress = {
@@ -308,7 +282,7 @@ export type CopyProgress = {
 	current: string | null,
 };
 
-/**  The answer to `copyToDesktop` and `copyMany`, once every file is copied. */
+/**  The answer to `copyMany`, once every file is copied. */
 export type CopyResult = {
 	/**
 	 *  Where the copy is, on this computer: the copied file or folder for one
@@ -339,19 +313,6 @@ export type DeleteFailure = {
 	error: CommandError,
 };
 
-/**  The answer to `delete`, once the phone confirms. */
-export type Deleted = {
-	/**  Files and folders removed. */
-	items: number,
-	/**  The whole tree's totals afterwards. */
-	totals: Totals,
-	/**
-	 *  The focused folder, refreshed; its nearest surviving ancestor if it
-	 *  was inside what was deleted.
-	 */
-	view: View,
-};
-
 /**  The answer to `deleteMany`, once the phone has answered for every node. */
 export type DeletedMany = {
 	/**
@@ -367,7 +328,10 @@ export type DeletedMany = {
 	failures: DeleteFailure[],
 	/**  The whole tree's totals afterwards. */
 	totals: Totals,
-	/**  As on [`Deleted`]. */
+	/**
+	 *  The focused folder, refreshed; its nearest surviving ancestor if it
+	 *  was inside what was deleted.
+	 */
 	view: View,
 };
 
@@ -655,14 +619,6 @@ export type TreemapNode = {
 	app: AppTag | null,
 	/**  Largest first; empty below the requested depth. */
 	children: TreemapNode[],
-};
-
-/**  Total size of one broad file category (images, video, …). */
-export type TypeGroup = {
-	category: Category,
-	label: string,
-	size: Size,
-	files: number,
 };
 
 export type UnreadableFolder = {

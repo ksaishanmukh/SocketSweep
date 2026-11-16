@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn names_are_camel_cased_like_tauri_does() {
         assert_eq!(camel("list_devices"), "listDevices");
-        assert_eq!(camel("copy_to_desktop"), "copyToDesktop");
+        assert_eq!(camel("copy_many"), "copyMany");
         assert_eq!(camel("focus"), "focus");
     }
 

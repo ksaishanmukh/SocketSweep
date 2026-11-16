@@ -54,7 +54,7 @@ mod nodes;
 mod overview;
 mod queries;
 
-pub use actions::{CopyResult, DeleteFailure, Deleted, DeletedMany};
+pub use actions::{CopyResult, DeleteFailure, DeletedMany};
 pub use commands::{command_defs, CommandDef, Commands, COMMAND_NAMES};
 pub use devices::{Connected, Device, DeviceState, ScanRecord, ScanStarted, Totals};
 pub use errors::{CommandError, ErrorCode};
@@ -70,17 +70,13 @@ pub use nodes::{
 pub use overview::{
     AppsStatus, CategoryUsage, Leftover, Leftovers, Overview, SinceLastScan, UnreadableFolder,
 };
-pub use queries::{AppUsage, Crumb, Row, TreemapNode, TypeGroup, View};
+pub use queries::{AppUsage, Crumb, Row, TreemapNode, View};
 
 /// Rows per view when `limit` is not given. Enough to fill any screen; the
 /// GUI virtualises and asks for more if it needs them.
 pub const DEFAULT_VIEW_LIMIT: u32 = 500;
 /// Levels below the requested node in a treemap when `depth` is not given.
 pub const DEFAULT_TREEMAP_DEPTH: u32 = 2;
-/// Results from `largestFiles` when `limit` is not given.
-pub const DEFAULT_LARGEST_LIMIT: u32 = 100;
-/// Results from `appBreakdown` when `limit` is not given.
-pub const DEFAULT_APPS_LIMIT: u32 = 50;
 /// Results from `search` when `limit` is not given.
 pub const DEFAULT_SEARCH_LIMIT: u32 = 200;
 /// Files in `overview`'s `biggestFiles`.

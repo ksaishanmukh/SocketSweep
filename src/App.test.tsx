@@ -82,11 +82,11 @@ describe("App", () => {
   it("copies a row to the computer and shows the progress bar", async () => {
     const user = await renderBrowsing({ view: ROOT, tab: "explorer" });
     const copying = deferred<CopyResult>();
-    api.copyToDesktop.mockReturnValue(copying.promise);
+    api.copyMany.mockReturnValue(copying.promise);
 
     await user.click(screen.getByRole("button", { name: "Copy notes.txt to Desktop" }));
 
-    expect(api.copyToDesktop).toHaveBeenCalledWith(node(3));
+    expect(api.copyMany).toHaveBeenCalledWith([node(3)]);
     expect(await screen.findByText(/Copying notes\.txt/)).toBeTruthy();
     await act(async () =>
       copying.resolve({

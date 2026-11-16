@@ -54,11 +54,6 @@ fn cancel_names_the_scan_and_the_scan_still_finishes() {
                     let progress = ScanEvent::Progress {
                         listed: 1,
                         known: 2,
-                        files: 0,
-                        disk: 0,
-                        pending: 1,
-                        alloc: [0, 0, 1],
-                        stalled: vec![],
                     };
                     if !out.send(id, ServerMsg::Scan(vec![progress])) {
                         return;

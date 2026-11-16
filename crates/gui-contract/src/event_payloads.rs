@@ -78,7 +78,7 @@ pub enum ScanOutcome {
     Failed,
 }
 
-/// Emitted as `copy-progress` while `copyToDesktop` or `copyMany` runs. The
+/// Emitted as `copy-progress` while `copyMany` runs. The
 /// counts cover every node of the copy together.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

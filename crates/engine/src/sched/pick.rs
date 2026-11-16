@@ -37,7 +37,7 @@ impl ScanState {
             return Pick::Idle;
         };
         let tier = self.tier_of(dir);
-        Pick::Run(self.start_task(w, dir, kind, tier, now))
+        Pick::Run(self.start_task(w, dir, kind, tier))
     }
 
     /// Find a task in `tier`.
@@ -85,14 +85,7 @@ impl ScanState {
         best.map(|b| b.1)
     }
 
-    fn start_task(
-        &mut self,
-        w: usize,
-        dir: DirId,
-        kind: TaskKind,
-        tier: Tier,
-        now: Micros,
-    ) -> Task {
+    fn start_task(&mut self, w: usize, dir: DirId, kind: TaskKind, tier: Tier) -> Task {
         let names = match kind {
             TaskKind::Names | TaskKind::Full => {
                 debug_assert_eq!(self.dirs[dir as usize].state, St::Pending);
@@ -116,11 +109,7 @@ impl ScanState {
         self.add_pending(dir, -1);
         self.add_active(dir, 1);
         let slot = &mut self.workers[w];
-        slot.task = Some(Running {
-            dir,
-            kind,
-            since: now,
-        });
+        slot.task = Some(Running { dir, kind });
         slot.prev_tier = Some(tier);
         Task {
             dir,

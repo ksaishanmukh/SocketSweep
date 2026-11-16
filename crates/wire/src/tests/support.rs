@@ -141,11 +141,6 @@ fn scan_events_after_subtree_done() -> Vec<ScanEvent> {
         ScanEvent::Progress {
             listed: 1,
             known: 2,
-            files: 3,
-            disk: 4,
-            pending: 5,
-            alloc: [3, 1, 4],
-            stalled: vec![(7, 3001)],
         },
         ScanEvent::Finished {
             outcome: Outcome::Cancelled,

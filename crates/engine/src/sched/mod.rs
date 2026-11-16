@@ -66,8 +66,6 @@ pub struct ScanState {
     /// Directories whose deferred stats are a big job, with their size.
     pub(crate) big: Vec<(u32, DirId)>,
     pub(crate) links: HashSet<(u64, u64)>,
-    pub(crate) files_seen: u64,
-    pub(crate) disk_seen: u64,
     pub(crate) start: Micros,
     pub(crate) last_progress: Micros,
     pub(crate) progress_interval: Micros,

@@ -127,15 +127,6 @@ commands! {
     /// (default 2), largest first by `by`.
     fn get_treemap(node: Option<NodeRef>, depth: Option<u32>, by: Option<SizeMetric>) -> TreemapNode;
 
-    /// The largest files anywhere in the tree (default 100).
-    fn largest_files(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<Row>;
-
-    /// Total size per broad file category.
-    fn type_breakdown(by: Option<SizeMetric>) -> Vec<TypeGroup>;
-
-    /// Storage per app package (default 50).
-    fn app_breakdown(limit: Option<u32>, by: Option<SizeMetric>) -> Vec<AppUsage>;
-
     /// Files and folders whose name contains `query`, case-insensitively, and
     /// that pass `filter` (default none): inside folder `within`, or anywhere
     /// when it is `null`. At most `limit` results (default 200), in order
@@ -158,26 +149,19 @@ commands! {
     /// one exists with `hasIcon`.
     fn app_icon(app: String) -> Option<String>;
 
-    /// Delete `node` and everything below it from the phone. Refused for a
-    /// stale node and for the scan root. Allowed during a scan, which skips
-    /// the deleted part.
-    fn delete(node: NodeRef) -> Deleted;
-
-    /// Delete several nodes, one after another. Refused as a whole, before
-    /// anything is deleted, if any node is stale, already deleted or the
-    /// scan root. A node inside another one listed goes with it. One node the
-    /// phone will not delete does not stop the others; it is reported in
-    /// `failures`.
+    /// Delete nodes and everything below them from the phone, one after
+    /// another. Allowed during a scan, which skips the deleted part. Refused
+    /// as a whole, before anything is deleted, if any node is stale, already
+    /// deleted or the scan root. A node inside another one listed goes with
+    /// it. One node the phone will not delete does not stop the others; it is
+    /// reported in `failures`.
     fn delete_many(nodes: Vec<NodeRef>) -> DeletedMany;
 
-    /// Copy `node` (a file, or a folder and everything in it) to this
-    /// computer, into `destination` (default: the desktop). Progress arrives
-    /// as `copy-progress` events; resolves when the copy is complete.
-    fn copy_to_desktop(node: NodeRef, destination: Option<String>) -> CopyResult;
-
-    /// Copy several nodes into `destination` (default: the desktop) as one
-    /// copy, with one `copy-progress` stream and one result. A node inside
-    /// another one listed goes with it. Refused as a whole for a stale node.
+    /// Copy nodes (files, or folders and everything in them) to this computer
+    /// into `destination` (default: the desktop) as one copy, with one
+    /// `copy-progress` stream, resolving when the copy is complete. A node
+    /// inside another one listed goes with it. Refused as a whole for a stale
+    /// node.
     fn copy_many(nodes: Vec<NodeRef>, destination: Option<String>) -> CopyResult;
 
     /// Stop the running copy. Files already copied stay.

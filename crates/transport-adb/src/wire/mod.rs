@@ -8,7 +8,7 @@ use std::fmt;
 use std::io;
 
 pub use shell::{read_shell_v2, SHELL_CLOSE_STDIN};
-pub use smart_socket::{read_forward_reply, read_hex_string, request, send};
+pub use smart_socket::{read_hex_string, request};
 pub use sync::{sync_header, sync_recv, sync_send, RecvError};
 
 /// Upper bound on a single shell-protocol packet or sync `FAIL` message, so a

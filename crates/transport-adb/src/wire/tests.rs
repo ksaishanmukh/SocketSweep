@@ -1,43 +1,7 @@
+use super::smart_socket::send;
 use super::sync::SYNC_CHUNK;
 use super::*;
 use std::io::{Read, Write};
-
-#[test]
-fn forward_tcp0_reply_yields_the_port() {
-    let mut reply: &[u8] = b"OKAYOKAY000538561";
-    assert_eq!(read_forward_reply(&mut reply, true).unwrap(), Some(38561));
-}
-
-#[test]
-fn forward_fixed_port_reply_has_no_port() {
-    let mut reply: &[u8] = b"OKAYOKAY";
-    assert_eq!(read_forward_reply(&mut reply, false).unwrap(), None);
-}
-
-#[test]
-fn forward_failures_carry_the_servers_reason() {
-    let mut reply: &[u8] = b"FAIL0014device 'X' not found";
-    match read_forward_reply(&mut reply, true) {
-        Err(WireError::Fail(msg)) => assert_eq!(msg, "device 'X' not found"),
-        other => panic!("{other:?}"),
-    }
-    let mut reply: &[u8] = b"OKAYFAIL000bcannot bind";
-    assert!(matches!(
-        read_forward_reply(&mut reply, true),
-        Err(WireError::Fail(m)) if m == "cannot bind"
-    ));
-}
-
-#[test]
-fn forward_reply_without_a_valid_port_is_an_error() {
-    let mut reply: &[u8] = b"OKAYOKAY";
-    assert!(read_forward_reply(&mut reply, true).is_err());
-    let mut reply: &[u8] = b"OKAYOKAY0001x";
-    assert!(matches!(
-        read_forward_reply(&mut reply, true),
-        Err(WireError::Bad(_))
-    ));
-}
 
 #[test]
 fn requests_are_length_prefixed_in_hex() {
@@ -131,37 +95,19 @@ fn data(chunk: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn sync_recv_v1_streams_chunks_and_reports_progress() {
-    let mut reply = stat_reply(0o100644, 8, 1_700_000_000);
-    reply.extend(data(b"hello"));
-    reply.extend(data(b"abc"));
-    reply.extend(sync_header(b"DONE", 0));
-    let mut s = Mem::new(reply);
-    let mut sink = Vec::new();
-    let mut seen = Vec::new();
-    let (n, mtime) = sync_recv(&mut s, b"/sdcard/a b", false, &mut sink, &mut |b| {
-        seen.push(b)
-    })
-    .unwrap();
-    assert_eq!((n, mtime), (8, 1_700_000_000));
-    assert_eq!(sink, b"helloabc");
-    assert_eq!(seen, [5, 8]);
-    let mut expect = sync_header(b"STAT", 11).to_vec();
-    expect.extend_from_slice(b"/sdcard/a b");
-    expect.extend_from_slice(&sync_header(b"RECV", 11));
-    expect.extend_from_slice(b"/sdcard/a b");
-    assert_eq!(s.written, expect);
-}
-
-#[test]
-fn sync_recv_v2_sends_rcv2_with_flags_and_non_utf8_paths() {
-    let mut reply = stat_reply(0o100644, 2, 5);
-    reply.extend(data(b"hi"));
+fn sync_recv_streams_chunks_and_sends_rcv2_with_flags_and_non_utf8_paths() {
+    let mut reply = stat_reply(0o100644, 5, 1_700_000_000);
+    reply.extend(data(b"hel"));
+    reply.extend(data(b"lo"));
     reply.extend(sync_header(b"DONE", 0));
     let mut s = Mem::new(reply);
     let path = b"/sdcard/\xff\xfe";
     let mut sink = Vec::new();
-    sync_recv(&mut s, path, true, &mut sink, &mut |_| {}).unwrap();
+    let mut seen = Vec::new();
+    let (n, mtime) = sync_recv(&mut s, path, &mut sink, &mut |b| seen.push(b)).unwrap();
+    assert_eq!((n, mtime), (5, 1_700_000_000));
+    assert_eq!(sink, b"hello");
+    assert_eq!(seen, [3, 5]);
     let mut expect = sync_header(b"STAT", 10).to_vec();
     expect.extend_from_slice(path);
     expect.extend_from_slice(b"RCV2");
@@ -170,7 +116,6 @@ fn sync_recv_v2_sends_rcv2_with_flags_and_non_utf8_paths() {
     expect.extend_from_slice(b"RCV2");
     expect.extend_from_slice(&0u32.to_le_bytes());
     assert_eq!(s.written, expect);
-    assert_eq!(sink, b"hi");
 }
 
 #[test]
@@ -179,7 +124,7 @@ fn sync_recv_reports_missing_files_fail_and_bad_frames() {
     // STAT of a missing path answers mode 0.
     let mut s = Mem::new(stat_reply(0, 0, 0));
     assert!(matches!(
-        sync_recv(&mut s, b"/x", false, &mut sink, &mut |_| {}),
+        sync_recv(&mut s, b"/x", &mut sink, &mut |_| {}),
         Err(RecvError::Wire(WireError::Fail(_)))
     ));
     // FAIL mid-stream.
@@ -189,7 +134,7 @@ fn sync_recv_reports_missing_files_fail_and_bad_frames() {
     reply.extend_from_slice(b"I/O err");
     let mut s = Mem::new(reply);
     assert!(matches!(
-        sync_recv(&mut s, b"/x", true, &mut sink, &mut |_| {}),
+        sync_recv(&mut s, b"/x", &mut sink, &mut |_| {}),
         Err(RecvError::Wire(WireError::Fail(m))) if m == "I/O err"
     ));
     // Oversized chunk.
@@ -197,7 +142,7 @@ fn sync_recv_reports_missing_files_fail_and_bad_frames() {
     reply.extend(sync_header(b"DATA", (SYNC_CHUNK + 1) as u32));
     let mut s = Mem::new(reply);
     assert!(matches!(
-        sync_recv(&mut s, b"/x", false, &mut sink, &mut |_| {}),
+        sync_recv(&mut s, b"/x", &mut sink, &mut |_| {}),
         Err(RecvError::Wire(WireError::Bad(_)))
     ));
     // Truncated stream.
@@ -205,7 +150,7 @@ fn sync_recv_reports_missing_files_fail_and_bad_frames() {
     reply.extend(sync_header(b"DATA", 4));
     let mut s = Mem::new(reply);
     assert!(matches!(
-        sync_recv(&mut s, b"/x", false, &mut sink, &mut |_| {}),
+        sync_recv(&mut s, b"/x", &mut sink, &mut |_| {}),
         Err(RecvError::Wire(WireError::Io(_)))
     ));
 }
@@ -225,7 +170,7 @@ fn sync_recv_separates_local_write_failures() {
     reply.extend(data(b"a"));
     let mut s = Mem::new(reply);
     assert!(matches!(
-        sync_recv(&mut s, b"/x", false, &mut Full, &mut |_| {}),
+        sync_recv(&mut s, b"/x", &mut Full, &mut |_| {}),
         Err(RecvError::Sink(_))
     ));
 }

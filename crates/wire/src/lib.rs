@@ -192,10 +192,6 @@ pub const HOST_DEAD_AFTER: Duration = Duration::from_secs(15);
 /// connection, cancels everything it started and closes it.
 pub const DAEMON_DEAD_AFTER: Duration = Duration::from_secs(30);
 
-/// A directory being read for longer than this is listed in
-/// [`ScanEvent::Progress`]'s `stalled`.
-pub const STALL_THRESHOLD: Duration = Duration::from_secs(3);
-
 /// Workers check for cancellation at every task boundary and at least this
 /// often, in entries, inside a task.
 pub const CANCEL_CHECK_ENTRIES: usize = 256;

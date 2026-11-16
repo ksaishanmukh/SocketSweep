@@ -38,7 +38,7 @@ Every contract has a **fake** implementation, so each side can be tested alone.
 | `crates/wire`          | Host ↔ phone protocol types, framing, handshake                                                                           |
 | `crates/gui-contract`  | GUI ↔ host command and event types (specta)                                                                               |
 | `crates/transport`     | `Transport` trait and `FakeTransport`                                                                                     |
-| `crates/transport-adb` | adb implementation: smart sockets, shell v2, sync SEND/RECV2, USB and wireless                                            |
+| `crates/transport-adb` | adb implementation: smart sockets, shell v2, sync SEND/RCV2, USB and wireless                                             |
 | `crates/host-core`     | Tree index, session client, focus debounce, delete/copy orchestration, history                                            |
 | `crates/daemon`        | Phone binary (lib + bin): `listener`, `session`, `outbox`, `fs_rustix` (`fswalk`), `actions`; the scan is `crates/engine` |
 | `crates/engine`        | `sched`, `aggregate`, `pool`, `trait Fs`, `trait EventSink`, `StdFs`                                                      |
@@ -122,8 +122,7 @@ pub enum ScanEvent {
     SkeletonReady { listed: u32, frontier: u32, elapsed_ms: u32 },
     FocusState { seq: u32, dir: DirId, settled: bool },
     Pruned { dir: DirId },
-    Progress { listed: u32, known: u32, files: u64, disk: u64, pending: u32,
-               alloc: [u8; 3], stalled: Vec<(DirId, u32 /* ms */)> },
+    Progress { listed: u32, known: u32 },
     Finished { outcome: Outcome, totals: Totals, elapsed_ms: u32 },  // ends the scan
 }
 pub struct Entry  { name: Vec<u8>, kind: Kind, stat: Option<Stat>, id: Option<DirId> }
@@ -162,8 +161,7 @@ buffer.
   waiting. The control queue (`Pong`, `Deleted`, `Failed`) is always sent first.
 - **Keepalive:** the writer thread sends `Heartbeat` after 2 s with nothing
   sent. The host sends `Ping` after 5 s idle. The host treats 15 s of silence as
-  dead; the daemon gives up after 30 s. `Progress.stalled` lists directories
-  being read for more than 3 s.
+  dead; the daemon gives up after 30 s.
 - **Cancellation:** `Cancel` sets a flag. Workers check it at task boundaries
   and every 256 entries. The scan always ends with
   `Finished { outcome: Cancelled }`. A lost connection cancels everything.
@@ -427,8 +425,8 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
 1. `PrepareCopy` resolves the path through the guard and streams a
    `CopyManifest` listing `{ rel, size, mode, mtime }`. Symlinks are listed as
    skipped.
-2. The host pulls the bytes with `Transport::pull`: adb sync `RECV2`, falling
-   back to `RECV`, over 2–3 sync connections in parallel.
+2. The host pulls the bytes with `Transport::pull`: adb sync `RCV2`, over 2–3
+   sync connections in parallel.
 3. Mapping Android file names to valid Windows/macOS names is the host's job.
 
 ## 4. Host side
@@ -494,7 +492,7 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   one listed, then deletes the rest one by one; a node the phone refuses is
   reported in `failures` without stopping the others. `copyMany` copies
   several nodes into one destination as one copy, with one `copy-progress`
-  stream. `delete` and `copyToDesktop` are the one-node case of each.
+  stream. One node is a batch of one.
 
 ## 5. Testing
 
