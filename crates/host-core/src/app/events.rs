@@ -2,27 +2,15 @@
 
 use std::sync::Arc;
 
-use socketsweep_gui_contract::{AppsUpdated, ConnectionLost, CopyProgress, Event, ScanProgress};
+use socketsweep_gui_contract::{AppsUpdated, ConnectionLost, CopyProgress, ScanProgress};
 
-/// An event for the GUI. The shell emits the payload under [`HostEvent::name`].
+/// An event for the GUI. The shell emits the payload under its contract name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostEvent {
     ScanProgress(ScanProgress),
     CopyProgress(CopyProgress),
     ConnectionLost(ConnectionLost),
     AppsUpdated(AppsUpdated),
-}
-
-impl HostEvent {
-    /// The Tauri event name, from the contract.
-    pub fn name(&self) -> &'static str {
-        match self {
-            HostEvent::ScanProgress(_) => ScanProgress::NAME,
-            HostEvent::CopyProgress(_) => CopyProgress::NAME,
-            HostEvent::ConnectionLost(_) => ConnectionLost::NAME,
-            HostEvent::AppsUpdated(_) => AppsUpdated::NAME,
-        }
-    }
 }
 
 /// Where events go: the shell forwards each to the window.

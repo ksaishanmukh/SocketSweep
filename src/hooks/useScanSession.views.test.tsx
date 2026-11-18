@@ -60,20 +60,29 @@ describe("sorting and filtering", () => {
     act(() => result.current.controls.setSortKey("name"));
     const byName = { key: "name", descending: false };
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(node(0), undefined, "disk", byName, NO_FILTER),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: byName,
+        filter: NO_FILTER,
+      }),
     );
-    expect(api.focus).toHaveBeenLastCalledWith(node(0), undefined, "disk", byName, NO_FILTER);
+    expect(api.focus).toHaveBeenLastCalledWith({
+      node: node(0),
+      by: "disk",
+      sort: byName,
+      filter: NO_FILTER,
+    });
 
     // The active column flips.
     act(() => result.current.controls.setSortKey("name"));
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(
-        node(0),
-        undefined,
-        "disk",
-        { key: "name", descending: true },
-        NO_FILTER,
-      ),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: { key: "name", descending: true },
+        filter: NO_FILTER,
+      }),
     );
   });
 
@@ -84,25 +93,28 @@ describe("sorting and filtering", () => {
     act(() => result.current.controls.toggleFilter({ group: "changed", value: "overYear" }));
     const filtered = { ...NO_FILTER, categories: ["video"], changed: ["overYear"] };
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(
-        node(0),
-        undefined,
-        "disk",
-        DEFAULT_SORT,
-        filtered,
-      ),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: filtered,
+      }),
     );
-    expect(api.focus).toHaveBeenLastCalledWith(node(0), undefined, "disk", DEFAULT_SORT, filtered);
+    expect(api.focus).toHaveBeenLastCalledWith({
+      node: node(0),
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: filtered,
+    });
 
     act(() => result.current.controls.clearFilters());
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(
-        node(0),
-        undefined,
-        "disk",
-        DEFAULT_SORT,
-        NO_FILTER,
-      ),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: NO_FILTER,
+      }),
     );
   });
 
@@ -114,9 +126,14 @@ describe("sorting and filtering", () => {
       await result.current.actions.openFolder(node(4));
     });
 
-    expect(api.getView).toHaveBeenLastCalledWith(node(4), undefined, "disk", DEFAULT_SORT, {
-      ...NO_FILTER,
-      kinds: ["file"],
+    expect(api.getView).toHaveBeenLastCalledWith({
+      node: node(4),
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: {
+        ...NO_FILTER,
+        kinds: ["file"],
+      },
     });
   });
 });
@@ -127,9 +144,14 @@ describe("the search box", () => {
 
     act(() => result.current.options.setText("cam"));
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(node(0), undefined, "disk", DEFAULT_SORT, {
-        ...NO_FILTER,
-        query: "cam",
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: {
+          ...NO_FILTER,
+          query: "cam",
+        },
       }),
     );
     expect(api.search).not.toHaveBeenCalled();
@@ -138,13 +160,12 @@ describe("the search box", () => {
       await result.current.actions.openFolder(node(4));
     });
     expect(result.current.options.text).toBe("");
-    expect(api.getView).toHaveBeenLastCalledWith(
-      node(4),
-      undefined,
-      "disk",
-      DEFAULT_SORT,
-      NO_FILTER,
-    );
+    expect(api.getView).toHaveBeenLastCalledWith({
+      node: node(4),
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
   });
 
   it("searches the whole phone instead with Everywhere, leaving the folder whole", async () => {
@@ -155,7 +176,7 @@ describe("the search box", () => {
     act(() => result.current.options.setText("cam"));
 
     await waitFor(() => expect(result.current.searchResults).toHaveLength(1));
-    expect(api.search.mock.calls[0][5]).toBeNull();
+    expect(api.search.mock.calls[0][0].within).toBeNull();
     expect(result.current.options.folderQuery).toBeNull();
   });
 });
@@ -163,7 +184,7 @@ describe("the search box", () => {
 describe("history", () => {
   it("goes back and forward through opened folders", async () => {
     const { result } = await browse();
-    api.getView.mockImplementation(async (n) => view(n!.id));
+    api.getView.mockImplementation(async ({ node }) => view(node!.id));
 
     await act(async () => {
       await result.current.actions.openFolder(node(4));
@@ -203,9 +224,14 @@ describe("jumps from the overview", () => {
     await act(() => result.current.actions.showCategory("photo"));
 
     expect(result.current.mode).toBe("explorer");
-    expect(api.getView).toHaveBeenLastCalledWith(node(0), undefined, "disk", DEFAULT_SORT, {
-      ...NO_FILTER,
-      categories: ["photo"],
+    expect(api.getView).toHaveBeenLastCalledWith({
+      node: node(0),
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: {
+        ...NO_FILTER,
+        categories: ["photo"],
+      },
     });
   });
 });

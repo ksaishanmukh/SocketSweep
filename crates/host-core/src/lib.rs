@@ -3,9 +3,8 @@
 //! The Tauri shell builds one [`App`] with a [`Transport`](socketsweep_transport::Transport),
 //! an [`AppConfig`] (bundled daemon and app helper paths, history file, desktop
 //! folder) and an
-//! event callback, exposes each [`Commands`](socketsweep_gui_contract::Commands)
-//! method as a command of the same name, and emits each [`HostEvent`] under
-//! [`HostEvent::name`].
+//! event callback, calls the [`App`] method behind each command, and emits each
+//! [`HostEvent`] to the window.
 //!
 //! A fake daemon plugs in under a `FakeTransport`: answer the launch command
 //! (parse it with [`daemon::parse_launch_command`] for the token and socket

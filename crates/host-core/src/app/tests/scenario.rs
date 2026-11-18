@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use socketsweep_gui_contract::{self as gui, Commands, ErrorCode, Measure, NodeRef, ScanOutcome};
+use socketsweep_gui_contract::{
+    self as gui, ErrorCode, Measure, NodeRef, ScanOutcome, SearchRequest, ViewRequest,
+};
 use socketsweep_wire::ClientMsg;
 
 use super::phone::phone;
@@ -27,7 +29,7 @@ fn connect(rig: &Rig) {
     let app = &rig.app;
 
     assert_eq!(
-        app.get_view(None, None, None, None, None).unwrap_err().code,
+        app.get_view(ViewRequest::default()).unwrap_err().code,
         ErrorCode::NoScan
     );
     assert_eq!(
@@ -69,7 +71,7 @@ fn scan_and_focus(rig: &Rig) -> (NodeRef, NodeRef, NodeRef) {
     let app = &rig.app;
     let started = app.start_scan(None).unwrap();
     assert_eq!(started.path, "/sdcard");
-    let view = app.get_view(None, None, None, None, None).unwrap();
+    let view = app.get_view(ViewRequest::default()).unwrap();
     assert_eq!(view.path, "/sdcard");
     assert_eq!(view.measure, Measure::Partial);
     let dcim = row(&view, "DCIM");
@@ -82,8 +84,16 @@ fn scan_and_focus(rig: &Rig) -> (NodeRef, NodeRef, NodeRef) {
 
     // Focusing a file means its folder: the root, which the scan starts in,
     // so nothing is sent. The folder itself is sent at once.
-    app.focus(Some(a), None, None, None, None).unwrap();
-    app.focus(Some(dcim), None, None, None, None).unwrap();
+    app.focus(ViewRequest {
+        node: Some(a),
+        ..Default::default()
+    })
+    .unwrap();
+    app.focus(ViewRequest {
+        node: Some(dcim),
+        ..Default::default()
+    })
+    .unwrap();
     let progress = rig.wait_finished();
     assert_eq!(progress.finished.unwrap().outcome, ScanOutcome::Complete);
     assert_eq!(progress.totals.size.apparent, 1100);
@@ -118,9 +128,12 @@ fn queries_and_history(rig: &Rig, dcim: NodeRef) {
     let crumbs = app.get_breadcrumbs(dcim).unwrap();
     assert_eq!(crumbs.len(), 2);
     assert_eq!(
-        app.search("PIC".into(), None, None, None, None, None)
-            .unwrap()
-            .len(),
+        app.search(SearchRequest {
+            query: "PIC".into(),
+            ..Default::default()
+        })
+        .unwrap()
+        .len(),
         1
     );
     assert_eq!(app.get_treemap(None, None, None).unwrap().children.len(), 2);
@@ -183,9 +196,12 @@ fn rescan_and_disconnect(rig: &Rig, dcim: NodeRef) {
     // A rescan makes every old node stale.
     app.start_scan(None).unwrap();
     assert_eq!(
-        app.get_view(Some(dcim), None, None, None, None)
-            .unwrap_err()
-            .code,
+        app.get_view(ViewRequest {
+            node: Some(dcim),
+            ..Default::default()
+        })
+        .unwrap_err()
+        .code,
         ErrorCode::Stale
     );
     app.cancel_scan().unwrap();
@@ -194,7 +210,7 @@ fn rescan_and_disconnect(rig: &Rig, dcim: NodeRef) {
 
     app.disconnect().unwrap();
     assert_eq!(
-        app.get_view(None, None, None, None, None).unwrap_err().code,
+        app.get_view(ViewRequest::default()).unwrap_err().code,
         ErrorCode::NoScan
     );
     assert!(rig

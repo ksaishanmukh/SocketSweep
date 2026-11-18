@@ -4,7 +4,7 @@ use super::super::*;
 use super::phone::phone;
 use super::rig::{row, Rig, RESOLVED};
 use crate::testkit::{wait_for, FakeDaemon, Greeting};
-use socketsweep_gui_contract::{Commands, ErrorCode, ScanOutcome};
+use socketsweep_gui_contract::{ErrorCode, ScanOutcome, ViewRequest};
 use socketsweep_transport::fake::{FakeDevice, FakeTransport};
 use socketsweep_wire::{ClientMsg, ScanEvent, ServerMsg, Totals};
 use std::sync::atomic::Ordering;
@@ -44,7 +44,10 @@ fn a_protocol_violation_fails_the_scan_and_cancels_it() {
     // The tree so far stays queryable.
     assert_eq!(
         rig.app
-            .get_view(Some(started.root), None, None, None, None)
+            .get_view(ViewRequest {
+                node: Some(started.root),
+                ..Default::default()
+            })
             .unwrap()
             .rows
             .len(),
@@ -65,7 +68,6 @@ fn a_dead_phone_is_reported_as_connection_lost() {
         rig.app.start_scan(None).unwrap_err().code,
         ErrorCode::NotConnected
     );
-    assert_eq!(HostEvent::ConnectionLost(lost).name(), "connection-lost");
 }
 
 #[test]
@@ -101,10 +103,15 @@ fn progress_shows_the_view_asked_for_by_focus_and_get_view_does_not_change_it() 
     let app = &rig.app;
     app.connect(None, None).unwrap();
     app.start_scan(None).unwrap();
-    let dcim = row(&app.get_view(None, None, None, None, None).unwrap(), "DCIM");
+    let dcim = row(&app.get_view(ViewRequest::default()).unwrap(), "DCIM");
 
     // The row cap comes from `focus`.
-    app.focus(Some(dcim), Some(0), None, None, None).unwrap();
+    app.focus(ViewRequest {
+        node: Some(dcim),
+        limit: Some(0),
+        ..Default::default()
+    })
+    .unwrap();
     let progress = rig.wait_finished();
     let view = progress.view.unwrap();
     assert_eq!(view.node, dcim);
@@ -113,13 +120,14 @@ fn progress_shows_the_view_asked_for_by_focus_and_get_view_does_not_change_it() 
     // Reading a view, whatever its cap, leaves that alone: `delete_many` answers
     // with the focused folder under the same cap.
     let full = app
-        .get_view(Some(dcim), Some(10), None, None, None)
+        .get_view(ViewRequest {
+            node: Some(dcim),
+            limit: Some(10),
+            ..Default::default()
+        })
         .unwrap();
     assert_eq!(full.rows.len(), 1);
-    let a = row(
-        &app.get_view(None, None, None, None, None).unwrap(),
-        "a.txt",
-    );
+    let a = row(&app.get_view(ViewRequest::default()).unwrap(), "a.txt");
     let deleted = app.delete_many(vec![a]).unwrap();
     assert_eq!(deleted.view.node, dcim);
     assert!(deleted.view.rows.is_empty(), "{:?}", deleted.view);

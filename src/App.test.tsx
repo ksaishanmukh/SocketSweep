@@ -86,7 +86,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Copy notes.txt to Desktop" }));
 
-    expect(api.copyMany).toHaveBeenCalledWith([node(3)]);
+    expect(api.copyMany).toHaveBeenCalledWith([node(3)], null);
     expect(await screen.findByText(/Copying notes\.txt/)).toBeTruthy();
     await act(async () =>
       copying.resolve({

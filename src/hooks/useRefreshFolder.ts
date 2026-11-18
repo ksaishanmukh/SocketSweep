@@ -44,7 +44,13 @@ function useReload({ sessionRef, metricRef, optionsRef, log, state, focus, loadT
     focus(current.node, limit);
     const { sort, filter } = optionsRef.current;
     try {
-      const next = await commands.getView(current.node, limit, metricRef.current, sort, filter);
+      const next = await commands.getView({
+        node: current.node,
+        limit,
+        by: metricRef.current,
+        sort,
+        filter,
+      });
       if (session !== sessionRef.current || seq !== navSeqRef.current) return;
       if (next.node.session !== session) return;
       put(next);
@@ -68,7 +74,13 @@ function useLoadMore({ sessionRef, metricRef, optionsRef, fail, state, focus }: 
     focus(current.node, limit);
     const { sort, filter } = optionsRef.current;
     try {
-      const next = await commands.getView(current.node, limit, metricRef.current, sort, filter);
+      const next = await commands.getView({
+        node: current.node,
+        limit,
+        by: metricRef.current,
+        sort,
+        filter,
+      });
       // If the user went elsewhere meanwhile, these rows belong to a folder
       // that is no longer open.
       if (seq === navSeqRef.current && session === sessionRef.current) put(next);

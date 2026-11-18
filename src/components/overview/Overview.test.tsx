@@ -67,9 +67,14 @@ describe("what's using the space", () => {
       "true",
     );
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(node(0), undefined, "disk", DEFAULT_SORT, {
-        ...NO_FILTER,
-        categories: ["video"],
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: {
+          ...NO_FILTER,
+          categories: ["video"],
+        },
       }),
     );
     expect(screen.getByRole("button", { name: "Remove filter Videos" })).toBeTruthy();
@@ -78,9 +83,14 @@ describe("what's using the space", () => {
     const legend = within(card(/What’s using the space/)).getByRole("list");
     await user.click(within(legend).getByRole("button", { name: /Photos/ }));
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(node(0), undefined, "disk", DEFAULT_SORT, {
-        ...NO_FILTER,
-        categories: ["photo"],
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: {
+          ...NO_FILTER,
+          categories: ["photo"],
+        },
       }),
     );
   });
@@ -107,13 +117,12 @@ describe("biggest files", () => {
 
     await user.click(screen.getByRole("button", { name: /\/sdcard\/Movies/ }));
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(
-        node(5),
-        undefined,
-        "disk",
-        DEFAULT_SORT,
-        NO_FILTER,
-      ),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(5),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: NO_FILTER,
+      }),
     );
     expect(screen.getByRole("tab", { name: "Explorer" }).getAttribute("aria-selected")).toBe(
       "true",
@@ -149,13 +158,12 @@ describe("space by app", () => {
     await user.click(within(card(/Space by app/)).getByRole("button", { name: /WhatsApp/ }));
 
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(
-        node(40),
-        undefined,
-        "disk",
-        DEFAULT_SORT,
-        NO_FILTER,
-      ),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(40),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: NO_FILTER,
+      }),
     );
   });
 });

@@ -6,25 +6,25 @@ unless a link says otherwise.
 
 ## 1. Map
 
-| Path                                              | What it does                                                                | Start here                                                                                                                                                                                                      |
-| ------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`crates/wire`](../crates/wire)                   | Host-to-phone protocol: message types, framing, handshake, token.           | [`messages/`](../crates/wire/src/messages) (`client.rs`, `server.rs`, `options.rs`), [`framing.rs`](../crates/wire/src/framing.rs), [`handshake.rs`](../crates/wire/src/handshake.rs)                           |
-| [`crates/gui-contract`](../crates/gui-contract)   | The GUI-to-host API: commands, events, payload types. Generates TS.         | [`commands.rs`](../crates/gui-contract/src/commands.rs), [`events.rs`](../crates/gui-contract/src/events.rs), [`bindings.rs`](../crates/gui-contract/src/bindings.rs)                                           |
-| [`crates/transport`](../crates/transport)         | The `Transport` trait (a byte tunnel to the daemon) plus an in-memory fake. | [`lib.rs`](../crates/transport/src/lib.rs), [`fake/`](../crates/transport/src/fake)                                                                                                                             |
-| [`crates/transport-adb`](../crates/transport-adb) | The real transport: talks to the adb server (smart sockets, shell, sync).   | [`transport.rs`](../crates/transport-adb/src/transport.rs), [`wire/`](../crates/transport-adb/src/wire), [`devices.rs`](../crates/transport-adb/src/devices.rs)                                                 |
-| [`crates/engine`](../crates/engine)               | The scan brain on the phone: scheduler, aggregation, worker pool, `Fs`.     | [`pool/`](../crates/engine/src/pool), [`sched/`](../crates/engine/src/sched), [`aggregate/`](../crates/engine/src/aggregate), [`fs.rs`](../crates/engine/src/fs.rs), [`sink.rs`](../crates/engine/src/sink.rs)  |
-| [`crates/daemon`](../crates/daemon)               | The phone binary: listener, session, outbox, delete/metadata actions.       | [`listener.rs`](../crates/daemon/src/listener.rs), [`session/`](../crates/daemon/src/session), [`outbox/`](../crates/daemon/src/outbox), [`actions/`](../crates/daemon/src/actions)                             |
-| [`crates/host-core`](../crates/host-core)         | Everything the desktop does, with no Tauri: tree index, client, actions.    | [`app/`](../crates/host-core/src/app), [`apps/`](../crates/host-core/src/apps), [`client/`](../crates/host-core/src/client), [`tree/`](../crates/host-core/src/tree), [`focus/`](../crates/host-core/src/focus) |
-| [`crates/sim`](../crates/sim)                     | Dev only: simulated filesystem, G1–G3 checker, `FakeDaemon`.                | [`simfs/`](../crates/sim/src/simfs), [`fake_daemon.rs`](../crates/sim/src/fake_daemon.rs), [`checker/`](../crates/sim/src/checker), [`tests/properties.rs`](../crates/sim/tests/properties.rs)                  |
-| [`crates/bench`](../crates/bench)                 | Benchmark, fixture and end-to-end runner against a real device.             | [`main.rs`](../crates/bench/src/main.rs) (usage), [`bench.rs`](../crates/bench/src/bench.rs), [`e2e.rs`](../crates/bench/src/e2e.rs), [`fixture.rs`](../crates/bench/src/fixture.rs)                            |
-| [`src-tauri`](../src-tauri)                       | Thin Tauri shell: one Tauri command per contract command, event forwarding. | [`src/lib.rs`](../src-tauri/src/lib.rs) (`shell_commands!`, `forward`), [`tauri.conf.json`](../src-tauri/tauri.conf.json)                                                                                       |
-| [`src/`](../src)                                  | The React GUI.                                                              | [`api/index.ts`](../src/api/index.ts), [`hooks/`](../src/hooks), [`components/`](../src/components), [`lib/`](../src/lib)                                                                                       |
-| [`scripts/`](../scripts)                          | Node helpers: fetch adb, cross-compile the daemon.                          | [`setup-bins.mjs`](../scripts/setup-bins.mjs), [`build-daemon.mjs`](../scripts/build-daemon.mjs)                                                                                                                |
-| [`.github/workflows/`](../.github/workflows)      | CI by tag: checks, builds, releases, emulator end-to-end.                   | [`build.yml`](../.github/workflows/build.yml), [`e2e.yml`](../.github/workflows/e2e.yml)                                                                                                                        |
+| Path                                              | What it does                                                                            | Start here                                                                                                                                                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`crates/wire`](../crates/wire)                   | Host-to-phone protocol: message types, framing, handshake, token.                       | [`messages/`](../crates/wire/src/messages) (`client.rs`, `server.rs`, `options.rs`), [`framing.rs`](../crates/wire/src/framing.rs), [`handshake.rs`](../crates/wire/src/handshake.rs)                           |
+| [`crates/gui-contract`](../crates/gui-contract)   | The GUI-to-host types: nodes, rows, requests, event payloads.                           | [`nodes.rs`](../crates/gui-contract/src/nodes.rs), [`queries.rs`](../crates/gui-contract/src/queries.rs), [`event_payloads.rs`](../crates/gui-contract/src/event_payloads.rs)                                   |
+| [`crates/transport`](../crates/transport)         | The `Transport` trait (a byte tunnel to the daemon) plus an in-memory fake.             | [`lib.rs`](../crates/transport/src/lib.rs), [`fake/`](../crates/transport/src/fake)                                                                                                                             |
+| [`crates/transport-adb`](../crates/transport-adb) | The real transport: talks to the adb server (smart sockets, shell, sync).               | [`transport.rs`](../crates/transport-adb/src/transport.rs), [`wire/`](../crates/transport-adb/src/wire), [`devices.rs`](../crates/transport-adb/src/devices.rs)                                                 |
+| [`crates/engine`](../crates/engine)               | The scan brain on the phone: scheduler, aggregation, worker pool, `Fs`.                 | [`pool/`](../crates/engine/src/pool), [`sched/`](../crates/engine/src/sched), [`aggregate/`](../crates/engine/src/aggregate), [`fs.rs`](../crates/engine/src/fs.rs), [`sink.rs`](../crates/engine/src/sink.rs)  |
+| [`crates/daemon`](../crates/daemon)               | The phone binary: listener, session, outbox, delete/metadata actions.                   | [`listener.rs`](../crates/daemon/src/listener.rs), [`session/`](../crates/daemon/src/session), [`outbox/`](../crates/daemon/src/outbox), [`actions/`](../crates/daemon/src/actions)                             |
+| [`crates/host-core`](../crates/host-core)         | Everything the desktop does, with no Tauri: tree index, client, actions.                | [`app/`](../crates/host-core/src/app), [`apps/`](../crates/host-core/src/apps), [`client/`](../crates/host-core/src/client), [`tree/`](../crates/host-core/src/tree), [`focus/`](../crates/host-core/src/focus) |
+| [`crates/sim`](../crates/sim)                     | Dev only: simulated filesystem, G1–G3 checker, `FakeDaemon`.                            | [`simfs/`](../crates/sim/src/simfs), [`fake_daemon.rs`](../crates/sim/src/fake_daemon.rs), [`checker/`](../crates/sim/src/checker), [`tests/properties.rs`](../crates/sim/tests/properties.rs)                  |
+| [`crates/bench`](../crates/bench)                 | Benchmark, fixture and end-to-end runner against a real device.                         | [`main.rs`](../crates/bench/src/main.rs) (usage), [`bench.rs`](../crates/bench/src/bench.rs), [`e2e.rs`](../crates/bench/src/e2e.rs), [`fixture.rs`](../crates/bench/src/fixture.rs)                            |
+| [`src-tauri`](../src-tauri)                       | Thin Tauri shell: each GUI command declared once, event forwarding, TS bindings export. | [`src/commands.rs`](../src-tauri/src/commands.rs), [`src/lib.rs`](../src-tauri/src/lib.rs) (`specta_builder`, `forward`), [`tauri.conf.json`](../src-tauri/tauri.conf.json)                                     |
+| [`src/`](../src)                                  | The React GUI.                                                                          | [`api/index.ts`](../src/api/index.ts), [`hooks/`](../src/hooks), [`components/`](../src/components), [`lib/`](../src/lib)                                                                                       |
+| [`scripts/`](../scripts)                          | Node helpers: fetch adb, cross-compile the daemon.                                      | [`setup-bins.mjs`](../scripts/setup-bins.mjs), [`build-daemon.mjs`](../scripts/build-daemon.mjs)                                                                                                                |
+| [`.github/workflows/`](../.github/workflows)      | CI by tag: checks, builds, releases, emulator end-to-end.                               | [`build.yml`](../.github/workflows/build.yml), [`e2e.yml`](../.github/workflows/e2e.yml)                                                                                                                        |
 
 Dependencies point one way: `wire` and `gui-contract` are the base. The phone
 side (`engine`, `daemon`) and the desktop side (`host-core`) never see each
-other; they meet only through `wire`. `src/bindings.ts` is generated; do not
+other; they meet only through `wire`. `src/bindings.ts` is generated by tauri-specta; do not
 edit it.
 
 ## 2. Reading order
@@ -32,8 +32,10 @@ edit it.
 1. **Contracts first.** Everything else is an implementation of these.
    - [`wire/messages`](../crates/wire/src/messages): the whole phone protocol
      in a few small files. Read `ClientMsg`, `ServerMsg` and `ScanEvent`.
-   - [`gui-contract/commands.rs`](../crates/gui-contract/src/commands.rs): the
-     single list of GUI commands. Then `events.rs` and `nodes.rs` for the types.
+   - [`src-tauri/src/commands.rs`](../src-tauri/src/commands.rs): every GUI
+     command, declared once with its doc comment. Then
+     [`gui-contract`](../crates/gui-contract/src) (`nodes.rs`, `queries.rs`,
+     `event_payloads.rs`) for the types they carry.
    - [`transport/lib.rs`](../crates/transport/src/lib.rs): the byte tunnel
      both sides use; `transport-adb` can wait.
 2. **Phone side.** Start with the pure parts.
@@ -90,16 +92,15 @@ signal.
 1. **GUI.** The navigation hooks ([`useNavigation.ts`](../src/hooks/useNavigation.ts))
    load the new view, then call `useFocus` in
    [`useFocusAndTreemap.ts`](../src/hooks/useFocusAndTreemap.ts), which calls
-   `commands.focus(node, limit, metric, sort, filter)`.
+   `commands.focus({ node, limit, by, sort, filter })`.
 2. **API.** `commands` is re-exported from the generated bindings by
    [`src/api/index.ts`](../src/api/index.ts); it invokes the Tauri command
-   `focus`.
-3. **Shell.** The `focus` function generated by `shell_commands!` in
-   [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs) runs
-   `Commands::focus` on the blocking pool.
-4. **Host.** `impl Commands for App` in
-   [`host-core/src/app/commands.rs`](../crates/host-core/src/app/commands.rs)
-   (`fn focus`) resolves the `NodeRef` with `tree.focus_dir`
+   `focus`. Events are wrapped there too, so a handler gets the payload alone.
+3. **Shell.** The `focus` command in
+   [`src-tauri/src/commands.rs`](../src-tauri/src/commands.rs) runs
+   `App::focus` on the blocking pool.
+4. **Host.** `App::focus` in
+   [`host-core/src/app/queries.rs`](../crates/host-core/src/app/queries.rs) resolves the `NodeRef` with `tree.focus_dir`
    ([`tree/identity.rs`](../crates/host-core/src/tree/identity.rs)) to a daemon
    `DirId`, records how the view is asked for (row cap, metric, sort,
    filter) in `scan.meta`, then calls `scan.focus.request(FocusTarget)`. The root maps to `FocusTarget::Clear`.
@@ -166,25 +167,32 @@ signal.
     re-reads the map or the overview, whichever tab is showing, and React
     re-renders the list and map.
 
-The same shape (hook, `commands.x`, `Commands::x`, a client call, a wire
+The same shape (hook, `commands.x`, `App::x`, a client call, a wire
 message, a daemon handler) holds for delete and for starting a scan.
 
 ## 4. Where to change things
 
-- **Add a GUI command.** Add it to the `commands!` list in
-  [`gui-contract/commands.rs`](../crates/gui-contract/src/commands.rs) and any
-  new types beside it. Implement it in
-  [`host-core/app/commands.rs`](../crates/host-core/src/app/commands.rs). Add
-  the line to `shell_commands!` in
-  [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs) (a test checks the lists
-  match). Regenerate bindings (below), then use it from
+- **Add a GUI command.** Declare it once in
+  [`src-tauri/src/commands.rs`](../src-tauri/src/commands.rs) as a
+  `#[tauri::command] #[specta::specta]` function that forwards to an `App`
+  method (its doc comment becomes the TypeScript doc) and list it in
+  `collect_commands!` in [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs). Put
+  any new types in [`gui-contract`](../crates/gui-contract/src); a command that
+  needs more than a few arguments takes one request struct (`ViewRequest`).
+  Implement the `App` method in
+  [`host-core/app/commands.rs`](../crates/host-core/src/app/commands.rs) or
+  `queries.rs`. Regenerate bindings (below), then use it from
   [`src/api`](../src/api) and a hook.
-- **Add a GUI event.** [`gui-contract/events.rs`](../crates/gui-contract/src/events.rs)
-  and `event_payloads.rs`, then `HostEvent` in host-core and `forward` in
-  `src-tauri/src/lib.rs`.
+- **Add a GUI event.** Add the payload type in
+  [`gui-contract/event_payloads.rs`](../crates/gui-contract/src/event_payloads.rs)
+  with the `tauri_specta::Event` derive (the kebab-case type name is the event
+  name), list it in `collect_events!`, add a `HostEvent` variant in host-core
+  and its arm in `forward` in `src-tauri/src/lib.rs`, and wrap it in
+  [`src/api/index.ts`](../src/api/index.ts).
 - **Regenerate TS bindings.**
-  `cargo run -p socketsweep-gui-contract --bin export-bindings` rewrites
-  `src/bindings.ts`; CI fails if it is stale.
+  `UPDATE_BINDINGS=1 cargo test -p socketsweep --test bindings` rewrites
+  `src/bindings.ts`; the same test fails without the variable if the file is
+  stale, which is what CI runs.
 - **Add a protocol message.** Add the variant in
   [`wire/messages`](../crates/wire/src/messages); add it to the samples in
   [`wire/src/tests/support.rs`](../crates/wire/src/tests/support.rs) so the

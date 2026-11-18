@@ -1,7 +1,6 @@
 //! A scripted daemon serving a phone with app folders, for the app helper,
 //! overview and batch action tests.
 
-use socketsweep_gui_contract::Commands;
 use socketsweep_wire::{
     ClientFrame, ClientMsg, CopyItem, ErrCode, FsOp, Kind, Outcome, ScanEvent, ServerMsg, Totals,
 };

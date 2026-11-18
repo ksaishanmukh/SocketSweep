@@ -62,7 +62,12 @@ describe("the map", () => {
 
     await user.click(tile(/^DCIM/));
 
-    expect(api.getView).toHaveBeenCalledWith(node(1), undefined, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(api.getView).toHaveBeenCalledWith({
+      node: node(1),
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
   });
 
   it("lights up a pointed tile and marks its row, but only hints at a row's tile", async () => {
@@ -114,10 +119,15 @@ describe("filters", () => {
     await user.click(within(panel).getByRole("checkbox", { name: "Over a year ago" }));
 
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(node(0), undefined, "disk", DEFAULT_SORT, {
-        ...NO_FILTER,
-        categories: ["video"],
-        changed: ["overYear"],
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: {
+          ...NO_FILTER,
+          categories: ["video"],
+          changed: ["overYear"],
+        },
       }),
     );
     expect(within(panel).getByText(/of 3 items match/)).toBeTruthy();
@@ -128,9 +138,14 @@ describe("filters", () => {
 
     await user.click(screen.getByRole("button", { name: "Remove filter Videos" }));
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(node(0), undefined, "disk", DEFAULT_SORT, {
-        ...NO_FILTER,
-        changed: ["overYear"],
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: DEFAULT_SORT,
+        filter: {
+          ...NO_FILTER,
+          changed: ["overYear"],
+        },
       }),
     );
     await user.click(screen.getByRole("button", { name: "Clear all" }));
@@ -168,33 +183,30 @@ describe("sorting and selecting", () => {
 
     await user.click(screen.getByRole("button", { name: "Name" }));
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(
-        node(0),
-        undefined,
-        "disk",
-        { key: "name", descending: false },
-        NO_FILTER,
-      ),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: { key: "name", descending: false },
+        filter: NO_FILTER,
+      }),
     );
     await user.click(screen.getByRole("button", { name: /^Name/ }));
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(
-        node(0),
-        undefined,
-        "disk",
-        { key: "name", descending: true },
-        NO_FILTER,
-      ),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: { key: "name", descending: true },
+        filter: NO_FILTER,
+      }),
     );
     await user.click(screen.getByRole("button", { name: "Last changed" }));
     await waitFor(() =>
-      expect(api.getView).toHaveBeenLastCalledWith(
-        node(0),
-        undefined,
-        "disk",
-        { key: "changed", descending: true },
-        NO_FILTER,
-      ),
+      expect(api.getView).toHaveBeenLastCalledWith({
+        node: node(0),
+        by: "disk",
+        sort: { key: "changed", descending: true },
+        filter: NO_FILTER,
+      }),
     );
   });
 

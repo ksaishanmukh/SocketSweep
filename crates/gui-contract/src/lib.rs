@@ -1,10 +1,11 @@
 //! The contract between the React GUI and the desktop host.
 //!
-//! Every command the GUI can invoke, every event the host emits, and every
-//! value either carries is defined here as a plain Rust type, with no Tauri
-//! dependency. `src/bindings.ts` is generated from this crate by [`bindings`];
-//! the GUI imports nothing else from the host, and CI fails if the checked-in
-//! file is stale.
+//! The values the GUI's commands take and return, and the events the host
+//! emits, as plain Rust types with no Tauri dependency (the optional `tauri`
+//! feature only registers the event payloads). The commands themselves are
+//! declared once, in `src-tauri`, which generates `src/bindings.ts` from them
+//! and these types; the GUI imports nothing else from the host, and a test
+//! fails if the checked-in file is stale.
 //!
 //! # Nodes, not paths
 //!
@@ -43,26 +44,21 @@
 //! string.
 
 mod actions;
-pub mod bindings;
-mod commands;
 mod devices;
 mod errors;
 mod event_payloads;
-mod events;
 mod filters;
 mod nodes;
 mod overview;
 mod queries;
 
 pub use actions::{CopyResult, DeleteFailure, DeletedMany};
-pub use commands::{command_defs, CommandDef, Commands, COMMAND_NAMES};
 pub use devices::{Connected, Device, DeviceState, ScanRecord, ScanStarted, Totals};
 pub use errors::{CommandError, ErrorCode};
 pub use event_payloads::{
     AppsUpdated, ConnectionLost, CopyProgress, FocusState, ScanFinished, ScanOutcome, ScanPhase,
     ScanProgress, SkeletonReady,
 };
-pub use events::{event_defs, Event, EventDef, EVENT_NAMES};
 pub use filters::{ChangedBucket, KindFilter, SearchFilter, SortKey, ViewFilter, ViewSort};
 pub use nodes::{
     AppTag, Category, EntryKind, Measure, NodeId, NodeRef, SessionId, Size, SizeMetric,
@@ -70,7 +66,7 @@ pub use nodes::{
 pub use overview::{
     AppsStatus, CategoryUsage, Leftover, Leftovers, Overview, SinceLastScan, UnreadableFolder,
 };
-pub use queries::{AppUsage, Crumb, Row, TreemapNode, View};
+pub use queries::{AppUsage, Crumb, Row, SearchRequest, TreemapNode, View, ViewRequest};
 
 /// Rows per view when `limit` is not given. Enough to fill any screen; the
 /// GUI virtualises and asks for more if it needs them.

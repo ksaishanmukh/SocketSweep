@@ -114,8 +114,9 @@ async function refetchLoadedRows({
   const { sort, filter } = optionsRef.current;
   try {
     // The live views follow the last `focus`, not `getView`.
-    void commands.focus(view.node, wanted, metricRef.current, sort, filter).catch(() => {});
-    const full = await commands.getView(view.node, wanted, metricRef.current, sort, filter);
+    const request = { node: view.node, limit: wanted, by: metricRef.current, sort, filter };
+    void commands.focus(request).catch(() => {});
+    const full = await commands.getView(request);
     if (session === sessionRef.current) nav.applyLiveView(full);
   } catch {
     // The capped view is already showing; "Load more" still works.

@@ -1,4 +1,8 @@
 //! What the host's events carry.
+//!
+//! The four event payloads (`ScanProgress`, `CopyProgress`, `ConnectionLost`,
+//! `AppsUpdated`) are the events: the shell registers them with tauri-specta,
+//! which names each after its type in kebab-case.
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -9,6 +13,7 @@ use crate::{AppsStatus, NodeRef, SessionId, Totals, View};
 /// Emitted as `scan-progress` about ten times a second while a scan runs,
 /// and once more when it ends.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[cfg_attr(feature = "tauri", derive(tauri_specta::Event))]
 #[serde(rename_all = "camelCase")]
 pub struct ScanProgress {
     pub session: SessionId,
@@ -81,6 +86,7 @@ pub enum ScanOutcome {
 /// Emitted as `copy-progress` while `copyMany` runs. The
 /// counts cover every node of the copy together.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[cfg_attr(feature = "tauri", derive(tauri_specta::Event))]
 #[serde(rename_all = "camelCase")]
 pub struct CopyProgress {
     /// What is being copied, as asked for.
@@ -105,6 +111,7 @@ pub struct CopyProgress {
 /// the scan of `session`. Rows, views and the overview fetched before it
 /// lack them; the GUI fetches again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[cfg_attr(feature = "tauri", derive(tauri_specta::Event))]
 #[serde(rename_all = "camelCase")]
 pub struct AppsUpdated {
     pub session: SessionId,
@@ -116,6 +123,7 @@ pub struct AppsUpdated {
 /// Emitted as `connection-lost` when the phone stops answering or is
 /// unplugged. The session is over; nodes from it are stale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[cfg_attr(feature = "tauri", derive(tauri_specta::Event))]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionLost {
     pub serial: String,

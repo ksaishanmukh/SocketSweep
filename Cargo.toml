@@ -50,11 +50,12 @@ socketsweep-transport-adb = { path = "crates/transport-adb" }
 socketsweep-host-core = { path = "crates/host-core" }
 socketsweep-daemon = { path = "crates/daemon" }
 # Pinned exactly: specta 2 is still a release candidate and its RCs break each
-# other. These are the versions tauri-specta 2.0.0-rc.26 is built against, so
-# src-tauri can adopt tauri-specta without the contract crate changing.
+# other. These are the versions tauri-specta 2.0.0-rc.26 is built against;
+# move them together.
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 specta-serde = "=0.0.13"
 specta-typescript = "=0.0.13"
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 
 # The daemon is pushed to a phone over USB on every connect, so size is a
 # user-visible cost, not just a build detail.

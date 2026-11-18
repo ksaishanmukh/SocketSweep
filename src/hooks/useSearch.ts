@@ -56,14 +56,13 @@ export function useSearch({ sessionRef, metricRef, optionsRef, sessionId, query 
       const current = () => seq === seqRef.current && sessionId === sessionRef.current;
       const { sort, filter } = optionsRef.current;
       try {
-        const rows = await commands.search(
-          trimmed,
-          undefined,
-          metricRef.current,
-          searchFilter(filter),
+        const rows = await commands.search({
+          query: trimmed,
+          by: metricRef.current,
+          filter: searchFilter(filter),
           sort,
-          null,
-        );
+          within: null,
+        });
         if (current()) setHits({ query: trimmed, session: sessionId, rows });
       } catch {
         if (current()) setHits({ query: trimmed, session: sessionId, rows: [] });

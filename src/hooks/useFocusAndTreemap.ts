@@ -18,7 +18,7 @@ export function useFocus({
     (node: NodeRef, limit?: number) => {
       const { sort, filter } = optionsRef.current;
       commands
-        .focus(node, limit, metricRef.current, sort, filter)
+        .focus({ node, limit, by: metricRef.current, sort, filter })
         .catch((err) => log(`[FOCUS] ${errorMessage(err)}`));
     },
     [log, metricRef, optionsRef],

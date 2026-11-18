@@ -33,7 +33,7 @@ export function useStartScan({
     trackingRef.current.starting = true;
     log("[SCAN] Starting…");
     try {
-      const started = await commands.startScan();
+      const started = await commands.startScan(null);
       if (epoch !== trackingRef.current.epoch) return;
       trackingRef.current.starting = false;
       trackingRef.current.root = started.root;
