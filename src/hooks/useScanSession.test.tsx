@@ -101,20 +101,18 @@ describe("connecting and scanning", () => {
   it("opens the root with focus, so the phone measures it first", async () => {
     await browse();
 
-    expect(api.focus).toHaveBeenCalledWith(
-      { session: SESSION, id: 0 },
-      undefined,
-      "disk",
-      DEFAULT_SORT,
-      NO_FILTER,
-    );
-    expect(api.getView).toHaveBeenCalledWith(
-      { session: SESSION, id: 0 },
-      undefined,
-      "disk",
-      DEFAULT_SORT,
-      NO_FILTER,
-    );
+    expect(api.focus).toHaveBeenCalledWith({
+      node: { session: SESSION, id: 0 },
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
+    expect(api.getView).toHaveBeenCalledWith({
+      node: { session: SESSION, id: 0 },
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
   });
 
   it("keeps an event that beats startScan's own reply", async () => {
@@ -270,14 +268,18 @@ describe("navigation", () => {
       await result.current.nav.open(node(9));
     });
 
-    expect(api.focus).toHaveBeenCalledWith(node(9), undefined, "disk", DEFAULT_SORT, NO_FILTER);
-    expect(api.getView).toHaveBeenLastCalledWith(
-      node(9),
-      undefined,
-      "disk",
-      DEFAULT_SORT,
-      NO_FILTER,
-    );
+    expect(api.focus).toHaveBeenCalledWith({
+      node: node(9),
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
+    expect(api.getView).toHaveBeenLastCalledWith({
+      node: node(9),
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
     expect(api.getBreadcrumbs).toHaveBeenLastCalledWith(node(9));
     await waitFor(() => expect(api.getTreemap).toHaveBeenLastCalledWith(node(9), 1, "disk"));
     expect(result.current.nav.view?.node).toEqual(node(9));
@@ -294,8 +296,20 @@ describe("navigation", () => {
       await result.current.nav.loadMore();
     });
 
-    expect(api.focus).toHaveBeenCalledWith(node(0), 503, "disk", DEFAULT_SORT, NO_FILTER);
-    expect(api.getView).toHaveBeenCalledWith(node(0), 503, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(api.focus).toHaveBeenCalledWith({
+      node: node(0),
+      limit: 503,
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
+    expect(api.getView).toHaveBeenCalledWith({
+      node: node(0),
+      limit: 503,
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
   });
 
   it("searches everywhere by the chosen metric, sort and filters", async () => {
@@ -305,14 +319,13 @@ describe("navigation", () => {
     searchEverywhere(result, "pic");
 
     await waitFor(() =>
-      expect(api.search).toHaveBeenCalledWith(
-        "pic",
-        undefined,
-        "disk",
-        { categories: [], kinds: [], changed: [] },
-        DEFAULT_SORT,
-        null,
-      ),
+      expect(api.search).toHaveBeenCalledWith({
+        query: "pic",
+        by: "disk",
+        filter: { categories: [], kinds: [], changed: [] },
+        sort: DEFAULT_SORT,
+        within: null,
+      }),
     );
   });
 
@@ -331,7 +344,12 @@ describe("navigation", () => {
       await result.current.actions.reveal(row(8, { parent: "/dir5", parentNode: node(5) }));
     });
 
-    expect(api.focus).toHaveBeenCalledWith(node(5), undefined, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(api.focus).toHaveBeenCalledWith({
+      node: node(5),
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
     expect(result.current.mode).toBe("explorer");
   });
 
@@ -401,7 +419,13 @@ describe("navigation", () => {
     api.getView.mockResolvedValue(view(0, [...many, row(4)], { hidden: 3 }));
     await act(() => result.current.nav.loadMore());
 
-    expect(api.getView).toHaveBeenLastCalledWith(node(0), 503, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(api.getView).toHaveBeenLastCalledWith({
+      node: node(0),
+      limit: 503,
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
     expect(result.current.nav.view?.rows).toHaveLength(4);
   });
 });
@@ -418,13 +442,12 @@ describe("sizes", () => {
 
     expect(result.current.metric).toBe("apparent");
     await waitFor(() =>
-      expect(api.getView).toHaveBeenCalledWith(
-        node(0),
-        undefined,
-        "apparent",
-        DEFAULT_SORT,
-        NO_FILTER,
-      ),
+      expect(api.getView).toHaveBeenCalledWith({
+        node: node(0),
+        by: "apparent",
+        sort: DEFAULT_SORT,
+        filter: NO_FILTER,
+      }),
     );
     await waitFor(() => expect(api.getTreemap).toHaveBeenCalledWith(node(0), 1, "apparent"));
     await waitFor(() => expect(api.overview).toHaveBeenCalledWith("apparent"));
@@ -524,7 +547,13 @@ describe("delete", () => {
     await act(() => result.current.remove([target(many[0])]));
 
     await waitFor(() => expect(result.current.nav.view?.rows).toHaveLength(3));
-    expect(api.getView).toHaveBeenLastCalledWith(node(0), 4, "disk", DEFAULT_SORT, NO_FILTER);
+    expect(api.getView).toHaveBeenLastCalledWith({
+      node: node(0),
+      limit: 4,
+      by: "disk",
+      sort: DEFAULT_SORT,
+      filter: NO_FILTER,
+    });
   });
 
   it("drops search hits inside a deleted folder, but not look-alike siblings", async () => {

@@ -74,7 +74,7 @@ function useOpen({ sessionRef, metricRef, optionsRef, fail, state, focus, loadTr
       const { sort, filter } = optionsRef.current;
       try {
         const [nextView, nextCrumbs] = await Promise.all([
-          commands.getView(node, undefined, metricRef.current, sort, filter),
+          commands.getView({ node, by: metricRef.current, sort, filter }),
           commands.getBreadcrumbs(node),
         ]);
         if (session !== sessionRef.current || nextView.node.session !== session) return false;

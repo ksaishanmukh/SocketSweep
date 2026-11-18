@@ -1,5 +1,5 @@
 //! The emulator end-to-end test, through
-//! host-core's [`App`], the same `Commands` the GUI calls, over real adb and
+//! host-core's [`App`], the same commands the GUI calls, over real adb and
 //! the real daemon:
 //!
 //! connect → scan → `SkeletonReady` → focus the fixture → its size final and
@@ -15,7 +15,6 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use socketsweep_gui_contract::Commands;
 use socketsweep_host_core::{App, AppConfig, HostEvent};
 use socketsweep_sim::SimFs;
 use socketsweep_transport::Transport;

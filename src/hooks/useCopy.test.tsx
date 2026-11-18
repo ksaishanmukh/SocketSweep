@@ -51,7 +51,7 @@ describe("copy to computer", () => {
 
     await act(() => result.current.start([pick(row(2))]));
 
-    expect(api.copyMany).toHaveBeenCalledWith([node(2)]);
+    expect(api.copyMany).toHaveBeenCalledWith([node(2)], null);
   });
 
   it("follows copy-progress events while the copy runs, then toasts success", async () => {
@@ -170,7 +170,7 @@ describe("copy to computer", () => {
       copying = result.current.start([pick(row(2)), pick(row(3))]);
     });
 
-    expect(api.copyMany).toHaveBeenCalledWith([node(2), node(3)]);
+    expect(api.copyMany).toHaveBeenCalledWith([node(2), node(3)], null);
     expect(result.current.copy?.name).toBe("2 items");
     act(() => emit.copyProgress(copyProgress({ nodes: [node(2), node(3)], filesDone: 2 })));
     expect(result.current.copy?.progress?.filesDone).toBe(2);

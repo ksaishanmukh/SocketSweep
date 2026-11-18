@@ -116,10 +116,10 @@ export function resetApi() {
 
   // Commands that answer with nothing and are called without being awaited.
   commands.listDevices.mockResolvedValue([]);
-  commands.focus.mockResolvedValue(undefined);
-  commands.cancelScan.mockResolvedValue(undefined);
-  commands.cancelCopy.mockResolvedValue(undefined);
-  commands.disconnect.mockResolvedValue(undefined);
+  commands.focus.mockResolvedValue(null);
+  commands.cancelScan.mockResolvedValue(null);
+  commands.cancelCopy.mockResolvedValue(null);
+  commands.disconnect.mockResolvedValue(null);
   commands.appIcon.mockResolvedValue(null);
 }
 

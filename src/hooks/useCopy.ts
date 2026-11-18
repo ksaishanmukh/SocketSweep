@@ -74,7 +74,7 @@ export function useCopy({
       setCopy({ nodes, name, progress: null, cancelling: false });
       log(`[COPY] ${name}…`);
       try {
-        const done = await commands.copyMany(nodes);
+        const done = await commands.copyMany(nodes, null);
         notify(copiedMessage(name, done), "success");
         log(`[COPY] ${formatNumber(done.files)} files to ${done.destination}.`);
       } catch (err) {

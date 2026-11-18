@@ -1,4 +1,4 @@
-//! [`App`]: the host's brain, implementing the GUI's [`Commands`].
+//! [`App`]: the host's brain, answering the GUI's commands.
 //!
 //! # Threads and locks
 //!
@@ -41,6 +41,7 @@ mod delete;
 mod errors;
 mod events;
 mod overview;
+mod queries;
 mod scan;
 mod state;
 
@@ -51,7 +52,7 @@ use std::time::Duration;
 
 use socketsweep_gui_contract::SCAN_PROGRESS_INTERVAL_MS;
 #[cfg(doc)]
-use socketsweep_gui_contract::{Commands, ErrorCode, SessionId};
+use socketsweep_gui_contract::{ErrorCode, SessionId};
 use socketsweep_transport::{Transport, TransportError};
 use socketsweep_wire::ScanOpts;
 

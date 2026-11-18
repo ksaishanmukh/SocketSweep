@@ -4,10 +4,55 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use specta_typescript::Number;
 
-use crate::{AppTag, Category, EntryKind, Measure, NodeRef, Size};
+use crate::{
+    AppTag, Category, EntryKind, Measure, NodeRef, SearchFilter, Size, SizeMetric, ViewFilter,
+    ViewSort,
+};
 
-#[cfg(doc)]
-use crate::{SizeMetric, ViewFilter, ViewSort};
+/// Which folder `focus` and `getView` mean, and how to show it. Every field
+/// may be left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewRequest {
+    /// The folder; the root when `null`.
+    #[serde(default)]
+    pub node: Option<NodeRef>,
+    /// Rows to return at most (default 500).
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Which size to measure and sort by (default disk).
+    #[serde(default)]
+    pub by: Option<SizeMetric>,
+    /// Row order (default largest first).
+    #[serde(default)]
+    pub sort: Option<ViewSort>,
+    /// Which rows to keep (default all).
+    #[serde(default)]
+    pub filter: Option<ViewFilter>,
+}
+
+/// What `search` looks for and how it shows the hits.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchRequest {
+    /// Matched against names, case-insensitively.
+    pub query: String,
+    /// Results to return at most (default 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Which size to measure and sort by (default disk).
+    #[serde(default)]
+    pub by: Option<SizeMetric>,
+    /// Which hits to keep (default all).
+    #[serde(default)]
+    pub filter: Option<SearchFilter>,
+    /// Result order (default largest first).
+    #[serde(default)]
+    pub sort: Option<ViewSort>,
+    /// Only look inside this folder; everywhere when `null`.
+    #[serde(default)]
+    pub within: Option<NodeRef>,
+}
 
 /// One file or folder in a list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]

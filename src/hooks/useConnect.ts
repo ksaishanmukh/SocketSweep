@@ -37,7 +37,7 @@ export function useConnect({
       setPhase("connecting");
       try {
         log("[ADB] Looking for a device…");
-        const info = await commands.connect(serial);
+        const info = await commands.connect(serial ?? null, null);
         if (epoch !== trackingRef.current.epoch) return;
         // Captured once per connection, so a rescan still compares against the
         // previous session rather than against the scan a moment ago.

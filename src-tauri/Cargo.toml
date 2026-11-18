@@ -18,7 +18,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-socketsweep-gui-contract.workspace = true
+specta.workspace = true
+specta-typescript.workspace = true
+tauri-specta.workspace = true
+socketsweep-gui-contract = { workspace = true, features = ["tauri"] }
 socketsweep-host-core.workspace = true
 socketsweep-transport-adb.workspace = true
 

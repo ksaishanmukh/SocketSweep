@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::mpsc::Receiver;
 
-use socketsweep_gui_contract::{Commands, NodeRef, ScanOutcome, View};
+use socketsweep_gui_contract::{NodeRef, ScanOutcome, View, ViewRequest};
 use socketsweep_host_core::{App, HostEvent};
 use socketsweep_transport::Transport;
 
@@ -53,9 +53,21 @@ impl Scenario<'_> {
         ));
 
         // The fixture folder is in the root's listing, which the skeleton covers.
-        let top = cmd("get_view", app.get_view(None, Some(1000), None, None, None))?;
+        let top = cmd(
+            "get_view",
+            app.get_view(ViewRequest {
+                limit: Some(1000),
+                ..Default::default()
+            }),
+        )?;
         let node = row(&top, FIXTURE_DIR)?;
-        cmd("focus", app.focus(Some(node), None, None, None, None))?;
+        cmd(
+            "focus",
+            app.focus(ViewRequest {
+                node: Some(node),
+                ..Default::default()
+            }),
+        )?;
         if finished.is_none() {
             let p = wait_progress(rx, t, "the fixture to settle", |p| {
                 p.focus.is_some_and(|f| f.node == node && f.settled) || p.finished.is_some()
@@ -83,7 +95,11 @@ impl Scenario<'_> {
         log(&format!("scan complete in {} ms", fin.elapsed_ms));
         let view = cmd(
             "get_view",
-            app.get_view(Some(node), Some(1000), None, None, None),
+            app.get_view(ViewRequest {
+                node: Some(node),
+                limit: Some(1000),
+                ..Default::default()
+            }),
         )?;
         check_view(&view, want, apparent, "the fixture")?;
         log(&format!(
@@ -136,7 +152,11 @@ impl Scenario<'_> {
         let after = fixture::expected(fs);
         let view = cmd(
             "get_view",
-            self.app.get_view(Some(node), Some(1000), None, None, None),
+            self.app.get_view(ViewRequest {
+                node: Some(node),
+                limit: Some(1000),
+                ..Default::default()
+            }),
         )?;
         check_view(
             &view,

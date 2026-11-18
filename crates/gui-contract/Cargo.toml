@@ -1,23 +1,24 @@
 [package]
 name = "socketsweep-gui-contract"
-description = "Commands and events between the SocketSweep GUI and the desktop host"
+description = "The types the SocketSweep GUI and the desktop host exchange"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# Registers the event payloads with tauri-specta. Only the Tauri shell turns it
+# on; host-core and the tools use the plain types.
+tauri = ["dep:tauri-specta"]
+
 [dependencies]
 serde = { workspace = true }
 specta = { workspace = true }
-specta-serde = { workspace = true }
 specta-typescript = { workspace = true }
+tauri-specta = { workspace = true, optional = true, features = ["derive"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }
-
-[[bin]]
-name = "export-bindings"
-path = "src/bin/export-bindings.rs"
 
 [lints.clippy]
 excessive_nesting = "warn"

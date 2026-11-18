@@ -1,6 +1,6 @@
 //! The overview, and deleting and copying several nodes at once.
 
-use socketsweep_gui_contract::{Category, Commands, ErrorCode, NodeRef};
+use socketsweep_gui_contract::{Category, ErrorCode, NodeRef, ViewRequest};
 use socketsweep_wire::ClientMsg;
 
 use super::android::{android, scanned};
@@ -10,15 +10,21 @@ use crate::app::HostEvent;
 /// The nodes of `Android/data` and of its three package folders.
 fn packages(rig: &Rig) -> (NodeRef, [NodeRef; 3]) {
     let app = &rig.app;
-    let android = row(
-        &app.get_view(None, None, None, None, None).unwrap(),
-        "Android",
-    );
+    let android = row(&app.get_view(ViewRequest::default()).unwrap(), "Android");
     let data = row(
-        &app.get_view(Some(android), None, None, None, None).unwrap(),
+        &app.get_view(ViewRequest {
+            node: Some(android),
+            ..Default::default()
+        })
+        .unwrap(),
         "data",
     );
-    let view = app.get_view(Some(data), None, None, None, None).unwrap();
+    let view = app
+        .get_view(ViewRequest {
+            node: Some(data),
+            ..Default::default()
+        })
+        .unwrap();
     (
         data,
         [
@@ -66,7 +72,12 @@ fn delete_many_skips_nested_nodes_and_reports_each_failure() {
     scanned(&rig);
     let (data, [a, b, c]) = packages(&rig);
     let inside_a = row(
-        &rig.app.get_view(Some(a), None, None, None, None).unwrap(),
+        &rig.app
+            .get_view(ViewRequest {
+                node: Some(a),
+                ..Default::default()
+            })
+            .unwrap(),
         "a.bin",
     );
 
@@ -91,7 +102,10 @@ fn delete_many_skips_nested_nodes_and_reports_each_failure() {
 
     let left = rig
         .app
-        .get_view(Some(data), None, None, None, None)
+        .get_view(ViewRequest {
+            node: Some(data),
+            ..Default::default()
+        })
         .unwrap();
     let names: Vec<_> = left.rows.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["com.b"]);
@@ -107,7 +121,7 @@ fn delete_many_refuses_everything_for_one_bad_node() {
         session: a.session + 1,
         id: a.id,
     };
-    let root = rig.app.get_view(None, None, None, None, None).unwrap().node;
+    let root = rig.app.get_view(ViewRequest::default()).unwrap().node;
     assert_eq!(
         rig.app.delete_many(vec![a, stale]).unwrap_err().code,
         ErrorCode::Stale
@@ -129,7 +143,12 @@ fn copy_many_is_one_copy_into_the_destination() {
     scanned(&rig);
     let (_, [a, b, _]) = packages(&rig);
     let inside_a = row(
-        &rig.app.get_view(Some(a), None, None, None, None).unwrap(),
+        &rig.app
+            .get_view(ViewRequest {
+                node: Some(a),
+                ..Default::default()
+            })
+            .unwrap(),
         "a.bin",
     );
     for pkg in ["com.a", "com.b"] {

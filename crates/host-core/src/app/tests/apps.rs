@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use socketsweep_gui_contract::{AppsStatus, AppsUpdated, Commands, ViewFilter};
+use socketsweep_gui_contract::{AppsStatus, AppsUpdated, ViewFilter, ViewRequest};
 use socketsweep_transport::Output;
 
 use super::android::android;
@@ -91,16 +91,21 @@ fn names_then_icons_arrive_and_a_crashing_icon_run_costs_only_its_chunk() {
     assert_eq!(overview.leftovers.apps[0].package, "com.c");
 
     // Rows say which app a folder belongs to.
-    let android = row(
-        &app.get_view(None, None, None, None, None).unwrap(),
-        "Android",
-    );
+    let android = row(&app.get_view(ViewRequest::default()).unwrap(), "Android");
     let data = row(
-        &app.get_view(Some(android), None, None, None, None).unwrap(),
+        &app.get_view(ViewRequest {
+            node: Some(android),
+            ..Default::default()
+        })
+        .unwrap(),
         "data",
     );
     let view = app
-        .get_view(Some(data), None, None, None, Some(ViewFilter::default()))
+        .get_view(ViewRequest {
+            node: Some(data),
+            filter: Some(ViewFilter::default()),
+            ..Default::default()
+        })
         .unwrap();
     let b = view.rows.iter().find(|r| r.name == "com.b").unwrap();
     let tag = b.app.as_ref().unwrap();
