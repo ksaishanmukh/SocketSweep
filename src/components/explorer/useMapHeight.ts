@@ -1,13 +1,6 @@
 import { useCallback, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import {
-  keyHeight,
-  moveDrag,
-  readStoredHeight,
-  releaseDrag,
-  startDrag,
-  storeHeight,
-  type Drag,
-} from "../../lib/mapGrip";
+import { keyHeight, moveDrag, releaseDrag, startDrag, type Drag } from "../../lib/mapGrip";
+import { readStoredHeight, storeHeight } from "../../lib/mapHeightStore";
 
 /**
  * The map's height and the grip's handlers. The rules live in `mapGrip`;

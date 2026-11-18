@@ -1,7 +1,8 @@
 import { useCallback, useEffect } from "react";
 import type { Category, NodeRef, Row, SizeMetric, SortKey } from "../api";
 import { storePrefs } from "../lib/prefs";
-import { NO_FILTERS, nextSort, toggleOption, type FilterOption } from "../lib/viewOptions";
+import { nextSort } from "../lib/sort";
+import { NO_FILTERS, toggleOption, type FilterOption } from "../lib/viewOptions";
 import type { SessionDeps } from "./types";
 import type { useDisplayChoice, Mode } from "./useDisplayChoice";
 import type { TreeParts } from "./useScanSession";

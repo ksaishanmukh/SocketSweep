@@ -8,19 +8,13 @@
 //! Paths are bytes end to end. The engine builds a directory's path by joining
 //! the scan root and each name with `/`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+mod interrupt;
 
-use socketsweep_wire::{FsOp, Kind, Stat, CANCEL_CHECK_ENTRIES};
+pub mod errno;
 
-/// `errno` values the engine itself produces or that implementations commonly
-/// report. Linux numbering, which is also what the wire carries.
-pub mod errno {
-    pub const ENOENT: i32 = 2;
-    pub const EINTR: i32 = 4;
-    pub const EIO: i32 = 5;
-    pub const EACCES: i32 = 13;
-    pub const ENOTDIR: i32 = 20;
-}
+pub use interrupt::Interrupt;
+
+use socketsweep_wire::{FsOp, Kind, Stat};
 
 /// What `lstat` said about one entry, with the identity the engine needs for
 /// hardlink de-duplication. The wire [`Stat`] carries no inode, so the engine
@@ -85,44 +79,13 @@ pub struct RootInfo {
     pub dev: u64,
 }
 
-/// A cancellation flag an [`Fs`] call polls at least every
-/// [`CANCEL_CHECK_ENTRIES`] entries.
-#[derive(Debug, Clone, Copy)]
-pub struct Interrupt<'a> {
-    flag: Option<&'a AtomicBool>,
-}
-
-impl<'a> Interrupt<'a> {
-    /// Never raised.
-    pub const NEVER: Interrupt<'static> = Interrupt { flag: None };
-
-    pub fn new(flag: &'a AtomicBool) -> Self {
-        Interrupt { flag: Some(flag) }
-    }
-
-    pub fn is_set(&self) -> bool {
-        self.flag.is_some_and(|f| f.load(Ordering::Relaxed))
-    }
-
-    /// Call with the running entry count `i`: checks the flag every
-    /// [`CANCEL_CHECK_ENTRIES`] entries and returns
-    /// [`FsError::Interrupted`] once it is raised.
-    pub fn poll(&self, i: usize) -> Result<(), FsError> {
-        if i.is_multiple_of(CANCEL_CHECK_ENTRIES) && self.is_set() {
-            Err(FsError::Interrupted)
-        } else {
-            Ok(())
-        }
-    }
-}
-
 /// Reads directories and stats entries.
 ///
 /// Implementations must be safe to call from many worker threads at once,
 /// never follow symbolic links (neither the final component nor, for the
 /// real daemon, any directory being walked: `O_NOFOLLOW`), never return `.`
 /// or `..`, and poll the [`Interrupt`] at least every
-/// [`CANCEL_CHECK_ENTRIES`] entries ([`Interrupt::poll`]).
+/// [`CANCEL_CHECK_ENTRIES`](socketsweep_wire::CANCEL_CHECK_ENTRIES) entries ([`Interrupt::poll`]).
 pub trait Fs: Send + Sync {
     /// Resolve the scan root and check it is a directory. A failure here
     /// fails the `StartScan` request before `Started`.

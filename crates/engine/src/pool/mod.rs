@@ -7,7 +7,7 @@
 //! the state periodically (skeleton budget, `Progress`)
 //! while every worker is busy in a long task.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -16,6 +16,8 @@ use socketsweep_wire::{DirId, Limits, Outcome, ScanOpts, Totals};
 use crate::fs::{Fs, Interrupt, RootInfo};
 use crate::sched::{Micros, Pick, ScanState, Task};
 use crate::sink::EventSink;
+
+mod control;
 
 /// How long a worker waits before looking again when the sink is congested.
 const CONGESTED_POLL: Duration = Duration::from_millis(10);
@@ -110,33 +112,6 @@ impl<S: EventSink> Scan<S> {
         drop(g);
         self.shared.cv.notify_all();
         r
-    }
-
-    /// `ClientMsg::Focus`. Returns whether the focus changed (stale `seq`s
-    /// and unknown or pruned directories are ignored).
-    pub fn focus(&self, seq: u32, dir: DirId) -> bool {
-        self.update(|s, now| s.set_focus(seq, dir, now))
-    }
-
-    /// `ClientMsg::ClearFocus`.
-    pub fn clear_focus(&self, seq: u32) -> bool {
-        self.update(|s, now| s.clear_focus(seq, now))
-    }
-
-    /// `ClientMsg::Cancel` or a lost connection: emits `Finished {
-    /// Cancelled }`, interrupts the file system calls in flight, and makes
-    /// [`Scan::run`] return.
-    pub fn cancel(&self) {
-        self.shared.cancel.store(true, Ordering::Relaxed);
-        self.update(|s, now| s.cancel(now));
-    }
-
-    /// A `Delete` whose `hint` names directory `dir` of this scan, after the
-    /// guard has confirmed the hint matches the resolved path. Call it
-    /// **before** deleting anything: it emits `Pruned`, and the session then
-    /// deletes and replies `Deleted`. Returns whether anything was pruned.
-    pub fn prune(&self, dir: DirId) -> bool {
-        self.update(|s, now| s.prune(dir, now))
     }
 
     pub fn is_finished(&self) -> bool {

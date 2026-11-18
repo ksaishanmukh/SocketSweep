@@ -7,29 +7,11 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use socketsweep_wire::{DirId, Entry, Outcome, ReqId, ScanEvent, ServerMsg, Totals, ROOT_DIR};
+use socketsweep_wire::{DirId, Entry, ReqId, ScanEvent, ServerMsg, Totals, ROOT_DIR};
 
-/// The `SkeletonReady` event as received.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Skeleton {
-    pub at: Duration,
-    /// The daemon's own figures.
-    pub listed: u32,
-    pub frontier: u32,
-    pub elapsed_ms: u32,
-    /// Levels completely listed when it arrived (the root is level 0, so 2
-    /// means the root and every top-level folder).
-    pub levels: u32,
-}
+mod marks;
 
-/// The end of the scan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct End {
-    pub at: Duration,
-    pub outcome: Outcome,
-    pub totals: Totals,
-    pub elapsed_ms: u32,
-}
+pub use marks::{End, Skeleton};
 
 /// One scan's stream, as it arrives.
 #[derive(Debug)]

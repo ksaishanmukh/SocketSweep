@@ -2,7 +2,7 @@ import type { Row } from "../../api";
 import { appName } from "../../lib/appIdentity";
 import { categoryColor } from "../../lib/categories";
 import { AppIcon } from "../common/AppIcon";
-import { IconFile, IconFolder } from "../icons";
+import { IconFile, IconFolder } from "../fileIcons";
 
 /**
  * The glyph and name. An app's folder shows the app instead of a folder, with

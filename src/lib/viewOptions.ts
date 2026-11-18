@@ -1,12 +1,4 @@
-import type {
-  Category,
-  ChangedBucket,
-  KindFilter,
-  SearchFilter,
-  SortKey,
-  ViewFilter,
-  ViewSort,
-} from "../api";
+import type { Category, ChangedBucket, KindFilter } from "../api";
 import { CATEGORY_LABEL, CHANGED_LABEL, KIND_LABEL } from "./categories";
 
 /** The filter panel's three groups: an option within a group is an alternative, groups must all match. */
@@ -25,25 +17,6 @@ export type FilterOption =
   | { group: "changed"; value: ChangedBucket };
 
 export const NO_FILTERS: Filters = { categories: [], kinds: [], changed: [] };
-
-export const DEFAULT_SORT: ViewSort = { key: "size", descending: true };
-
-/**
- * The direction a column starts in when first clicked: names read A to Z,
- * everything else biggest or newest first, since that is what one looks for.
- */
-const STARTS_DESCENDING: Record<SortKey, boolean> = {
-  name: false,
-  size: true,
-  count: true,
-  changed: true,
-};
-
-/** Clicking the active column flips it; clicking another starts it in its natural direction. */
-export function nextSort(current: ViewSort, key: SortKey): ViewSort {
-  if (current.key === key) return { key, descending: !current.descending };
-  return { key, descending: STARTS_DESCENDING[key] };
-}
 
 export function hasOption(filters: Filters, option: FilterOption): boolean {
   return (filters[option.group] as string[]).includes(option.value);
@@ -79,20 +52,4 @@ export function optionLabel(option: FilterOption): string {
     case "changed":
       return CHANGED_LABEL[option.value];
   }
-}
-
-/** What `getView` and `focus` take: the filters plus the in-folder name search. */
-export function viewFilter(filters: Filters, query: string): ViewFilter {
-  const trimmed = query.trim();
-  return { query: trimmed === "" ? null : trimmed, ...filters };
-}
-
-/** What `search` takes: the same filters; the query travels separately. */
-export function searchFilter({ categories, kinds, changed }: Filters): SearchFilter {
-  return { categories, kinds, changed };
-}
-
-/** The filter groups of a view filter, without its name search. */
-export function filtersOf({ categories, kinds, changed }: ViewFilter): Filters {
-  return { categories, kinds, changed };
 }

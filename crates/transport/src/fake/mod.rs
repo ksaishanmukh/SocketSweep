@@ -19,6 +19,7 @@
 //! given kind.
 
 mod pipe;
+mod scripting;
 mod state;
 mod transport;
 

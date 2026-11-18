@@ -55,10 +55,12 @@
 mod apps;
 mod breakdowns;
 mod category;
+mod error;
 mod identity;
 mod ingest;
 mod nodes;
 mod order;
+mod paths;
 mod queries;
 mod rows;
 mod search;
@@ -76,41 +78,12 @@ use crate::apps::AppCatalog;
 use nodes::{DirRec, DirState, Node, NONE};
 
 pub use category::category_of;
+pub use error::TreeError;
 pub use order::{bucket_of, ViewQuery};
 pub use search::SearchQuery;
 
 /// The scan root's node.
 pub const ROOT: NodeId = 0;
-
-/// Why a tree operation failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TreeError {
-    /// A node from another session's tree.
-    Stale,
-    /// The node existed but has been deleted.
-    Removed,
-    /// No such node in this tree.
-    UnknownNode(NodeId),
-    /// The scan root cannot be deleted.
-    RootNotDeletable,
-    /// The event stream broke an ordering guarantee or named something that
-    /// does not exist. The scan must be failed.
-    Protocol(String),
-}
-
-impl std::fmt::Display for TreeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TreeError::Stale => write!(f, "These results are out of date. Rescan."),
-            TreeError::Removed => write!(f, "That item has already been deleted."),
-            TreeError::UnknownNode(id) => write!(f, "There is no item {id} in this scan."),
-            TreeError::RootNotDeletable => write!(f, "The scan root cannot be deleted."),
-            TreeError::Protocol(m) => write!(f, "The phone sent an invalid scan: {m}"),
-        }
-    }
-}
-
-impl std::error::Error for TreeError {}
 
 /// Facts from the stream the tree does not keep in nodes, returned by
 /// [`Tree::ingest`] for the caller to act on.

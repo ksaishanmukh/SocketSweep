@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ViewSort } from "../api";
 import { readPrefs } from "../lib/prefs";
-import { filtersOf, viewFilter, type Filters } from "../lib/viewOptions";
+import { filtersOf, viewFilter } from "../lib/filterWire";
+import type { Filters } from "../lib/viewOptions";
 import type { ViewOptions } from "./types";
 
 /** Sort and filters start as last left; the search box always starts empty. */
