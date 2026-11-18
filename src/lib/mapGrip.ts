@@ -11,11 +11,9 @@ export const MAP_MAX_HEIGHT = 560;
 /** Released shorter than this, the map is too small to read, so it goes away. */
 export const MAP_COLLAPSE_BELOW = 90;
 /** Pointer travel under this is a click, not a drag. */
-export const DRAG_THRESHOLD = 3;
+const DRAG_THRESHOLD = 3;
 /** How far one arrow key press moves the grip. */
-export const KEY_STEP = 40;
-
-const STORAGE_KEY = "socketsweep.mapHeight";
+const KEY_STEP = 40;
 
 export interface Drag {
   startHeight: number;
@@ -24,7 +22,7 @@ export interface Drag {
   moved: boolean;
 }
 
-function clamp(height: number): number {
+export function clampHeight(height: number): number {
   return Math.round(Math.min(MAP_MAX_HEIGHT, Math.max(0, height)));
 }
 
@@ -36,7 +34,7 @@ export function startDrag(height: number): Drag {
 export function moveDrag(drag: Drag, dy: number): Drag {
   return {
     startHeight: drag.startHeight,
-    height: clamp(drag.startHeight + dy),
+    height: clampHeight(drag.startHeight + dy),
     moved: drag.moved || Math.abs(dy) >= DRAG_THRESHOLD,
   };
 }
@@ -49,7 +47,7 @@ export function releaseDrag(drag: Drag, lastOpen: number): number {
 
 /** The height a collapsed map comes back at: the last one it was open at, if that was usable. */
 export function restoredHeight(lastOpen: number): number {
-  return lastOpen >= MAP_COLLAPSE_BELOW ? clamp(lastOpen) : MAP_DEFAULT_HEIGHT;
+  return lastOpen >= MAP_COLLAPSE_BELOW ? clampHeight(lastOpen) : MAP_DEFAULT_HEIGHT;
 }
 
 /** The grip's keyboard equivalent of dragging, or null for a key it does not handle. */
@@ -60,30 +58,11 @@ export function keyHeight(key: string, height: number, lastOpen: number): number
       return next < MAP_COLLAPSE_BELOW ? 0 : next;
     }
     case "ArrowDown":
-      return height === 0 ? restoredHeight(lastOpen) : clamp(height + KEY_STEP);
+      return height === 0 ? restoredHeight(lastOpen) : clampHeight(height + KEY_STEP);
     case "Enter":
     case " ":
       return height === 0 ? restoredHeight(lastOpen) : 0;
     default:
       return null;
-  }
-}
-
-/** The remembered height, or the default; storage can be missing or refuse access. */
-export function readStoredHeight(): number {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    const value = raw === null ? NaN : Number(raw);
-    return Number.isFinite(value) ? clamp(value) : MAP_DEFAULT_HEIGHT;
-  } catch {
-    return MAP_DEFAULT_HEIGHT;
-  }
-}
-
-export function storeHeight(height: number) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, String(clamp(height)));
-  } catch {
-    // Not remembering the height is no reason to disturb anyone.
   }
 }

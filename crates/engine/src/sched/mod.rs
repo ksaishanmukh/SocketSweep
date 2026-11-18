@@ -13,17 +13,24 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use socketsweep_wire::{DirId, Limits, Outcome, ScanEvent, ScanMode, ScanOpts, Totals, ROOT_DIR};
+use socketsweep_wire::{DirId, Limits, Outcome, ScanEvent, ScanMode, ScanOpts, ROOT_DIR};
 
 use crate::fs::RootInfo;
 
+mod drain;
 mod focus;
+mod limits;
 mod pick;
+mod status;
 mod table;
 mod task;
 #[cfg(test)]
 mod tests;
 
+pub use limits::{
+    BIG_JOB_ENTRIES, MAX_DEPTH, PROGRESS_INTERVAL, SKELETON_BUDGET, SKELETON_MAX_DEPTH,
+    SKELETON_MIN_DEPTH,
+};
 pub(crate) use table::{DeferredEnt, DirRec, Focus, Own, Running, St, StatSt, WorkerSlot};
 pub use task::{Pick, Task, TaskKind, TaskOutput};
 
@@ -32,26 +39,6 @@ pub type Micros = u64;
 
 /// "No directory" in the table's links.
 pub(crate) const NONE: DirId = DirId::MAX;
-
-/// A deferred stat job of at least this many entries is a "big job": it is
-/// handed out before other work on its side of the focus, so one huge folder
-/// does not become the scan's tail.
-pub const BIG_JOB_ENTRIES: u32 = 2048;
-
-/// How often [`ScanState::tick`] emits [`ScanEvent::Progress`].
-pub const PROGRESS_INTERVAL: Micros = 500_000;
-
-/// Directories deeper than this below the root are not walked; they are
-/// counted as entries and their parent gets [`Totals::DEPTH_LIMIT`]. Bounds
-/// the chain of parents every counter update walks.
-pub const MAX_DEPTH: u8 = 64;
-
-/// The skeleton phase ends after this long at the latest.
-pub const SKELETON_BUDGET: Micros = 1_000_000;
-/// The skeleton phase does not end on frontier size above this depth.
-pub const SKELETON_MIN_DEPTH: usize = 2;
-/// The skeleton phase ends once every level above this depth is listed.
-pub const SKELETON_MAX_DEPTH: usize = 4;
 
 /// The scheduler and aggregator for one scan.
 #[derive(Debug)]
@@ -124,65 +111,6 @@ impl ScanState {
             workers,
         });
         s
-    }
-
-    /// Change how often [`ScanState::tick`] emits `Progress` (0 = never).
-    pub fn set_progress_interval(&mut self, every: Micros) {
-        self.progress_interval = every;
-    }
-
-    /// Remove and return the events produced so far, in order. The caller
-    /// must hand them to the sink before releasing whatever lock guards this
-    /// state.
-    pub fn take_events(&mut self) -> Vec<ScanEvent> {
-        std::mem::take(&mut self.out)
-    }
-
-    pub fn has_events(&self) -> bool {
-        !self.out.is_empty()
-    }
-
-    /// Workers this scan uses.
-    pub fn workers(&self) -> u8 {
-        self.workers_n
-    }
-
-    /// How the scan ended, once [`ScanEvent::Finished`] has been emitted.
-    pub fn outcome(&self) -> Option<Outcome> {
-        self.outcome
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.outcome.is_some()
-    }
-
-    /// The root's totals so far (final once the scan is complete).
-    pub fn root_totals(&self) -> Totals {
-        self.dirs[0].totals
-    }
-
-    /// The mode this scan runs in.
-    pub fn mode(&self) -> ScanMode {
-        if self.plain {
-            ScanMode::Plain
-        } else {
-            ScanMode::Focus
-        }
-    }
-
-    /// When the skeleton phase ended, if it has (never in plain mode).
-    pub fn skeleton_ready_at(&self) -> Option<Micros> {
-        self.skeleton_ready_at
-    }
-
-    /// Directories known so far (the next new id).
-    pub fn known(&self) -> u32 {
-        self.dirs.len() as u32
-    }
-
-    /// Workers with a task in flight.
-    pub fn busy(&self) -> usize {
-        self.workers.iter().filter(|w| w.task.is_some()).count()
     }
 
     /// Advance time: ends the skeleton phase when due and emits `Progress`

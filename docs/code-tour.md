@@ -6,21 +6,21 @@ unless a link says otherwise.
 
 ## 1. Map
 
-| Path                                              | What it does                                                                | Start here                                                                                                                                                                                                           |
-| ------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`crates/wire`](../crates/wire)                   | Host-to-phone protocol: message types, framing, handshake, token.           | [`messages/`](../crates/wire/src/messages) (`client.rs`, `server.rs`, `options.rs`), [`framing.rs`](../crates/wire/src/framing.rs), [`handshake.rs`](../crates/wire/src/handshake.rs)                                |
-| [`crates/gui-contract`](../crates/gui-contract)   | The GUI-to-host API: commands, events, payload types. Generates TS.         | [`commands.rs`](../crates/gui-contract/src/commands.rs), [`events.rs`](../crates/gui-contract/src/events.rs), [`bindings.rs`](../crates/gui-contract/src/bindings.rs)                                                |
-| [`crates/transport`](../crates/transport)         | The `Transport` trait (a byte tunnel to the daemon) plus an in-memory fake. | [`lib.rs`](../crates/transport/src/lib.rs), [`fake/`](../crates/transport/src/fake)                                                                                                                                  |
-| [`crates/transport-adb`](../crates/transport-adb) | The real transport: talks to the adb server (smart sockets, shell, sync).   | [`transport.rs`](../crates/transport-adb/src/transport.rs), [`wire/`](../crates/transport-adb/src/wire), [`devices.rs`](../crates/transport-adb/src/devices.rs)                                                      |
-| [`crates/engine`](../crates/engine)               | The scan brain on the phone: scheduler, aggregation, worker pool, `Fs`.     | [`pool.rs`](../crates/engine/src/pool.rs), [`sched/`](../crates/engine/src/sched), [`aggregate/`](../crates/engine/src/aggregate), [`fs.rs`](../crates/engine/src/fs.rs), [`sink.rs`](../crates/engine/src/sink.rs)  |
-| [`crates/daemon`](../crates/daemon)               | The phone binary: listener, session, outbox, delete/metadata actions.       | [`listener.rs`](../crates/daemon/src/listener.rs), [`session/`](../crates/daemon/src/session), [`outbox/`](../crates/daemon/src/outbox), [`actions/`](../crates/daemon/src/actions)                                  |
-| [`crates/host-core`](../crates/host-core)         | Everything the desktop does, with no Tauri: tree index, client, actions.    | [`app/`](../crates/host-core/src/app), [`apps/`](../crates/host-core/src/apps), [`client/`](../crates/host-core/src/client), [`tree/`](../crates/host-core/src/tree), [`focus.rs`](../crates/host-core/src/focus.rs) |
-| [`crates/sim`](../crates/sim)                     | Dev only: simulated filesystem, G1–G3 checker, `FakeDaemon`.                | [`simfs/`](../crates/sim/src/simfs), [`fake_daemon.rs`](../crates/sim/src/fake_daemon.rs), [`checker/`](../crates/sim/src/checker), [`tests/properties.rs`](../crates/sim/tests/properties.rs)                       |
-| [`crates/bench`](../crates/bench)                 | Benchmark, fixture and end-to-end runner against a real device.             | [`main.rs`](../crates/bench/src/main.rs) (usage), [`bench.rs`](../crates/bench/src/bench.rs), [`e2e.rs`](../crates/bench/src/e2e.rs), [`fixture.rs`](../crates/bench/src/fixture.rs)                                 |
-| [`src-tauri`](../src-tauri)                       | Thin Tauri shell: one Tauri command per contract command, event forwarding. | [`src/lib.rs`](../src-tauri/src/lib.rs) (`shell_commands!`, `forward`), [`tauri.conf.json`](../src-tauri/tauri.conf.json)                                                                                            |
-| [`src/`](../src)                                  | The React GUI.                                                              | [`api/index.ts`](../src/api/index.ts), [`hooks/`](../src/hooks), [`components/`](../src/components), [`lib/`](../src/lib)                                                                                            |
-| [`scripts/`](../scripts)                          | Node helpers: fetch adb, cross-compile the daemon.                          | [`setup-bins.mjs`](../scripts/setup-bins.mjs), [`build-daemon.mjs`](../scripts/build-daemon.mjs)                                                                                                                     |
-| [`.github/workflows/`](../.github/workflows)      | CI by tag: checks, builds, releases, emulator end-to-end.                   | [`build.yml`](../.github/workflows/build.yml), [`e2e.yml`](../.github/workflows/e2e.yml)                                                                                                                             |
+| Path                                              | What it does                                                                | Start here                                                                                                                                                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`crates/wire`](../crates/wire)                   | Host-to-phone protocol: message types, framing, handshake, token.           | [`messages/`](../crates/wire/src/messages) (`client.rs`, `server.rs`, `options.rs`), [`framing.rs`](../crates/wire/src/framing.rs), [`handshake.rs`](../crates/wire/src/handshake.rs)                           |
+| [`crates/gui-contract`](../crates/gui-contract)   | The GUI-to-host API: commands, events, payload types. Generates TS.         | [`commands.rs`](../crates/gui-contract/src/commands.rs), [`events.rs`](../crates/gui-contract/src/events.rs), [`bindings.rs`](../crates/gui-contract/src/bindings.rs)                                           |
+| [`crates/transport`](../crates/transport)         | The `Transport` trait (a byte tunnel to the daemon) plus an in-memory fake. | [`lib.rs`](../crates/transport/src/lib.rs), [`fake/`](../crates/transport/src/fake)                                                                                                                             |
+| [`crates/transport-adb`](../crates/transport-adb) | The real transport: talks to the adb server (smart sockets, shell, sync).   | [`transport.rs`](../crates/transport-adb/src/transport.rs), [`wire/`](../crates/transport-adb/src/wire), [`devices.rs`](../crates/transport-adb/src/devices.rs)                                                 |
+| [`crates/engine`](../crates/engine)               | The scan brain on the phone: scheduler, aggregation, worker pool, `Fs`.     | [`pool/`](../crates/engine/src/pool), [`sched/`](../crates/engine/src/sched), [`aggregate/`](../crates/engine/src/aggregate), [`fs.rs`](../crates/engine/src/fs.rs), [`sink.rs`](../crates/engine/src/sink.rs)  |
+| [`crates/daemon`](../crates/daemon)               | The phone binary: listener, session, outbox, delete/metadata actions.       | [`listener.rs`](../crates/daemon/src/listener.rs), [`session/`](../crates/daemon/src/session), [`outbox/`](../crates/daemon/src/outbox), [`actions/`](../crates/daemon/src/actions)                             |
+| [`crates/host-core`](../crates/host-core)         | Everything the desktop does, with no Tauri: tree index, client, actions.    | [`app/`](../crates/host-core/src/app), [`apps/`](../crates/host-core/src/apps), [`client/`](../crates/host-core/src/client), [`tree/`](../crates/host-core/src/tree), [`focus/`](../crates/host-core/src/focus) |
+| [`crates/sim`](../crates/sim)                     | Dev only: simulated filesystem, G1–G3 checker, `FakeDaemon`.                | [`simfs/`](../crates/sim/src/simfs), [`fake_daemon.rs`](../crates/sim/src/fake_daemon.rs), [`checker/`](../crates/sim/src/checker), [`tests/properties.rs`](../crates/sim/tests/properties.rs)                  |
+| [`crates/bench`](../crates/bench)                 | Benchmark, fixture and end-to-end runner against a real device.             | [`main.rs`](../crates/bench/src/main.rs) (usage), [`bench.rs`](../crates/bench/src/bench.rs), [`e2e.rs`](../crates/bench/src/e2e.rs), [`fixture.rs`](../crates/bench/src/fixture.rs)                            |
+| [`src-tauri`](../src-tauri)                       | Thin Tauri shell: one Tauri command per contract command, event forwarding. | [`src/lib.rs`](../src-tauri/src/lib.rs) (`shell_commands!`, `forward`), [`tauri.conf.json`](../src-tauri/tauri.conf.json)                                                                                       |
+| [`src/`](../src)                                  | The React GUI.                                                              | [`api/index.ts`](../src/api/index.ts), [`hooks/`](../src/hooks), [`components/`](../src/components), [`lib/`](../src/lib)                                                                                       |
+| [`scripts/`](../scripts)                          | Node helpers: fetch adb, cross-compile the daemon.                          | [`setup-bins.mjs`](../scripts/setup-bins.mjs), [`build-daemon.mjs`](../scripts/build-daemon.mjs)                                                                                                                |
+| [`.github/workflows/`](../.github/workflows)      | CI by tag: checks, builds, releases, emulator end-to-end.                   | [`build.yml`](../.github/workflows/build.yml), [`e2e.yml`](../.github/workflows/e2e.yml)                                                                                                                        |
 
 Dependencies point one way: `wire` and `gui-contract` are the base. The phone
 side (`engine`, `daemon`) and the desktop side (`host-core`) never see each
@@ -37,11 +37,11 @@ edit it.
    - [`transport/lib.rs`](../crates/transport/src/lib.rs): the byte tunnel
      both sides use; `transport-adb` can wait.
 2. **Phone side.** Start with the pure parts.
-   - [`engine/fs.rs`](../crates/engine/src/fs.rs) (`Fs`), then
+   - [`engine/fs/`](../crates/engine/src/fs) (`Fs`), then
      [`engine/sched/`](../crates/engine/src/sched): a pure state machine.
      Read `mod.rs`, `task.rs`, `focus.rs` (the rule), `pick.rs`, `table.rs`.
    - [`engine/aggregate/`](../crates/engine/src/aggregate) and
-     [`pool.rs`](../crates/engine/src/pool.rs): what workers emit and how
+     [`pool/`](../crates/engine/src/pool): what workers emit and how
      threads drive the scheduler.
    - [`daemon/session/`](../crates/daemon/src/session) and
      [`daemon/outbox/`](../crates/daemon/src/outbox): wire in, events out.
@@ -54,7 +54,7 @@ edit it.
      filter, `search.rs`, `apps.rs` for app folders and leftovers).
    - [`host-core/app/`](../crates/host-core/src/app): connect, scan, commands,
      `overview.rs`, batch `delete.rs` and `copy.rs`, and `apps.rs`, the thread
-     that runs the app helper; plus [`focus.rs`](../crates/host-core/src/focus.rs),
+     that runs the app helper; plus [`focus/`](../crates/host-core/src/focus),
      `copy/` and [`apps/`](../crates/host-core/src/apps) (the helper's
      commands, time limit and the app catalog).
    - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs): short; just wiring.
@@ -103,7 +103,7 @@ signal.
    ([`tree/identity.rs`](../crates/host-core/src/tree/identity.rs)) to a daemon
    `DirId`, records how the view is asked for (row cap, metric, sort,
    filter) in `scan.meta`, then calls `scan.focus.request(FocusTarget)`. The root maps to `FocusTarget::Clear`.
-5. **Debounce.** [`focus.rs`](../crates/host-core/src/focus.rs): the pure
+5. **Debounce.** [`focus/`](../crates/host-core/src/focus): the pure
    debouncer's `request` sends the first change at once and holds later ones
    for a window; a driver thread (`drive`) flushes the held one. It hands
    `(FocusTarget, seq)` to the sender.
@@ -118,8 +118,8 @@ signal.
 7. **Session.** [`daemon/session/dispatch.rs`](../crates/daemon/src/session/dispatch.rs)
    (`Shared::dispatch`) matches `ClientMsg::Focus`, finds the running scan by
    id and calls `focus(seq, dir)` on it.
-8. **Engine entry.** [`engine/pool.rs`](../crates/engine/src/pool.rs)
-   (`Scan::focus`) takes the scheduler lock and calls `set_focus` in
+8. **Engine entry.** [`engine/pool/`](../crates/engine/src/pool)
+   (`Scan::focus` in `control.rs`) takes the scheduler lock and calls `set_focus` in
    [`sched/focus.rs`](../crates/engine/src/sched/focus.rs). A `seq` lower than
    one already seen is ignored.
 9. **The rule.** Waiting work is either focused (the folder's subtree, plus
@@ -127,12 +127,12 @@ signal.
    work, except a floor of `max(1, W/4)` kept on the background; see
    `choose_lane` and `bg_floor` in
    [`sched/focus.rs`](../crates/engine/src/sched/focus.rs).
-10. **Pick.** An idle worker (`Scan::worker` in `pool.rs`) asks the scheduler
+10. **Pick.** An idle worker (`Scan::worker` in `pool/mod.rs`) asks the scheduler
     to `pick` ([`sched/pick.rs`](../crates/engine/src/sched/pick.rs)), which
     chooses a side and then a task on it (`find_focused`,
     `find_background`, `start_task`).
 11. **Read.** The worker runs the task against the `Fs` trait
-    ([`engine/fs.rs`](../crates/engine/src/fs.rs)): the real implementation is
+    ([`engine/fs/`](../crates/engine/src/fs)): the real implementation is
     [`daemon/fs_rustix.rs`](../crates/daemon/src/fs_rustix.rs), tests use
     `SimFs`. It lists the folder and stats the entries (`stat_all`).
 12. **Events.** The results go through [`engine/aggregate/`](../crates/engine/src/aggregate)
@@ -252,6 +252,13 @@ cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo test -p socketsweep-sim      # one crate, e.g. the pool property tests
 ```
+
+Shape limits instead of line counts: ESLint caps nesting depth and parameters
+and, with the local rule in [`eslint-rules/`](../eslint-rules), exported
+bindings per module (10); clippy caps arguments (5) and nesting (4); and
+[`check-exports.mjs`](../scripts/check-exports.mjs), part of `npm run lint`,
+caps public items per Rust file (10; its allowlist names the type catalogues
+that are exempt). A file over a limit is split by idea.
 
 Against a real phone or emulator (build the daemon first; the options are
 listed at the top of [`bench/main.rs`](../crates/bench/src/main.rs)):

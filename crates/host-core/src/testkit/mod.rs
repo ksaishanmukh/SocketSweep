@@ -7,6 +7,10 @@
 //! [`FakeDaemon::install`], which also plays the phone's shell: it reads the
 //! token and socket name from the launch command, as the real daemon does.
 
+mod responder;
+
+pub use responder::{Handler, Responder};
+
 use std::io::Write;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -15,7 +19,7 @@ use socketsweep_transport::fake::{FakeTransport, PipeEnd};
 use socketsweep_transport::{Duplex, Output};
 use socketsweep_wire::{
     check_hello, encode_frame, read_frame, read_frame_body, token_from_hex, ClientFrame, ClientMsg,
-    HelloReply, ServerFrame, ServerMsg, Token,
+    HelloReply, ServerMsg, Token,
 };
 
 use crate::daemon::parse_launch_command;
@@ -30,23 +34,6 @@ pub enum Greeting {
     /// Accept, then never answer `Ping`s (and send nothing unprompted).
     AcceptThenSilent,
 }
-
-/// Sends frames to the host. Clone it into a thread to stream.
-#[derive(Clone)]
-pub struct Responder {
-    out: Arc<Mutex<Box<dyn Duplex>>>,
-}
-
-impl Responder {
-    /// Send one frame; false once the host has gone.
-    pub fn send(&self, id: u32, msg: ServerMsg) -> bool {
-        let bytes = encode_frame(&ServerFrame { id, msg }).unwrap();
-        let mut out = lock(&self.out);
-        out.write_all(&bytes).and_then(|()| out.flush()).is_ok()
-    }
-}
-
-pub type Handler = Arc<dyn Fn(&ClientFrame, &Responder) + Send + Sync>;
 
 /// A scripted daemon. Cheap to clone.
 #[derive(Clone)]

@@ -1,6 +1,7 @@
 import type { SizeMetric, SortKey, ViewSort } from "../api";
 import { CATEGORIES, CHANGED_BUCKETS, KINDS } from "./categories";
-import { DEFAULT_SORT, NO_FILTERS, type Filters } from "./viewOptions";
+import { DEFAULT_SORT } from "./sort";
+import { NO_FILTERS, type Filters } from "./viewOptions";
 
 /**
  * What the person chose last time: size, sort and filters, kept across launches.

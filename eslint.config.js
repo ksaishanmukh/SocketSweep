@@ -4,6 +4,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 import prettier from "eslint-config-prettier";
+import maxExports from "./eslint-rules/max-exports.js";
 
 export default tseslint.config(
   { ignores: ["dist", "target", "src-tauri/target", "node_modules"] },
@@ -57,7 +58,14 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/**/*.mjs"],
+    // Public surface per module; tests and generated code are exempt.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "src/test/**", "src/bindings.ts"],
+    plugins: { local: maxExports },
+    rules: { "local/max-exports": ["error", { max: 10 }] },
+  },
+  {
+    files: ["scripts/**/*.mjs", "eslint-rules/**/*.js"],
     extends: [js.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,

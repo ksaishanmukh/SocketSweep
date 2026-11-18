@@ -30,19 +30,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use socketsweep_engine::EventSink;
 use socketsweep_wire::{
-    encode_frame, ReqId, ScanEvent, ServerFrame, ServerMsg, BULK_HIGH_WATER, BULK_LOW_WATER,
-    DAEMON_DEAD_AFTER, HEARTBEAT_INTERVAL, MAX_SCAN_BATCH_BYTES,
+    ReqId, BULK_HIGH_WATER, BULK_LOW_WATER, DAEMON_DEAD_AFTER, HEARTBEAT_INTERVAL,
+    MAX_SCAN_BATCH_BYTES,
 };
 
+mod enqueue;
 mod frame;
+mod scan_sink;
 mod writer;
 
 #[cfg(test)]
 mod tests;
 
 pub use frame::scan_frame;
+pub use scan_sink::ScanSink;
 
 /// Timing and sizes of one session's writer. [`Default`] follows the wire
 /// constants; tests shorten the times.
@@ -79,25 +81,6 @@ pub struct Outbox {
     cfg: OutboxConfig,
 }
 
-/// The engine's [`EventSink`] for one scan: its events go to the bulk queue
-/// under the scan's request id.
-pub struct ScanSink {
-    pub id: ReqId,
-    pub outbox: Arc<Outbox>,
-}
-
-impl EventSink for ScanSink {
-    fn bulk(&self, events: Vec<ScanEvent>) {
-        self.outbox.bulk(self.id, events);
-    }
-    fn control(&self, frame: ServerFrame) {
-        self.outbox.control(&frame);
-    }
-    fn congested(&self) -> bool {
-        self.outbox.congested()
-    }
-}
-
 impl Outbox {
     pub fn new(cfg: OutboxConfig) -> Arc<Outbox> {
         Arc::new(Outbox {
@@ -111,65 +94,6 @@ impl Outbox {
 
     pub fn config(&self) -> &OutboxConfig {
         &self.cfg
-    }
-
-    /// Queue a control frame, sent before anything in the bulk queue.
-    pub fn control(&self, frame: &ServerFrame) {
-        let bytes = match encode_frame(frame) {
-            Ok(b) => b,
-            Err(e) => {
-                crate::log!("dropping an unencodable control frame: {e}");
-                return;
-            }
-        };
-        let mut st = lock(&self.state);
-        if st.closed.is_some() {
-            return;
-        }
-        st.control.push_back(bytes);
-        drop(st);
-        self.cv.notify_all();
-    }
-
-    /// Shorthand for [`Outbox::control`].
-    pub fn reply(&self, id: ReqId, msg: ServerMsg) {
-        self.control(&ServerFrame { id, msg });
-    }
-
-    /// Append scan `id`'s events to the bulk queue, in order. Never blocks.
-    pub fn bulk(&self, id: ReqId, events: Vec<ScanEvent>) {
-        if events.is_empty() {
-            return;
-        }
-        let encoded: Vec<Vec<u8>> = events
-            .iter()
-            .filter_map(|e| match postcard::to_allocvec(e) {
-                Ok(b) => Some(b),
-                Err(err) => {
-                    crate::log!("dropping an unencodable scan event: {err}");
-                    None
-                }
-            })
-            .collect();
-        let mut st = lock(&self.state);
-        let was_empty = st.bulk.is_empty();
-        if st.closed.is_some() {
-            return;
-        }
-        for b in encoded {
-            st.bulk_bytes += b.len();
-            st.bulk.push_back((id, b));
-        }
-        if st.bulk_bytes > self.cfg.high_water {
-            self.congested.store(true, Ordering::Relaxed);
-        }
-        // Wake the writer when the queue stops being empty (so it starts the
-        // flush_every clock) and when a full batch is ready; not per event.
-        let wake = was_empty || st.bulk_bytes >= self.cfg.max_batch;
-        drop(st);
-        if wake {
-            self.cv.notify_all();
-        }
     }
 
     /// Above the high-water mark and not yet back below the low-water mark.

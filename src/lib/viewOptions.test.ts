@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  NO_FILTERS,
-  activeOptions,
-  filterCount,
-  nextSort,
-  searchFilter,
-  toggleOption,
-  viewFilter,
-} from "./viewOptions";
+import { searchFilter, viewFilter } from "./filterWire";
+import { nextSort } from "./sort";
+import { NO_FILTERS, activeOptions, filterCount, toggleOption } from "./viewOptions";
 
 describe("nextSort", () => {
   it("starts names A to Z and everything else largest or newest first", () => {

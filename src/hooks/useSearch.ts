@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type Row } from "../api";
-import { searchFilter } from "../lib/viewOptions";
+import { searchFilter } from "../lib/filterWire";
 import type { SessionDeps } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 150;

@@ -1,5 +1,7 @@
 use super::*;
-use socketsweep_wire::{read_frame, Outcome, Totals, SESSION_LEVEL};
+use socketsweep_wire::{
+    encode_frame, read_frame, Outcome, ScanEvent, ServerFrame, ServerMsg, Totals, SESSION_LEVEL,
+};
 use std::io::{Cursor, Write};
 use std::sync::mpsc;
 

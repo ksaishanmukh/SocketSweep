@@ -13,6 +13,7 @@
 //!   every waiting call sees its channel disconnect and reads why from
 //!   [`Client::closed_reason`].
 
+mod actions;
 mod connection;
 mod handshake;
 mod requests;

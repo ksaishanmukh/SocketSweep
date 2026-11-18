@@ -19,60 +19,12 @@ function Line({ children, size = 16 }: { children: ReactNode; size?: number }) {
   );
 }
 
-/** A filled folder shape, tinted by the caller. */
-export function IconFolder({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden>
-      <path
-        d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3.2l1.5 1.5H13A1.5 1.5 0 0 1 14.5 5v7.5A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5v-9Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
-/** An outlined page, so a file never reads as a folder even in the same colour. */
-export function IconFile({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M4 1.75h5.25L12.5 5v9.25H4a.5.5 0 0 1-.5-.5V2.25a.5.5 0 0 1 .5-.5Z"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      <path d="M9 1.75V5.25h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export function IconPhone({ size = 20 }: { size?: number }) {
   return (
     <Line size={size}>
       <rect x="4" y="1.5" width="8" height="13" rx="1.6" />
       <path d="M7 12.2h2" />
     </Line>
-  );
-}
-
-export function IconUsb() {
-  return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M12 22v-8m0 0V6m0 8l4-2v-2m-4 4l-4-2v-2" />
-      <circle cx="12" cy="4" r="2" />
-      <circle cx="8" cy="10" r="1" />
-      <rect x="15" y="9" width="2" height="2" rx="0.5" />
-    </svg>
   );
 }
 
