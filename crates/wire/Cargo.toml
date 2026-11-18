@@ -14,3 +14,6 @@ base64 = "0.22"
 
 [lints.clippy]
 excessive_nesting = "warn"
+
+[dev-dependencies]
+proptest = "1.5"

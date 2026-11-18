@@ -486,6 +486,11 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   parent's stats, an unread focus) is unit-tested in `engine/sched`; the depth
   limit by a pool test on a chain deeper than 64.
 
+- **Decoder fuzzing (`crates/wire`, proptest):** arbitrary and mutated bytes
+  (flip, insert, delete, truncate) fed to frame reading, every message type,
+  `check_hello` and `parse_apps` never panic; a length prefix over
+  `MAX_FRAME_BYTES` is refused before any allocation; valid input round-trips.
+
 - **Integration:**
   - the threaded pool runs against `StdFs` on a temporary tree, and against
     `SimFs` under `SlowFs`;
