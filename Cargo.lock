@@ -3673,6 +3673,7 @@ version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
  "postcard",
+ "proptest",
  "serde",
  "serde_json",
 ]
