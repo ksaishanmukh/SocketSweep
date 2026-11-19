@@ -73,7 +73,7 @@ pub(super) fn spawn(inner: &Arc<Inner>, conn: Arc<Conn>, scan: Arc<Scan>) {
         .name("socketsweep-apps".into())
         .spawn(move || job.run(&dex));
     if let Err(e) = spawned {
-        eprintln!("socketsweep: cannot start the app helper thread: {e}");
+        tracing::warn!("cannot start the app helper thread: {e}");
     }
 }
 
@@ -91,14 +91,14 @@ impl Job {
             return;
         }
         if let Err(e) = self.push(dex) {
-            eprintln!("socketsweep: cannot push the app helper: {e}");
+            tracing::warn!("cannot push the app helper: {e}");
             self.give_up();
             return;
         }
         match helper::list_apps(&self.transport, &self.conn.daemon.serial, &self.options) {
             Ok(apps) => self.names(apps),
             Err(e) => {
-                eprintln!("socketsweep: the app helper gave no app names: {e}");
+                tracing::warn!("the app helper gave no app names: {e}");
                 self.give_up();
                 return;
             }
@@ -174,10 +174,9 @@ impl Job {
                     lock(&self.scan.tree).add_icons(&got);
                     self.announce();
                 }
-                Err(e) => eprintln!(
-                    "socketsweep: no icons for {} apps from the app helper: {e}",
-                    chunk.len()
-                ),
+                Err(e) => {
+                    tracing::warn!("no icons for {} apps from the app helper: {e}", chunk.len())
+                }
             }
         }
     }

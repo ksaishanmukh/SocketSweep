@@ -51,6 +51,8 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   "deleteMany",
   "copyMany",
   "cancelCopy",
+  "diagnostics",
+  "logUi",
 ];
 
 export const commands = Object.fromEntries(
@@ -121,6 +123,7 @@ export function resetApi() {
   commands.cancelCopy.mockResolvedValue(null);
   commands.disconnect.mockResolvedValue(null);
   commands.appIcon.mockResolvedValue(null);
+  commands.logUi.mockResolvedValue(null);
 }
 
 /** What the view queries send while the list is unsorted and unfiltered. */
