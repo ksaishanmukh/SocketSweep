@@ -5,7 +5,14 @@ use socketsweep_wire::Totals;
 
 use super::category::dominant;
 use super::nodes::entry_kind;
+use super::staged::Projection;
 use super::{metric, Node, Tree, TreeError, NONE};
+
+/// How a treemap is drawn: by which size, with which nodes staged.
+struct Lens<'a> {
+    by: SizeMetric,
+    proj: Projection<'a>,
+}
 
 /// Most treemap tiles per level, by depth below the requested node.
 const TREEMAP_CAPS: [usize; 3] = [48, 12, 6];
@@ -32,8 +39,9 @@ impl Tree {
         }
     }
 
-    pub(super) fn row(&self, id: NodeId, by: SizeMetric) -> Row {
+    pub(super) fn row(&self, id: NodeId, by: SizeMetric, proj: &Projection) -> Row {
         let n = &self.nodes[id as usize];
+        let (staged, projected) = self.project(proj, id);
         Row {
             node: self.node_ref(id),
             name: String::from_utf8_lossy(&n.name).into_owned(),
@@ -47,13 +55,15 @@ impl Tree {
             app: self.app_tag(id),
             parent: None,
             parent_node: None,
+            staged,
+            projected,
         }
     }
 
     /// A row that also says which folder it is in, for results that span the
     /// tree.
-    pub(super) fn row_with_parent(&self, id: NodeId, by: SizeMetric) -> Row {
-        let mut row = self.row(id, by);
+    pub(super) fn row_with_parent(&self, id: NodeId, by: SizeMetric, proj: &Projection) -> Row {
+        let mut row = self.row(id, by, proj);
         let parent = self.nodes[id as usize].parent;
         if parent != NONE {
             row.parent = Some(self.display_path(parent));
@@ -84,17 +94,17 @@ impl Tree {
     ) -> Result<TreemapNode, TreeError> {
         self.live(id)?;
         let depth = (depth as usize).min(TREEMAP_CAPS.len());
-        Ok(self.treemap_at(id, depth, 0, by))
+        let lens = Lens {
+            by,
+            proj: self.projection(),
+        };
+        Ok(self.treemap_at(id, depth, 0, &lens))
     }
 
-    fn treemap_at(
-        &self,
-        id: NodeId,
-        remaining: usize,
-        level: usize,
-        by: SizeMetric,
-    ) -> TreemapNode {
+    fn treemap_at(&self, id: NodeId, remaining: usize, level: usize, lens: &Lens) -> TreemapNode {
+        let by = lens.by;
         let n = &self.nodes[id as usize];
+        let (staged, projected) = self.project(&lens.proj, id);
         let mut out = TreemapNode {
             node: self.node_ref(id),
             name: String::from_utf8_lossy(&n.name).into_owned(),
@@ -104,6 +114,8 @@ impl Tree {
             changed: self.newest_mtime(id),
             category: self.category(id, by),
             app: self.app_tag(id),
+            staged,
+            projected,
             children: Vec::new(),
         };
         if remaining == 0 || !n.is_dir() {
@@ -115,7 +127,7 @@ impl Tree {
         out.children = kids
             .into_iter()
             .filter(|k| metric(self.nodes[*k as usize].size(), by) > 0)
-            .map(|k| self.treemap_at(k, remaining - 1, level + 1, by))
+            .map(|k| self.treemap_at(k, remaining - 1, level + 1, lens))
             .collect();
         out
     }

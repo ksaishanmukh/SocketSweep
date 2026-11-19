@@ -51,6 +51,7 @@ pub(super) fn delete_many(inner: &Inner, nodes: Vec<NodeRef>) -> CmdResult<Delet
         }
     }
     let (totals, view) = refreshed(&scan)?;
+    super::staged::announce_drops(inner, &scan);
     Ok(DeletedMany {
         deleted,
         items,

@@ -21,6 +21,8 @@ pub(super) fn overview(inner: &Inner, by: SizeMetric) -> CmdResult<Overview> {
     });
     Ok(Overview {
         totals,
+        staged: tree.staged_totals(),
+        projected: tree.projected_total(),
         categories: tree.categories(by),
         biggest_files: tree.largest_files(OVERVIEW_BIGGEST_FILES, by),
         apps: tree.app_breakdown(OVERVIEW_APPS, by),

@@ -50,8 +50,9 @@ impl Tree {
             .collect();
         self.order(&mut hits, q.sort, q.by);
         hits.truncate(q.limit as usize);
+        let proj = self.projection();
         hits.iter()
-            .map(|h| self.row_with_parent(*h, q.by))
+            .map(|h| self.row_with_parent(*h, q.by, &proj))
             .collect()
     }
 

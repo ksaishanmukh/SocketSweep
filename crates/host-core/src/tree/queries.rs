@@ -73,11 +73,13 @@ impl Tree {
         };
         let total_matching = kept.len() as u32;
         self.order(&mut kept, q.sort, q.by);
+        let proj = self.projection();
         let rows: Vec<Row> = kept
             .iter()
             .take(q.limit as usize)
-            .map(|k| self.row(*k, q.by))
+            .map(|k| self.row(*k, q.by, &proj))
             .collect();
+        let (staged, projected) = self.project(&proj, id);
         Ok(View {
             node: self.node_ref(id),
             path: self.display_path(id),
@@ -89,6 +91,8 @@ impl Tree {
             changed: self.newest_mtime(id),
             category: self.category(id, q.by),
             app: self.app_tag(id),
+            staged,
+            projected,
             hidden: total_matching - rows.len() as u32,
             rows,
             total_matching,
@@ -123,7 +127,11 @@ impl Tree {
             .collect();
         self.order(&mut files, ViewSort::default(), by);
         files.truncate(limit as usize);
-        files.iter().map(|f| self.row_with_parent(*f, by)).collect()
+        let proj = self.projection();
+        files
+            .iter()
+            .map(|f| self.row_with_parent(*f, by, &proj))
+            .collect()
     }
 
     /// Folders that could not be read and are still in the tree, in the order
