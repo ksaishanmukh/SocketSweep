@@ -29,7 +29,7 @@ export function RowName({
           {isDir ? <IconFolder /> : <IconFile />}
         </span>
       )}
-      <span className="min-w-0 flex-1">
+      <span className={`min-w-0 flex-1 ${row.staged ? "line-through" : ""}`}>
         {isDir ? (
           <button
             type="button"
@@ -46,6 +46,7 @@ export function RowName({
         )}
         <Subline row={row} onReveal={onReveal} />
       </span>
+      {row.staged && <PendingMarker />}
       {row.unreadable && (
         <span
           className="text-[12px] text-warn shrink-0"
@@ -56,6 +57,15 @@ export function RowName({
           ⚠
         </span>
       )}
+    </span>
+  );
+}
+
+/** Says why a name is struck through, in words as well as the strike. */
+export function PendingMarker() {
+  return (
+    <span className="shrink-0 rounded border border-line px-1.5 text-[11px] text-muted">
+      pending delete
     </span>
   );
 }

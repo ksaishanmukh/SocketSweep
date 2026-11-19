@@ -23,8 +23,9 @@ interface Deps extends SessionDeps {
 const FAILURES_NAMED = 3;
 
 /**
- * Deletes one or more files, folders or leftovers from the phone, by
- * `NodeRef`, with one `deleteMany`.
+ * Carries out the pending delete: removes everything staged from the phone
+ * with one `deleteStaged`. `targets` is what the confirmation listed; it
+ * names the result and says which picks to let go of.
  *
  * The host answers with the tree's new totals and the focused folder
  * refreshed, which is shown as is: if the open folder was inside what was
@@ -45,7 +46,7 @@ export function useDelete(deps: Deps) {
       }
       log(`[DELETE] ${plural(targets.length, "item")}…`);
       try {
-        const result = await commands.deleteMany(nodes);
+        const result = await commands.deleteStaged();
         if (session !== sessionRef.current) return;
         setTotals(result.totals);
         const before = nav.currentView();

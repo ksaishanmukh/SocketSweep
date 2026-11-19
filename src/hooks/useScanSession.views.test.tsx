@@ -278,7 +278,7 @@ describe("apps-updated", () => {
 });
 
 describe("batch delete", () => {
-  it("deletes every picked node in one call and forgets the picks that went", async () => {
+  it("deletes the whole queue in one call and forgets the picks that went", async () => {
     const { result, notify } = await browse();
     const a = target(row(1, { name: "a.bin" }));
     const b = target(row(2, { name: "b.bin" }));
@@ -290,7 +290,7 @@ describe("batch delete", () => {
     act(() => result.current.selection.setMany([a, b, leftover], true));
     expect(result.current.selection.items).toHaveLength(3);
 
-    api.deleteMany.mockResolvedValue({
+    api.deleteStaged.mockResolvedValue({
       deleted: 3,
       items: 9,
       size: size(70),
@@ -306,7 +306,7 @@ describe("batch delete", () => {
     });
     await act(() => result.current.remove(result.current.selection.items));
 
-    expect(api.deleteMany).toHaveBeenCalledWith([node(1), node(2), node(7), node(8)]);
+    expect(api.deleteStaged).toHaveBeenCalledOnce();
     expect(result.current.selection.items.map((t) => t.key)).toEqual([b.key]);
     expect(notify).toHaveBeenCalledWith(
       expect.stringMatching(

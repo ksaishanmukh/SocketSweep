@@ -49,6 +49,7 @@ export function ActionBar({
         <button
           type="button"
           onClick={onDelete}
+          title="Adds to the pending delete; nothing is removed until you confirm"
           className="min-h-9 px-3 rounded-lg text-[13px] font-semibold bg-danger text-on-danger inline-flex items-center gap-2 hover:opacity-90"
         >
           <IconTrash />

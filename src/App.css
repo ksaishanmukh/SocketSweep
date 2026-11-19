@@ -169,6 +169,12 @@ input[type="checkbox"] {
 }
 
 .map-tile {
+  /* Over the category wash of a tile that is pending delete. */
+  --hatch: repeating-linear-gradient(
+    135deg,
+    transparent 0 5px,
+    color-mix(in srgb, var(--text) 22%, transparent) 5px 6px
+  );
   transition:
     opacity 160ms ease,
     background-color 160ms ease;
