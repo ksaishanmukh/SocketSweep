@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use specta_typescript::Number;
 
-use crate::{AppUsage, Category, NodeRef, Row, ScanRecord, Size, Totals};
+use crate::{AppUsage, Category, NodeRef, Row, ScanRecord, Size, StagedTotals, Totals};
 
 /// Whether the phone has said which apps are installed. App names, icons and
 /// leftovers depend on it.
@@ -25,6 +25,10 @@ pub enum AppsStatus {
 #[serde(rename_all = "camelCase")]
 pub struct Overview {
     pub totals: Totals,
+    /// What is staged for deletion; `items` is 0 when nothing is.
+    pub staged: StagedTotals,
+    /// `totals.size` with everything staged removed.
+    pub projected: Size,
     /// Bytes per category over the whole tree, largest first, empty ones left
     /// out.
     pub categories: Vec<CategoryUsage>,

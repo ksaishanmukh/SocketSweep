@@ -1,8 +1,9 @@
 //! What the host's events carry.
 //!
-//! The four event payloads (`ScanProgress`, `CopyProgress`, `ConnectionLost`,
-//! `AppsUpdated`) are the events: the shell registers them with tauri-specta,
-//! which names each after its type in kebab-case.
+//! The event payloads (`ScanProgress`, `CopyProgress`, `ConnectionLost`,
+//! `AppsUpdated`, and `StagedChanged` in `staged.rs`) are the events: the shell
+//! registers them with tauri-specta, which names each after its type in
+//! kebab-case.
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
