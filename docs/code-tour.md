@@ -53,9 +53,11 @@ edit it.
    - [`host-core/tree/`](../crates/host-core/src/tree): the in-memory index
      built from events (`ingest/`, `sizes.rs`, `category.rs`), and the
      queries over it (`queries.rs`, `rows.rs`, `order.rs` for sort and
-     filter, `search.rs`, `apps.rs` for app folders and leftovers).
+     filter, `search.rs`, `apps.rs` for app folders and leftovers), and the
+     pending-delete queue with its projected sizes (`staged.rs`).
    - [`host-core/app/`](../crates/host-core/src/app): connect, scan, commands,
-     `overview.rs`, batch `delete.rs` and `copy.rs`, and `apps.rs`, the thread
+     `overview.rs`, batch `delete.rs` and `copy.rs`, `staged.rs` (the
+     staging commands and the delete that runs the queue), and `apps.rs`, the thread
      that runs the app helper; plus [`focus/`](../crates/host-core/src/focus),
      `copy/` and [`apps/`](../crates/host-core/src/apps) (the helper's
      commands, time limit and the app catalog).
@@ -66,14 +68,15 @@ edit it.
    `useNavigation` (open folder, map, back/forward history),
    `useViewOptions` and `useViewControls` (sort, filters, search box; the
    host sorts and filters), `useOverview`, `useSearch` (search everywhere),
-   `useSelection`, `useDelete` and `useCopy` (batch actions), and
+   `useSelection`, `useStaged` (the pending-delete queue), `useDelete` (runs
+   it) and `useCopy` (batch actions), and
    `useAppsUpdated` (app names and icons arriving). Pure rules live in
    [`src/lib`](../src/lib): `viewOptions.ts`, `history.ts`, `mapGrip.ts`
    (the map's drag and collapse rule), `mapTiles.ts`, `selection.ts`,
-   `iconStore.ts`. Then [`src/components`](../src/components): `shell/`
+   `staged.ts`, `iconStore.ts`. Then [`src/components`](../src/components): `shell/`
    (header, totals line), `overview/` (the Overview tab's cards),
    `explorer/` (map, list, toolbar, filters), `selection/` (action bar,
-   delete dialog), `common/` and `screens/`. The theme is a set of CSS
+   pending-delete bar, delete dialog), `common/` and `screens/`. The theme is a set of CSS
    custom properties in [`App.css`](../src/App.css) that follow the OS's
    light or dark setting.
 5. **Tests, sim and bench last.** They make sense once you know what they
@@ -212,6 +215,13 @@ message, a daemon handler) holds for delete and for starting a scan.
 - **Change what a folder listing contains.**
   [`engine/aggregate/`](../crates/engine/src/aggregate), then `tree/ingest` on
   the host.
+- **Change staged delete.** The queue and the projected sizes are in
+  [`host-core/tree/staged.rs`](../crates/host-core/src/tree/staged.rs) (rows,
+  views and treemap tiles read them through `Tree::project`); the commands and
+  `staged-changed` in
+  [`host-core/app/staged.rs`](../crates/host-core/src/app/staged.rs); on the GUI
+  side [`useStaged`](../src/hooks/useStaged.ts) and
+  [`PendingBar`](../src/components/selection/PendingBar.tsx).
 - **Change delete safety.** [`daemon/actions/`](../crates/daemon/src/actions)
   (the `guard/` folder) and its tests. The daemon validates; the host is not
   trusted.
