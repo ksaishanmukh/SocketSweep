@@ -191,3 +191,23 @@ pub(crate) async fn copy_many(
 pub(crate) async fn cancel_copy(app: Host<'_>) -> Result<(), CommandError> {
     blocking(app, App::cancel_copy).await
 }
+
+/// A plain-text report for bug reports: app version, OS, the connected
+/// phone's model, Android API level and daemon build, and the last 200
+/// log lines. `includePrivate` adds the phone's serial and the scan root
+/// and leaves file paths in the log; without it they are masked.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn diagnostics(
+    app: Host<'_>,
+    include_private: bool,
+) -> Result<String, CommandError> {
+    blocking(app, move |a| a.diagnostics(include_private)).await
+}
+
+/// Write one line of the GUI's activity log to the log file.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn log_ui(app: Host<'_>, line: String) -> Result<(), CommandError> {
+    blocking(app, move |a| a.log_ui(&line)).await
+}

@@ -15,6 +15,7 @@ pub mod apps;
 pub mod client;
 pub mod copy;
 pub mod daemon;
+pub mod diagnostics;
 pub mod focus;
 pub mod history;
 pub mod tree;

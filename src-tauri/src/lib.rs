@@ -3,6 +3,7 @@
 //! lives in `socketsweep-host-core`.
 
 mod commands;
+mod logging;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -38,6 +39,8 @@ pub fn specta_builder() -> Builder<Wry> {
             commands::delete_many,
             commands::copy_many,
             commands::cancel_copy,
+            commands::diagnostics,
+            commands::log_ui,
         ])
         .events(collect_events![
             ScanProgress,
@@ -56,13 +59,33 @@ fn forward(handle: &tauri::AppHandle, event: HostEvent) {
         HostEvent::AppsUpdated(p) => (AppsUpdated::NAME, p.emit(handle)),
     };
     if let Err(e) = sent {
-        eprintln!("could not emit {name}: {e}");
+        tracing::warn!("could not emit {name}: {e}");
     }
 }
 
 /// A bundled resource under `bin/`.
 fn bundled(handle: &tauri::AppHandle, file: &str) -> Result<PathBuf, tauri::Error> {
     Ok(handle.path().resource_dir()?.join("bin").join(file))
+}
+
+/// Keeps the log writer's thread flushing until the app exits.
+#[allow(dead_code)]
+struct LogGuard(tracing_appender::non_blocking::WorkerGuard);
+
+/// Starts file logging; the app runs without it if the folder is unusable.
+fn start_logging(handle: &tauri::AppHandle) -> Option<PathBuf> {
+    let dir = handle.path().app_log_dir().ok()?;
+    match logging::init(&dir) {
+        Ok(guard) => {
+            handle.manage(LogGuard(guard));
+            Some(dir)
+        }
+        Err(e) => {
+            // No subscriber exists yet to take this.
+            eprintln!("could not open the log folder {}: {e}", dir.display());
+            None
+        }
+    }
 }
 
 fn build_app(handle: &tauri::AppHandle) -> Result<App, Box<dyn std::error::Error>> {
@@ -75,6 +98,7 @@ fn build_app(handle: &tauri::AppHandle) -> Result<App, Box<dyn std::error::Error
             x86_64: Some(bundled(handle, "daemon-x86_64.gz")?),
             helper: Some(bundled(handle, "socketsweep-helper.dex")?),
         },
+        log_dir: start_logging(handle),
         history_file: paths.app_data_dir().ok().map(|d| d.join("history.json")),
         default_destination: paths.desktop_dir().or_else(|_| paths.download_dir()).ok(),
         ..AppConfig::default()

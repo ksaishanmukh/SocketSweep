@@ -223,6 +223,16 @@ message, a daemon handler) holds for delete and for starting a scan.
   [`host-core/app/apps.rs`](../crates/host-core/src/app/apps.rs), and the
   helper itself in [`android-helper/`](../android-helper), whose output
   format `wire::apps` parses.
+- **Change logging or the diagnostics report.** Code logs with `tracing`
+  macros only; the subscriber is
+  [`src-tauri/src/logging.rs`](../src-tauri/src/logging.rs) (daily file in
+  the app log folder, three kept, plus stderr; `RUST_LOG` overrides the info
+  default). The GUI's console lines reach the same file through the `log_ui`
+  command, masked at info and in full at debug. The report is built by
+  [`host-core/diagnostics/`](../crates/host-core/src/diagnostics) (pure
+  `render` and `scrub`, with tests) and `App::diagnostics`, shown by
+  [`DiagnosticsBar`](../src/components/DiagnosticsBar.tsx). Paths from the
+  phone stay at debug level; never log the token.
 - **Change a screen.** The Overview tab is
   [`src/components/overview`](../src/components/overview), the Explorer tab
   [`src/components/explorer`](../src/components/explorer), the header

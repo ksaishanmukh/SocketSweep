@@ -17,6 +17,8 @@ rand = "0.9"
 flate2 = "1.0"
 # The same version socketsweep-wire decodes icons with.
 base64 = "0.22"
+# Macros only: the subscriber, and so where logs go, belongs to the shell.
+tracing = { workspace = true }
 
 [dev-dependencies]
 socketsweep-transport = { workspace = true, features = ["fake"] }

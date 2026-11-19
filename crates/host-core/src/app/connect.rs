@@ -65,6 +65,13 @@ pub(super) fn connect(
 
     install(inner, daemon, &device, epoch, transport.as_ref())?;
     let conn = inner.conn()?;
+    tracing::info!(
+        "connected to {} (API {}, {}), daemon {}",
+        conn.model,
+        conn.daemon.info.sdk,
+        conn.daemon.info.abi,
+        conn.daemon.client.welcome().daemon_build
+    );
     if !conn.daemon.client.is_open() {
         // Lost before the callback was in place: it has already run.
         return Err(err(ErrorCode::Device, "The phone disconnected."));

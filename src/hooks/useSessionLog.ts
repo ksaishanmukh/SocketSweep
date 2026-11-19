@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { errorMessage } from "../api";
+import { writeLogLine } from "../lib/logLine";
 import type { Notify } from "./types";
 
 const MAX_LOG_LINES = 200;
@@ -12,6 +13,7 @@ export function useSessionLog(notify: Notify) {
     setLogs((prev) =>
       [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-MAX_LOG_LINES),
     );
+    void writeLogLine(msg);
   }, []);
 
   const fail = useCallback(
