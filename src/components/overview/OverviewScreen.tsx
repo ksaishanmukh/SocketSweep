@@ -5,6 +5,7 @@ import { CategoryBar } from "./CategoryBar";
 import { LeftoversCard } from "./LeftoversCard";
 import { SinceLastScanCard } from "./SinceLastScanCard";
 import { UnreadableCard } from "./UnreadableCard";
+import { WouldFreeCard } from "./WouldFreeCard";
 
 /** The whole phone at a glance: what type of thing, which files, which apps, what is left over. */
 export function OverviewScreen({ session }: { session: ScanSession }) {
@@ -17,6 +18,7 @@ export function OverviewScreen({ session }: { session: ScanSession }) {
 
   return (
     <div className="max-w-[1240px] mx-auto p-6 grid grid-cols-12 gap-4 items-start">
+      <WouldFreeCard overview={overview} metric={metric} />
       <CategoryBar
         categories={overview.categories}
         metric={metric}

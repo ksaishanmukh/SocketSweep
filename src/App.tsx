@@ -6,12 +6,14 @@ import { ResultScreen } from "./components/screens/ResultScreen";
 import { SetupScreen } from "./components/screens/setup/SetupScreen";
 import { ActionBar } from "./components/selection/ActionBar";
 import { DeleteDialog } from "./components/selection/DeleteDialog";
+import { PendingBar } from "./components/selection/PendingBar";
 import { Toasts } from "./components/Toasts";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { useAppInfo } from "./hooks/useAppInfo";
 import { useScanSession, type ScanSession } from "./hooks/useScanSession";
 import { useToasts } from "./hooks/useToasts";
 import { inSession, type Target } from "./lib/selection";
+import { targetOfStaged } from "./lib/staged";
 import "./App.css";
 
 export default function App() {
@@ -19,8 +21,8 @@ export default function App() {
   const session = useScanSession(push);
   const { version, update, dismissUpdate } = useAppInfo();
 
-  // What the dialog lists is captured when it opens, because the live view
-  // keeps changing under it. Its nodes carry their session: a rescan or
+  // What the dialog lists is the pending-delete queue as it was when "Delete
+  // now" was pressed, because the live view keeps changing under it. Its nodes carry their session: a rescan or
   // disconnect replaces the tree, and a dialog still holding nodes of the old
   // one must not be shown, let alone confirmed.
   const [request, setRequest] = useState<Target[] | null>(null);
@@ -28,6 +30,12 @@ export default function App() {
 
   const confirming =
     request && request.every((t) => inSession(t, session.sessionId)) ? request : null;
+  const { staged } = session;
+
+  const deleteNow = async () => {
+    const queue = await staged.summary();
+    if (queue && queue.items.length > 0) setRequest(queue.items.map(targetOfStaged));
+  };
 
   // Everything behind the dialog is inert so focus and clicks cannot leave it.
   const inert = confirming !== null;
@@ -39,10 +47,24 @@ export default function App() {
       {update && <UpdateNotice release={update} onDismiss={dismissUpdate} />}
 
       <main className="flex-1 flex flex-col min-h-0" inert={inert}>
-        <Screens session={session} version={version} onDelete={setRequest} />
+        <Screens
+          session={session}
+          version={version}
+          onDelete={(targets) => void staged.stage(targets)}
+        />
       </main>
 
       <div inert={inert}>
+        {session.phase === "browsing" && staged.totals.items > 0 && (
+          <PendingBar
+            totals={staged.totals}
+            metric={session.metric}
+            load={staged.summary}
+            onUndo={(node) => void staged.unstage([node])}
+            onClear={() => void staged.clearQueue()}
+            onDeleteNow={() => void deleteNow()}
+          />
+        )}
         {session.phase === "browsing" && session.selection.items.length > 0 && (
           <ActionBar
             items={session.selection.items}
@@ -51,7 +73,7 @@ export default function App() {
             copyBusy={session.copy !== null}
             onClear={session.selection.clear}
             onCopy={() => void session.startCopy(session.selection.items)}
-            onDelete={() => setRequest(session.selection.items)}
+            onDelete={() => void staged.stage(session.selection.items)}
           />
         )}
         {session.copy && <CopyBar copy={session.copy} onCancel={session.cancelCopy} />}

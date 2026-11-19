@@ -12,6 +12,8 @@ interface Options {
   modeRef: MutableRefObject<Mode>;
   refreshTreemap: () => void;
   refreshOverview: () => Promise<void>;
+  /** The pending-delete totals, which grow with the folders they hold. */
+  refreshStaged: () => Promise<void>;
 }
 
 /**
@@ -29,15 +31,17 @@ export function useLiveRefresh({
   modeRef,
   refreshTreemap,
   refreshOverview,
+  refreshStaged,
 }: Options) {
   useEffect(() => {
     if (!browsing || !running) return;
     const timer = setInterval(() => {
       if (modeRef.current === "explorer") refreshTreemap();
       else void refreshOverview();
+      void refreshStaged();
     }, LIVE_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [browsing, running, modeRef, refreshOverview, refreshTreemap]);
+  }, [browsing, running, modeRef, refreshOverview, refreshStaged, refreshTreemap]);
 
   // A folder the phone has just finished measuring is worth redrawing at once.
   useEffect(() => {

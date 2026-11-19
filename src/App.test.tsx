@@ -3,7 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { commands, type CopyResult } from "./api";
 import { renderBrowsing, stubLayout } from "./test/app";
-import { deferred, emit, node, resetApi, row, size, totals, view } from "./test/api";
+import {
+  deferred,
+  emit,
+  node,
+  resetApi,
+  row,
+  size,
+  stagedItem,
+  stagedSummary,
+  totals,
+  view,
+} from "./test/api";
 
 vi.mock("./api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api")>()),
@@ -59,9 +70,16 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Phone storage" })).toBeTruthy();
   });
 
-  it("deletes a row by NodeRef after showing its full path", async () => {
+  it("queues a row for deletion, and deletes it only after the full path is shown and confirmed", async () => {
     const user = await renderBrowsing({ view: ROOT, tab: "explorer" });
-    api.deleteMany.mockResolvedValue({
+    const queued = stagedItem(3, {
+      name: "notes.txt",
+      path: "/sdcard/notes.txt",
+      size: size(2048),
+    });
+    api.stageDelete.mockResolvedValue(stagedSummary([queued]).totals);
+    api.stagedSummary.mockResolvedValue(stagedSummary([queued]));
+    api.deleteStaged.mockResolvedValue({
       deleted: 1,
       items: 1,
       size: size(2048),
@@ -71,11 +89,16 @@ describe("App", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /^Delete notes\.txt/ }));
+    expect(api.stageDelete).toHaveBeenCalledWith([node(3)]);
+    expect(api.deleteStaged).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Pending delete · 1 item/)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Delete now…" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("/sdcard/notes.txt")).toBeTruthy();
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(api.deleteMany).toHaveBeenCalledWith([node(3)]));
+    await waitFor(() => expect(api.deleteStaged).toHaveBeenCalledOnce());
     expect(await screen.findByText(/Deleted notes\.txt, freeing 2\.0 KB/)).toBeTruthy();
   });
 

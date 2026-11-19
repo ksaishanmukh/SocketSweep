@@ -45,15 +45,16 @@ export function ListRow({
       role="row"
       aria-selected={picked}
       data-hovered={highlighted || undefined}
+      data-staged={row.staged || undefined}
       className={`list-row grid items-center gap-x-3 px-3 h-full rounded-lg ${
         highlighted ? "bg-sunk" : picked ? "bg-sunk/60" : "hover:bg-sunk"
-      }`}
+      } ${row.staged ? "opacity-60" : ""}`}
       style={{ gridTemplateColumns: ROW_GRID }}
       onPointerEnter={() => onHoverChange(true)}
       onPointerLeave={() => onHoverChange(false)}
       onKeyDown={(e) => {
         // Delete on the focused row, so removing something never needs a mouse.
-        if (e.key === "Delete") {
+        if (e.key === "Delete" && !row.staged) {
           e.preventDefault();
           actions.onDelete(row);
         }
@@ -68,7 +69,12 @@ export function ListRow({
       </span>
       <RowName row={row} onOpen={actions.onOpen} onReveal={actions.onReveal} />
       <span role="cell" className="text-right text-[13px]">
-        <SizeCell size={row.size} measure={row.measure} metric={metric} />
+        <SizeCell
+          size={row.size}
+          measure={row.measure}
+          metric={metric}
+          projected={row.staged ? undefined : row.projected}
+        />
       </span>
       <span role="cell">
         {share !== null && row.measure !== "unknown" && <Share row={row} share={share} />}
@@ -137,9 +143,12 @@ function RowButtons({ row, actions }: { row: Row; actions: RowActions }) {
       <button
         type="button"
         onClick={() => actions.onDelete(row)}
-        title="Delete"
+        disabled={row.staged}
+        title={
+          row.staged ? "Already pending delete" : "Delete (reviewed before anything is removed)"
+        }
         aria-label={`Delete ${row.name}, ${size}${row.kind === "dir" ? `, ${plural(row.files, "file")}` : ""}`}
-        className="w-9 h-9 rounded-lg inline-flex items-center justify-center text-danger hover:bg-panel"
+        className="w-9 h-9 rounded-lg inline-flex items-center justify-center text-danger hover:bg-panel disabled:opacity-40"
       >
         <IconTrash />
       </button>

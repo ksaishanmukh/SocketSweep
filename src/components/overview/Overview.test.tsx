@@ -13,6 +13,7 @@ import {
   resetApi,
   row,
   size,
+  stagedTotals,
   view,
 } from "../../test/api";
 
@@ -193,10 +194,13 @@ describe("leftovers", () => {
     expect(within(leftovers).getAllByText("3.0 KB").length).toBeGreaterThan(0);
 
     await user.click(within(leftovers).getByRole("checkbox", { name: /com\.gone/ }));
+    api.stageDelete.mockResolvedValue(stagedTotals({ items: 2, size: size(3 * 1024), files: 2 }));
     await user.click(screen.getByRole("button", { name: "Delete 1 item" }));
 
-    const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText(/Everything com\.gone left behind \(2 folders\)/)).toBeTruthy();
+    // Both of the app's folders are queued, not deleted.
+    expect(api.stageDelete).toHaveBeenCalledWith([node(7), node(8)]);
+    expect(api.deleteStaged).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Pending delete · 2 items/)).toBeTruthy();
   });
 });
 

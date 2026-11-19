@@ -53,6 +53,10 @@ export type {
   SizeMetric,
   SkeletonReady,
   SortKey,
+  StagedChanged,
+  StagedItem,
+  StagedSummary,
+  StagedTotals,
   Totals,
   TreemapNode,
   UnreadableFolder,
@@ -78,6 +82,7 @@ export const events = {
   copyProgress: onPayload(generated.copyProgress),
   connectionLost: onPayload(generated.connectionLost),
   appsUpdated: onPayload(generated.appsUpdated),
+  stagedChanged: onPayload(generated.stagedChanged),
 };
 
 export function isCommandError(err: unknown): err is CommandError {
