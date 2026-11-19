@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use socketsweep_gui_contract::{
     CommandError, Connected, CopyResult, Crumb, DeletedMany, Device, ErrorCode, NodeRef, Overview,
-    Row, ScanStarted, SearchRequest, SizeMetric, TreemapNode, View, ViewRequest,
+    Row, ScanStarted, SearchRequest, SizeMetric, StagedSummary, StagedTotals, TreemapNode, View,
+    ViewRequest,
 };
 use socketsweep_host_core::App;
 use tauri::State;
@@ -168,6 +169,56 @@ pub(crate) async fn delete_many(
     nodes: Vec<NodeRef>,
 ) -> Result<DeletedMany, CommandError> {
     blocking(app, move |a| a.delete_many(nodes)).await
+}
+
+/// Put nodes in the pending-delete queue. Nothing is removed from the phone
+/// until `deleteStaged`; meanwhile rows, the map and the overview show the
+/// effect (`staged`, `projected`). Refused as a whole for a stale, removed or
+/// root node. Nodes already queued stay as they are; a node inside a queued
+/// folder goes with it. Returns the queue's totals; `staged-changed` follows.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn stage_delete(
+    app: Host<'_>,
+    nodes: Vec<NodeRef>,
+) -> Result<StagedTotals, CommandError> {
+    blocking(app, move |a| a.stage_delete(nodes)).await
+}
+
+/// Take nodes out of the queue. Nodes that are not queued, or have left the
+/// tree, are ignored. Returns the queue's totals.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn unstage_delete(
+    app: Host<'_>,
+    nodes: Vec<NodeRef>,
+) -> Result<StagedTotals, CommandError> {
+    blocking(app, move |a| a.unstage_delete(nodes)).await
+}
+
+/// Empty the pending-delete queue. The queue is also dropped by a rescan or
+/// disconnect.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn clear_staged(app: Host<'_>) -> Result<StagedTotals, CommandError> {
+    blocking(app, App::clear_staged).await
+}
+
+/// The queue: its outermost nodes, largest first, with paths and sizes, and
+/// what deleting them would free.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn staged_summary(app: Host<'_>) -> Result<StagedSummary, CommandError> {
+    blocking(app, App::staged_summary).await
+}
+
+/// Delete everything in the queue, as `deleteMany` would for those nodes.
+/// Deleted nodes leave the queue; one the phone refuses stays queued and is
+/// reported in `failures`.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn delete_staged(app: Host<'_>) -> Result<DeletedMany, CommandError> {
+    blocking(app, App::delete_staged).await
 }
 
 /// Copy nodes (files, or folders and everything in them) to this computer

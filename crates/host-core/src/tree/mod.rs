@@ -43,6 +43,13 @@
 //! tree built from a stream it does not understand would show wrong numbers as
 //! if they were right.
 //!
+//! # Staged deletes
+//!
+//! A queue of nodes the user has marked for deletion lives in the tree
+//! (`staged.rs`), so every query can show the effect: rows say whether they
+//! are staged and what their size would be without the staged nodes below
+//! them.
+//!
 //! # Deletes
 //!
 //! A subtree can disappear two ways: a `Pruned` event in the scan stream, or
@@ -65,7 +72,9 @@ mod queries;
 mod rows;
 mod search;
 mod sizes;
+mod staged;
 
+use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use socketsweep_gui_contract::{Measure, NodeId, SessionId, Size, SizeMetric};
@@ -132,6 +141,10 @@ pub struct Tree {
     scan_time: i64,
     /// What the phone has said about installed apps.
     apps: AppCatalog,
+    /// Nodes queued for deletion; see `staged.rs`.
+    staged: BTreeSet<NodeId>,
+    /// A staged node left the tree and nobody has been told yet.
+    staged_dropped: bool,
 }
 
 impl Tree {
@@ -166,6 +179,8 @@ impl Tree {
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
             apps: AppCatalog::default(),
+            staged: BTreeSet::new(),
+            staged_dropped: false,
         }
     }
 

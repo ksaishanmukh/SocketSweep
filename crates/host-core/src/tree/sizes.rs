@@ -114,6 +114,7 @@ impl Tree {
                 stack.push(child);
                 child = self.nodes[child as usize].next_sibling;
             }
+            self.drop_staged(id);
             let rec = self.dirs.get_mut(dir as usize).filter(|_| dir != NONE);
             if let Some(Some(rec)) = rec {
                 rec.state = DirState::Gone;

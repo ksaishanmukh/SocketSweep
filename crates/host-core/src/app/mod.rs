@@ -43,6 +43,7 @@ mod events;
 mod overview;
 mod queries;
 mod scan;
+mod staged;
 mod state;
 
 use std::path::PathBuf;
