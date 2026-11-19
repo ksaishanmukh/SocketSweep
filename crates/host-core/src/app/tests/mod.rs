@@ -5,3 +5,4 @@ mod failures;
 mod phone;
 mod rig;
 mod scenario;
+mod staged;

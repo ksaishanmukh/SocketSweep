@@ -61,6 +61,7 @@ fn ingest_loop(inner: &Inner, scan: &Scan, rx: Receiver<ServerMsg>) {
                 true
             }
         };
+        crate::app::staged::announce_drops(inner, scan);
         if ended {
             break;
         }

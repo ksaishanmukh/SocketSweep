@@ -7,6 +7,7 @@ import { nodeKey } from "../../lib/size";
 import { Card } from "../common/Card";
 import { Checkbox } from "../common/Checkbox";
 import { SizeCell } from "../common/SizeCell";
+import { PendingMarker } from "../explorer/RowName";
 
 /** The largest files anywhere on the phone, each with the folder it lives in. */
 export function BiggestFiles({
@@ -58,7 +59,11 @@ function BiggestFile({
 }) {
   const target = targetOfRow(row, row.parent ?? "");
   return (
-    <li className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-sunk min-h-11">
+    <li
+      className={`flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-sunk min-h-11 ${
+        row.staged ? "opacity-60" : ""
+      }`}
+    >
       <Checkbox
         checked={selection.has(target.key)}
         label={`Select ${row.name}`}
@@ -70,7 +75,10 @@ function BiggestFile({
         aria-hidden
       />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px]" title={row.name}>
+        <div
+          className={`truncate text-[14px] ${row.staged ? "line-through" : ""}`}
+          title={row.name}
+        >
           {row.name}
         </div>
         {row.parent && (
@@ -84,7 +92,14 @@ function BiggestFile({
           </button>
         )}
       </div>
-      <SizeCell size={row.size} measure={row.measure} metric={metric} className="text-[13px]" />
+      {row.staged && <PendingMarker />}
+      <SizeCell
+        size={row.size}
+        measure={row.measure}
+        metric={metric}
+        projected={row.staged ? undefined : row.projected}
+        className="text-[13px]"
+      />
     </li>
   );
 }

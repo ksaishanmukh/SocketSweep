@@ -7,7 +7,9 @@ mod commands;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use socketsweep_gui_contract::{AppsUpdated, ConnectionLost, CopyProgress, ScanProgress};
+use socketsweep_gui_contract::{
+    AppsUpdated, ConnectionLost, CopyProgress, ScanProgress, StagedChanged,
+};
 use socketsweep_host_core::{App, AppConfig, DaemonBinaries, HostEvent};
 use socketsweep_transport_adb::AdbTransport;
 use tauri::{Manager, Wry};
@@ -36,6 +38,11 @@ pub fn specta_builder() -> Builder<Wry> {
             commands::overview,
             commands::app_icon,
             commands::delete_many,
+            commands::stage_delete,
+            commands::unstage_delete,
+            commands::clear_staged,
+            commands::staged_summary,
+            commands::delete_staged,
             commands::copy_many,
             commands::cancel_copy,
         ])
@@ -44,6 +51,7 @@ pub fn specta_builder() -> Builder<Wry> {
             CopyProgress,
             ConnectionLost,
             AppsUpdated,
+            StagedChanged,
         ])
 }
 
@@ -54,6 +62,7 @@ fn forward(handle: &tauri::AppHandle, event: HostEvent) {
         HostEvent::CopyProgress(p) => (CopyProgress::NAME, p.emit(handle)),
         HostEvent::ConnectionLost(p) => (ConnectionLost::NAME, p.emit(handle)),
         HostEvent::AppsUpdated(p) => (AppsUpdated::NAME, p.emit(handle)),
+        HostEvent::StagedChanged(p) => (StagedChanged::NAME, p.emit(handle)),
     };
     if let Err(e) = sent {
         eprintln!("could not emit {name}: {e}");

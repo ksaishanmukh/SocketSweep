@@ -84,6 +84,35 @@ export const commands = {
 	 */
 	deleteMany: (nodes: NodeRef[]) => __TAURI_INVOKE<DeletedMany>("delete_many", { nodes }),
 	/**
+	 *  Put nodes in the pending-delete queue. Nothing is removed from the phone
+	 *  until `deleteStaged`; meanwhile rows, the map and the overview show the
+	 *  effect (`staged`, `projected`). Refused as a whole for a stale, removed or
+	 *  root node. Nodes already queued stay as they are; a node inside a queued
+	 *  folder goes with it. Returns the queue's totals; `staged-changed` follows.
+	 */
+	stageDelete: (nodes: NodeRef[]) => __TAURI_INVOKE<StagedTotals>("stage_delete", { nodes }),
+	/**
+	 *  Take nodes out of the queue. Nodes that are not queued, or have left the
+	 *  tree, are ignored. Returns the queue's totals.
+	 */
+	unstageDelete: (nodes: NodeRef[]) => __TAURI_INVOKE<StagedTotals>("unstage_delete", { nodes }),
+	/**
+	 *  Empty the pending-delete queue. The queue is also dropped by a rescan or
+	 *  disconnect.
+	 */
+	clearStaged: () => __TAURI_INVOKE<StagedTotals>("clear_staged"),
+	/**
+	 *  The queue: its outermost nodes, largest first, with paths and sizes, and
+	 *  what deleting them would free.
+	 */
+	stagedSummary: () => __TAURI_INVOKE<StagedSummary>("staged_summary"),
+	/**
+	 *  Delete everything in the queue, as `deleteMany` would for those nodes.
+	 *  Deleted nodes leave the queue; one the phone refuses stays queued and is
+	 *  reported in `failures`.
+	 */
+	deleteStaged: () => __TAURI_INVOKE<DeletedMany>("delete_staged"),
+	/**
 	 *  Copy nodes (files, or folders and everything in them) to this computer
 	 *  into `destination` (default: the desktop) as one copy, with one
 	 *  `copy-progress` stream, resolving when the copy is complete. A node
@@ -101,6 +130,7 @@ export const events = {
 	connectionLost: makeEvent<ConnectionLost, ConnectionLost>("connection-lost"),
 	copyProgress: makeEvent<CopyProgress, CopyProgress>("copy-progress"),
 	scanProgress: makeEvent<ScanProgress, ScanProgress>("scan-progress"),
+	stagedChanged: makeEvent<StagedChanged, StagedChanged>("staged-changed"),
 };
 
 /* Types */
@@ -400,6 +430,10 @@ export type NodeRef = {
 /**  The whole scan at a glance. Every figure is as far as the scan has got. */
 export type Overview = {
 	totals: Totals,
+	/**  What is staged for deletion; `items` is 0 when nothing is. */
+	staged: StagedTotals,
+	/**  `totals.size` with everything staged removed. */
+	projected: Size,
 	/**
 	 *  Bytes per category over the whole tree, largest first, empty ones left
 	 *  out.
@@ -456,6 +490,14 @@ export type Row = {
 	parent: string | null,
 	/**  That folder, for "go to". */
 	parentNode: NodeRef | null,
+	/**  Staged for deletion, itself or through a folder above it. */
+	staged: boolean,
+	/**
+	 *  What `size` would be with everything staged removed: less than `size`
+	 *  when staged nodes lie inside, zero when the row is staged itself. Same
+	 *  `measure` as `size`.
+	 */
+	projected: Size,
 };
 
 export type ScanFinished = {
@@ -586,6 +628,53 @@ export type SortKey =
  */
 "changed";
 
+/**
+ *  Emitted as `staged-changed` whenever the queue changes, including when a
+ *  scan or a delete removes a staged node from the tree. Views fetched before
+ *  it carry stale `staged` and `projected` values.
+ */
+export type StagedChanged = {
+	session: number,
+	totals: StagedTotals,
+};
+
+/**  One staged node, for the review list. */
+export type StagedItem = {
+	node: NodeRef,
+	name: string,
+	/**  Display path. */
+	path: string,
+	kind: EntryKind,
+	size: Size,
+	measure: Measure,
+	/**  Files in the subtree; 1 for a file. */
+	files: number,
+};
+
+/**  The queue: its outermost nodes, largest first by disk usage, and totals. */
+export type StagedSummary = {
+	items: StagedItem[],
+	totals: StagedTotals,
+};
+
+/**
+ *  What the queue would free, counted over the outermost staged nodes only:
+ *  a node staged inside another staged one is part of it, not extra.
+ */
+export type StagedTotals = {
+	/**  Outermost staged nodes. */
+	items: number,
+	/**  Both ways of counting, so the GUI shows the metric the user chose. */
+	size: Size,
+	/**  Files inside them, a staged file counting as one. */
+	files: number,
+	/**
+	 *  `final` only when every staged node is fully measured; otherwise
+	 *  `partial`, and `size` is a lower bound.
+	 */
+	measure: Measure,
+};
+
 /**  Sums over a tree or subtree. */
 export type Totals = {
 	size: Size,
@@ -606,6 +695,9 @@ export type TreemapNode = {
 	changed: number | null,
 	category: Category,
 	app: AppTag | null,
+	/**  As on [`Row`]. */
+	staged: boolean,
+	projected: Size,
 	/**  Largest first; empty below the requested depth. */
 	children: TreemapNode[],
 };
@@ -634,6 +726,9 @@ export type View = {
 	changed: number | null,
 	category: Category,
 	app: AppTag | null,
+	/**  As on [`Row`]. */
+	staged: boolean,
+	projected: Size,
 	rows: Row[],
 	/**
 	 *  Matching rows beyond the requested limit, so the GUI can say "and

@@ -82,6 +82,12 @@ pub struct Row {
     pub parent: Option<String>,
     /// That folder, for "go to".
     pub parent_node: Option<NodeRef>,
+    /// Staged for deletion, itself or through a folder above it.
+    pub staged: bool,
+    /// What `size` would be with everything staged removed: less than `size`
+    /// when staged nodes lie inside, zero when the row is staged itself. Same
+    /// `measure` as `size`.
+    pub projected: Size,
 }
 
 /// One folder's contents, in the requested [`ViewSort`] (largest first by
@@ -103,6 +109,9 @@ pub struct View {
     pub changed: Option<i64>,
     pub category: Category,
     pub app: Option<AppTag>,
+    /// As on [`Row`].
+    pub staged: bool,
+    pub projected: Size,
     pub rows: Vec<Row>,
     /// Matching rows beyond the requested limit, so the GUI can say "and
     /// 412 more".
@@ -135,6 +144,9 @@ pub struct TreemapNode {
     pub changed: Option<i64>,
     pub category: Category,
     pub app: Option<AppTag>,
+    /// As on [`Row`].
+    pub staged: bool,
+    pub projected: Size,
     /// Largest first; empty below the requested depth.
     pub children: Vec<TreemapNode>,
 }

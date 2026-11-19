@@ -11,6 +11,7 @@ import { useNavigation } from "./useNavigation";
 import { useOverview } from "./useOverview";
 import { useSearch } from "./useSearch";
 import { useSelection } from "./useSelection";
+import { useStaged } from "./useStaged";
 import { useSessionLifecycle } from "./useSessionLifecycle";
 import { useSessionLog } from "./useSessionLog";
 import { useBrowseActions, useViewControls } from "./useViewControls";
@@ -32,7 +33,9 @@ export type { Phase, ScanInfo } from "./useSessionLifecycle";
  * - `useNavigation`: the open folder, its path, map and history, and `focus`.
  * - `useViewOptions`: the list's sort, filters and search box.
  * - `useSearch`, `useOverview`: queries over the whole tree.
- * - `useSelection`, `useDelete`, `useCopy`: batch actions on picked nodes.
+ * - `useSelection`, `useStaged`, `useDelete`, `useCopy`: batch actions on picked
+ *   nodes. Delete stages them in the host's pending queue first; `useDelete`
+ *   runs the queue.
  *
  * What ties them together is the session id (`NodeRef.session`): anything that
  * began under an older session is dropped when it replies, because the node
@@ -69,6 +72,7 @@ export function useScanSession(notify: Notify) {
     modeRef: display.modeRef,
     refreshTreemap: nav.refreshTreemap,
     refreshOverview: overview.refresh,
+    refreshStaged: parts.staged.refreshTotals,
   });
 
   return {
@@ -85,6 +89,7 @@ export function useScanSession(notify: Notify) {
     controls,
     actions,
     selection,
+    staged: parts.staged,
     icons: parts.icons,
     remove,
     copy: copier.copy,
@@ -113,6 +118,15 @@ function useTreeParts(
   });
   const copier = useCopy({ sessionRef: deps.sessionRef, log: deps.log, notify });
   const selection = useSelection(sessionId);
+  const { reload: reloadFolder } = nav;
+  const { refresh: refreshOverview } = overview;
+  const { rerun: rerunSearch } = search;
+  const refreshAll = useCallback(() => {
+    void reloadFolder();
+    void refreshOverview();
+    rerunSearch();
+  }, [reloadFolder, refreshOverview, rerunSearch]);
+  const staged = useStaged({ ...deps, notify, selection, refresh: refreshAll }, sessionId);
   const [icons] = useState(() => createIconStore((pkg) => commands.appIcon(pkg)));
 
   const { clear: clearNav } = nav;
@@ -120,6 +134,7 @@ function useTreeParts(
   const { clear: clearSearch } = search;
   const { reset: resetCopy } = copier;
   const { clear: clearSelection } = selection;
+  const { forget: forgetStaged } = staged;
   const { clearText } = options;
   const reset = useCallback(() => {
     clearNav();
@@ -128,10 +143,20 @@ function useTreeParts(
     clearText();
     resetCopy();
     clearSelection();
+    forgetStaged();
     icons.clear();
-  }, [clearNav, clearOverview, clearSearch, clearSelection, clearText, icons, resetCopy]);
+  }, [
+    clearNav,
+    clearOverview,
+    clearSearch,
+    clearSelection,
+    clearText,
+    forgetStaged,
+    icons,
+    resetCopy,
+  ]);
 
-  return { nav, overview, search, copier, selection, icons, reset };
+  return { nav, overview, search, copier, selection, staged, icons, reset };
 }
 
 /**

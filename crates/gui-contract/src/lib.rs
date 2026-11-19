@@ -51,6 +51,7 @@ mod filters;
 mod nodes;
 mod overview;
 mod queries;
+mod staged;
 
 pub use actions::{CopyResult, DeleteFailure, DeletedMany};
 pub use devices::{Connected, Device, DeviceState, ScanRecord, ScanStarted, Totals};
@@ -67,6 +68,7 @@ pub use overview::{
     AppsStatus, CategoryUsage, Leftover, Leftovers, Overview, SinceLastScan, UnreadableFolder,
 };
 pub use queries::{AppUsage, Crumb, Row, SearchRequest, TreemapNode, View, ViewRequest};
+pub use staged::{StagedChanged, StagedItem, StagedSummary, StagedTotals};
 
 /// Rows per view when `limit` is not given. Enough to fill any screen; the
 /// GUI virtualises and asks for more if it needs them.
