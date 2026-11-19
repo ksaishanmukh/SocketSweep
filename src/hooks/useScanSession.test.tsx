@@ -252,6 +252,7 @@ describe("connecting and scanning", () => {
         copyProgress: 0,
         connectionLost: 0,
         appsUpdated: 0,
+        stagedChanged: 0,
       }),
     );
   });
@@ -500,16 +501,16 @@ describe("search", () => {
 });
 
 describe("delete", () => {
-  it("deletes by the row's NodeRef and shows the totals and view the host returns", async () => {
+  it("runs the pending delete and shows the totals and view the host returns", async () => {
     const { result } = await browse();
     const victim = row(2, { node: node(2) });
-    api.deleteMany.mockResolvedValue(
+    api.deleteStaged.mockResolvedValue(
       deleted({ items: 1, totals: totals({ files: 2, size: size(90) }), view: view(0, [row(1)]) }),
     );
 
     await act(() => result.current.remove([target(victim)]));
 
-    expect(api.deleteMany).toHaveBeenCalledWith([node(2)]);
+    expect(api.deleteStaged).toHaveBeenCalledOnce();
     expect(result.current.totals?.files).toBe(2);
     expect(result.current.nav.view?.rows).toHaveLength(1);
   });
@@ -523,7 +524,7 @@ describe("delete", () => {
     });
     expect(result.current.nav.view?.node.id).toBe(9);
 
-    api.deleteMany.mockResolvedValue(deleted({ items: 5, view: view(0, [row(1)]) }));
+    api.deleteStaged.mockResolvedValue(deleted({ items: 5, view: view(0, [row(1)]) }));
     api.getBreadcrumbs.mockResolvedValue([{ node: node(0), name: "root" }]);
     await act(() => result.current.remove([target(row(5, { kind: "dir" }))]));
 
@@ -540,7 +541,7 @@ describe("delete", () => {
     const { result } = await browse(view(0, many, { hidden: 6 }));
     expect(result.current.nav.view?.rows).toHaveLength(4);
 
-    api.deleteMany.mockResolvedValue(
+    api.deleteStaged.mockResolvedValue(
       deleted({ items: 1, view: view(0, many.slice(1, 3), { hidden: 7 }) }),
     );
     api.getView.mockResolvedValue(view(0, many.slice(1), { hidden: 6 }));
@@ -567,7 +568,7 @@ describe("delete", () => {
     searchEverywhere(result, "a");
     await waitFor(() => expect(result.current.searchResults).toHaveLength(4));
 
-    api.deleteMany.mockResolvedValue(deleted({ items: 3, view: view(0, [row(1)]) }));
+    api.deleteStaged.mockResolvedValue(deleted({ items: 3, view: view(0, [row(1)]) }));
     api.search.mockReturnValue(new Promise(() => {}));
     await act(() =>
       result.current.remove([target(row(10, { name: "photos", kind: "dir", parent: "/dir0" }))]),
@@ -578,7 +579,7 @@ describe("delete", () => {
 
   it("reports a stale refusal and refreshes what is on screen", async () => {
     const { result, notify } = await browse();
-    api.deleteMany.mockRejectedValue(commandError("stale", "Results are out of date — rescan."));
+    api.deleteStaged.mockRejectedValue(commandError("stale", "Results are out of date — rescan."));
     api.getView.mockClear();
 
     await act(() => result.current.remove([target(row(2))]));
@@ -592,7 +593,7 @@ describe("delete", () => {
 
     await act(() => result.current.remove([target(row(2, { node: node(2, SESSION + 1) }))]));
 
-    expect(api.deleteMany).not.toHaveBeenCalled();
+    expect(api.deleteStaged).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(expect.stringMatching(/out of date/), "error");
   });
 });

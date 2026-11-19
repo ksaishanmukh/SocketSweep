@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { SizeMetric, TreemapNode } from "../../api";
 import { categoryTint } from "../../lib/categories";
 import { formatBytes } from "../../lib/format";
+import { afterDelete } from "../../lib/staged";
 import { tileLabels } from "../../lib/mapTiles";
 import { nodeKey, sizeOf } from "../../lib/size";
 import type { Tile } from "../../lib/squarify";
@@ -37,15 +38,22 @@ export function MapTile({
   const isDir = node.kind === "dir";
   const counting = node.measure === "partial";
   const labels = tileLabels(tile.w, tile.h);
+  const change = afterDelete(node.size, node.projected, node.measure, metric);
+  const after = change && !node.staged ? formatBytes(change.after) : null;
   return (
     <button
       type="button"
       className="map-tile absolute overflow-hidden rounded text-left text-fg px-1.5 py-1"
       style={tileStyle(tile, node, faded, pointed)}
       data-pointed={pointed ?? undefined}
-      aria-label={`${node.name}, ${counting ? "at least " : ""}${size}${isDir ? ", folder" : ""}`}
-      title={`${node.name} · ${size}${counting ? " (still counting)" : ""}`}
+      aria-label={`${node.name}, ${counting ? "at least " : ""}${size}${isDir ? ", folder" : ""}${
+        after ? `, ${after} after the pending delete` : ""
+      }${node.staged ? ", pending delete" : ""}`}
+      title={`${node.name} · ${size}${after ? ` → ${after}` : ""}${counting ? " (still counting)" : ""}${
+        node.staged ? " (pending delete)" : ""
+      }`}
       data-faded={faded || undefined}
+      data-staged={node.staged || undefined}
       onPointerEnter={() => onHover({ key, from: "map" })}
       onPointerLeave={() => onHover(null)}
       onFocus={() => onHover({ key, from: "map" })}
@@ -53,16 +61,29 @@ export function MapTile({
       onClick={() => isDir && onOpen(node)}
     >
       {labels.name && (
-        <span className="block truncate text-[12px] font-medium leading-4">{node.name}</span>
+        <span
+          className={`block truncate text-[12px] font-medium leading-4 ${
+            node.staged ? "line-through" : ""
+          }`}
+        >
+          {node.name}
+        </span>
       )}
       {labels.size && (
         <span className="block truncate num text-[11px] leading-4 text-muted">
           {size}
           {counting ? "+" : ""}
+          {after && ` → ${after}`}
         </span>
       )}
     </button>
   );
+}
+
+/** The category's wash, under the hatch when the tile is pending delete. */
+function wash(node: TreemapNode, percent: number): string {
+  const tint = categoryTint(node.category, percent);
+  return node.staged ? `var(--hatch), ${tint}` : tint;
 }
 
 /**
@@ -81,8 +102,8 @@ function tileStyle(
     top: tile.y + INSET,
     width: Math.max(0, tile.w - 2 * INSET),
     height: Math.max(0, tile.h - 2 * INSET),
-    background: categoryTint(node.category, pointed === "strong" ? 48 : 26),
-    opacity: faded ? 0.22 : 1,
+    background: wash(node, pointed === "strong" ? 48 : 26),
+    opacity: faded ? 0.22 : node.staged ? 0.55 : 1,
     outline: pointed === "strong" ? "2px solid var(--text)" : undefined,
     outlineOffset: -2,
     boxShadow: pointed === "hint" ? "inset 0 0 0 1px var(--muted)" : undefined,

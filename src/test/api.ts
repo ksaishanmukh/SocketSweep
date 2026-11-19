@@ -26,6 +26,10 @@ import type {
   ScanProgress,
   ScanStarted,
   Size,
+  StagedChanged,
+  StagedItem,
+  StagedSummary,
+  StagedTotals,
   Totals,
   TreemapNode,
   View,
@@ -49,6 +53,11 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   "overview",
   "appIcon",
   "deleteMany",
+  "stageDelete",
+  "unstageDelete",
+  "clearStaged",
+  "stagedSummary",
+  "deleteStaged",
   "copyMany",
   "cancelCopy",
   "diagnostics",
@@ -65,6 +74,7 @@ const listeners = {
   copyProgress: new Set<Handler<CopyProgress>>(),
   connectionLost: new Set<Handler<ConnectionLost>>(),
   appsUpdated: new Set<Handler<AppsUpdated>>(),
+  stagedChanged: new Set<Handler<StagedChanged>>(),
 };
 
 function subscribe<T>(set: Set<Handler<T>>) {
@@ -81,6 +91,7 @@ export const events = {
   copyProgress: vi.fn(subscribe(listeners.copyProgress)),
   connectionLost: vi.fn(subscribe(listeners.connectionLost)),
   appsUpdated: vi.fn(subscribe(listeners.appsUpdated)),
+  stagedChanged: vi.fn(subscribe(listeners.stagedChanged)),
 };
 
 /** What `vi.mock("../api", ...)` swaps in. */
@@ -92,6 +103,7 @@ export const emit = {
   copyProgress: (p: CopyProgress) => listeners.copyProgress.forEach((h) => h(p)),
   connectionLost: (l: ConnectionLost) => listeners.connectionLost.forEach((h) => h(l)),
   appsUpdated: (a: AppsUpdated) => listeners.appsUpdated.forEach((h) => h(a)),
+  stagedChanged: (s: StagedChanged) => listeners.stagedChanged.forEach((h) => h(s)),
 };
 
 /** How many listeners are subscribed to each event, to prove they are cleaned up. */
@@ -100,6 +112,7 @@ export const listenerCount = () => ({
   copyProgress: listeners.copyProgress.size,
   connectionLost: listeners.connectionLost.size,
   appsUpdated: listeners.appsUpdated.size,
+  stagedChanged: listeners.stagedChanged.size,
 });
 
 /** Call from `beforeEach`: forgets every call and answer, and drops all subscribers. */
@@ -111,10 +124,12 @@ export function resetApi() {
   events.copyProgress.mockReset().mockImplementation(subscribe(listeners.copyProgress));
   events.connectionLost.mockReset().mockImplementation(subscribe(listeners.connectionLost));
   events.appsUpdated.mockReset().mockImplementation(subscribe(listeners.appsUpdated));
+  events.stagedChanged.mockReset().mockImplementation(subscribe(listeners.stagedChanged));
   listeners.scanProgress.clear();
   listeners.copyProgress.clear();
   listeners.connectionLost.clear();
   listeners.appsUpdated.clear();
+  listeners.stagedChanged.clear();
 
   // Commands that answer with nothing and are called without being awaited.
   commands.listDevices.mockResolvedValue([]);
@@ -124,6 +139,7 @@ export function resetApi() {
   commands.disconnect.mockResolvedValue(null);
   commands.appIcon.mockResolvedValue(null);
   commands.logUi.mockResolvedValue(null);
+  commands.stagedSummary.mockResolvedValue(stagedSummary());
 }
 
 /** What the view queries send while the list is unsorted and unfiltered. */
@@ -160,6 +176,8 @@ export function row(id: number, over: Partial<Row> = {}): Row {
     app: null,
     parent: null,
     parentNode: null,
+    staged: false,
+    projected: over.size ?? size(10),
     ...over,
   };
 }
@@ -176,6 +194,8 @@ export function view(id: number, rows: Row[] = [], over: Partial<View> = {}): Vi
     changed: null,
     category: "other",
     app: null,
+    staged: false,
+    projected: over.size ?? size(100),
     rows,
     hidden: 0,
     totalMatching: rows.length,
@@ -194,6 +214,8 @@ export function treemapNode(id: number, over: Partial<TreemapNode> = {}): Treema
     changed: null,
     category: "other",
     app: null,
+    staged: false,
+    projected: over.size ?? size(100),
     children: [],
     ...over,
   };
@@ -202,6 +224,8 @@ export function treemapNode(id: number, over: Partial<TreemapNode> = {}): Treema
 export function overview(over: Partial<Overview> = {}): Overview {
   return {
     totals: totals(),
+    staged: stagedTotals(),
+    projected: size(100),
     categories: [],
     biggestFiles: [],
     apps: [],
@@ -210,6 +234,41 @@ export function overview(over: Partial<Overview> = {}): Overview {
     unreadable: [],
     sinceLastScan: null,
     ...over,
+  };
+}
+
+/** An empty queue unless told otherwise. */
+export function stagedTotals(over: Partial<StagedTotals> = {}): StagedTotals {
+  return { items: 0, size: size(0), files: 0, measure: "final", ...over };
+}
+
+export function stagedItem(id: number, over: Partial<StagedItem> = {}): StagedItem {
+  return {
+    node: node(id),
+    name: `item${id}`,
+    path: `/sdcard/item${id}`,
+    kind: "file",
+    size: size(10),
+    measure: "final",
+    files: 1,
+    ...over,
+  };
+}
+
+/** A queue of `items`, with totals added up from them unless given. */
+export function stagedSummary(
+  items: StagedItem[] = [],
+  totalsOver: Partial<StagedTotals> = {},
+): StagedSummary {
+  const bytes = items.reduce((sum, i) => sum + i.size.disk, 0);
+  return {
+    items,
+    totals: stagedTotals({
+      items: items.length,
+      size: size(bytes),
+      files: items.reduce((sum, i) => sum + i.files, 0),
+      ...totalsOver,
+    }),
   };
 }
 
