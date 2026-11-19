@@ -36,8 +36,12 @@ cache is warm (see [Benchmarks](#benchmarks)).
 - **Explorer.** A sortable list of the current folder with a resizable treemap
   strip above it. Breadcrumbs with back and forward, search within the folder,
   and filters by category, files or folders, and when they last changed.
-- **Multi-select actions.** Tick several files or folders, then delete them on
-  the phone or copy them to your computer.
+- **Multi-select actions.** Tick several files or folders, then copy them to
+  your computer or delete them.
+- **Staged delete with a preview.** Delete only queues items. The queued rows are
+  struck through, folders above them show their size now and after, the map
+  hatches them and the Overview says how much would be freed. Nothing leaves the
+  phone until you review the queue and confirm **Delete now**.
 - **Live from the first moment.** The folder tree appears almost at once and
   sizes fill in as the scan runs, with the folder you are looking at scanned
   first.
@@ -64,8 +68,9 @@ cache is warm (see [Benchmarks](#benchmarks)).
 5. **App names and icons come from a tiny helper.** A few Java classes, run with
    `app_process` as the adb shell user, list installed apps with their labels
    and icons, so `Android/data/com.whatsapp` shows as WhatsApp.
-6. **Delete and copy.** Delete runs on the phone, inside the scanned root, and the
-   scan updates its totals as it goes. Copy-to-desktop gets a file list from the
+6. **Delete and copy.** Delete is staged first: the host keeps the queue and
+   works out the sizes you would be left with. Confirming runs it on the phone,
+   inside the scanned root, and the scan updates its totals as it goes. Copy-to-desktop gets a file list from the
    daemon and pulls the bytes with adb sync, over a few parallel connections.
 
 Supported phones: Android 11 (API 30) or newer. The daemon is built for 64-bit
@@ -167,8 +172,8 @@ it will act on both matter.
 2. Connect the phone with a USB cable, open SocketSweep, and tap **Allow** on the
    phone when it asks.
 3. Click **Scan this phone**. Start from the Overview, or open the Explorer to
-   browse folders, sort, filter and search. Tick items to delete them or copy
-   them to your computer.
+   browse folders, sort, filter and search. Tick items to copy them to your
+   computer, or to queue them for deletion and review the queue before confirming.
 
 Troubleshooting:
 

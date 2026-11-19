@@ -459,6 +459,34 @@ The limit is the phone's storage service (MediaProvider), not the CPU.
   with package names only. Labels and icons are kept for the connection, so a
   rescan shows them at once; each arrival emits `apps-updated`. Disconnecting
   kills the helper and removes it with the daemon.
+- **Staged delete:** the GUI's Delete only queues. Each scan's tree holds a
+  set of staged nodes, changed with `stageDelete`, `unstageDelete` and
+  `clearStaged` (each refuses a stale, removed or root node and returns the
+  queue's totals) and listed by `stagedSummary`; `deleteStaged` runs
+  `deleteMany` on the queue's outermost nodes. Every change, and every staged
+  node a scan prune or a delete removes from the tree, emits `staged-changed`.
+  The queue lives and dies with the tree: a rescan, disconnect or lost
+  connection discards it. A node the phone refuses stays queued.
+  - Only outermost staged nodes count: one staged inside another is part of it
+    (totals, the summary and `deleteStaged` skip it), but stays in the set, so
+    unstaging the outer one brings it back.
+  - Every row, view and treemap tile carries `staged` (itself staged or inside
+    a staged folder) and `projected`: its `Size` without the outermost staged
+    nodes below it, zero if staged. A query sums those once by walking up from
+    each outermost staged node, so a view costs nothing while the queue is
+    empty. `Size` holds both metrics, so projections follow the size the GUI
+    shows. A staged folder still measuring only subtracts what is known, its
+    ancestors keep their own `measure` (`partial`), and the totals'
+    `measure` is `partial` until every staged node is `final`. `overview`
+    adds `staged` (totals) and `projected` (the whole tree afterwards).
+  - The GUI shows it everywhere: queued rows struck through with a "pending
+    delete" marker, "now → after" on folders that hold queued items, hatched
+    map tiles, "Would free" on the Overview, and a Pending delete bar that
+    stays while the queue is non-empty (Review with Undo per item, Clear,
+    Delete now…, which confirms in the delete dialog and calls `deleteStaged`).
+    The bar's totals come from the command answers and `staged-changed`; on a
+    change that the GUI did not make itself it re-reads the open folder, map,
+    overview and search.
 - **Batch actions:** `deleteMany` checks every node first (any stale,
   removed or root node refuses the whole batch), drops nodes inside another
   one listed, then deletes the rest one by one; a node the phone refuses is
