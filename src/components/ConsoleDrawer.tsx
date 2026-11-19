@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { DiagnosticsBar } from "./DiagnosticsBar";
 
 /**
  * The activity log, collapsed by default.
@@ -41,6 +42,8 @@ export function ConsoleDrawer({
         </button>
         {version && <span className="px-4 text-[11px] font-mono text-faint">v{version}</span>}
       </div>
+
+      {open && <DiagnosticsBar />}
 
       {open && (
         <div

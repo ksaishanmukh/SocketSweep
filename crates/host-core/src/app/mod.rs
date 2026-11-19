@@ -38,6 +38,7 @@ mod commands;
 mod connect;
 mod copy;
 mod delete;
+mod diagnostics;
 mod errors;
 mod events;
 mod overview;
@@ -63,6 +64,8 @@ use crate::history::History;
 use state::{Inner, TransportFactory};
 
 #[cfg(doc)]
+use crate::diagnostics::LOG_FILE_PREFIX;
+#[cfg(doc)]
 use crate::focus::FocusDriver;
 
 pub use events::{EventSink, HostEvent};
@@ -77,6 +80,9 @@ pub struct AppConfig {
     pub helper: HelperOptions,
     /// Where scan history is kept; `None` keeps none.
     pub history_file: Option<PathBuf>,
+    /// Where the shell writes its log files (named [`LOG_FILE_PREFIX`]`.*`),
+    /// for the diagnostics report; `None` leaves the log out of it.
+    pub log_dir: Option<PathBuf>,
     /// Where `copyMany` copies when the GUI names no destination: the
     /// desktop.
     pub default_destination: Option<PathBuf>,
@@ -94,6 +100,7 @@ impl Default for AppConfig {
             launch: LaunchOptions::default(),
             helper: HelperOptions::default(),
             history_file: None,
+            log_dir: None,
             default_destination: None,
             scan_opts: ScanOpts::default(),
             focus_window: FOCUS_WINDOW,

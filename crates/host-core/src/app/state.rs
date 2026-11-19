@@ -234,6 +234,7 @@ impl Inner {
             }
         };
         let Some(conn) = conn else { return };
+        tracing::warn!("connection to the phone lost: {why}");
         self.epoch.fetch_add(1, Ordering::SeqCst);
         if let Some(scan) = lock(&self.scan).take() {
             scan.focus.stop();

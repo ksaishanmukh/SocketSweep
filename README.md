@@ -179,6 +179,15 @@ Troubleshooting:
 - **Samsung, USB debugging greyed out:** turn off Settings, Security, Auto Blocker.
 - **Apps show as package names:** the app helper could not run (for example on a
   work profile). Sizes are unaffected.
+- **Reporting a bug:** open the Activity drawer at the bottom, press
+  "Copy diagnostics" and paste the result into the issue. It holds the app
+  version, your OS, the phone model, Android API level, daemon build and the
+  last 200 log lines. The phone's serial and file paths are left out unless
+  you tick "Include device serial and paths". Logs are also kept in a file
+  (the last three days; "Open log folder" shows them):
+  Windows `%APPDATA%\com.mathcuber.socketsweep\logs`, macOS
+  `~/Library/Logs/com.mathcuber.socketsweep`, Linux
+  `~/.local/share/com.mathcuber.socketsweep/logs`.
 
 ## Building from source
 

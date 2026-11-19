@@ -93,6 +93,15 @@ export const commands = {
 	copyMany: (nodes: NodeRef[], destination: string | null) => __TAURI_INVOKE<CopyResult>("copy_many", { nodes, destination }),
 	/**  Stop the running copy. Files already copied stay. */
 	cancelCopy: () => __TAURI_INVOKE<null>("cancel_copy"),
+	/**
+	 *  A plain-text report for bug reports: app version, OS, the connected
+	 *  phone's model, Android API level and daemon build, and the last 200
+	 *  log lines. `includePrivate` adds the phone's serial and the scan root
+	 *  and leaves file paths in the log; without it they are masked.
+	 */
+	diagnostics: (includePrivate: boolean) => __TAURI_INVOKE<string>("diagnostics", { includePrivate }),
+	/**  Write one line of the GUI's activity log to the log file. */
+	logUi: (line: string) => __TAURI_INVOKE<null>("log_ui", { line }),
 };
 
 /** Events */
