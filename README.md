@@ -36,6 +36,9 @@ cache is warm (see [Benchmarks](#benchmarks)).
 - **Explorer.** A sortable list of the current folder with a resizable treemap
   strip above it. Breadcrumbs with back and forward, search within the folder,
   and filters by category, files or folders, and when they last changed.
+- **Keyboard.** Arrow keys, Home, End and Page Up/Down move through the list,
+  Enter opens a folder, Space and Shift+arrows select, Delete queues, Ctrl+F
+  searches, and `?` lists them all.
 - **Multi-select actions.** Tick several files or folders, then copy them to
   your computer or delete them.
 - **Staged delete with a preview.** Delete only queues items. The queued rows are

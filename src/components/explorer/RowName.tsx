@@ -21,7 +21,7 @@ export function RowName({
   const isDir = row.kind === "dir";
   const title = row.app ? appName(row.app) : row.name;
   return (
-    <span role="cell" className="flex items-center gap-2.5 min-w-0">
+    <span role="gridcell" className="flex items-center gap-2.5 min-w-0">
       {row.app ? (
         <AppIcon app={row.app} size={24} />
       ) : (

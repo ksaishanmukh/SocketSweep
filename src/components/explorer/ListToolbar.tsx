@@ -1,13 +1,29 @@
+import { useRef, type RefObject } from "react";
 import type { Crumb, NodeRef } from "../../api";
 import type { ScanSession } from "../../hooks/useScanSession";
 import { nodeKey } from "../../lib/size";
 import { IconBack, IconForward, IconSearch } from "../icons";
+import { ShortcutsPopover } from "./ShortcutsPopover";
 
 /** The root's crumb is named for what it is to a person, not by its path. */
 const ROOT_LABEL = "Phone storage";
 
+/** The shortcuts popover's state, which lives above so the `?` key can open it. */
+export interface Help {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}
+
 /** Back, forward, where the open folder is, and the search box, on one row. */
-export function ListToolbar({ session }: { session: ScanSession }) {
+export function ListToolbar({
+  session,
+  searchRef,
+  help,
+}: {
+  session: ScanSession;
+  searchRef: RefObject<HTMLInputElement | null>;
+  help: Help;
+}) {
   const { nav, actions, options } = session;
   const crumbs = nav.crumbs;
   const here = crumbs.length > 1 ? crumbs[crumbs.length - 1].name : ROOT_LABEL;
@@ -41,7 +57,39 @@ export function ListToolbar({ session }: { session: ScanSession }) {
         placeholder={options.everywhere ? "Search everywhere" : `Search in ${here}`}
         onText={options.setText}
         onEverywhere={options.setEverywhere}
+        inputRef={searchRef}
       />
+      <HelpButton help={help} />
+    </div>
+  );
+}
+
+function HelpButton({ help }: { help: Help }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  return (
+    <div className="relative">
+      <button
+        ref={ref}
+        type="button"
+        onClick={() => help.setOpen(!help.open)}
+        aria-label="Keyboard shortcuts"
+        aria-expanded={help.open}
+        aria-haspopup="dialog"
+        title="Keyboard shortcuts (?)"
+        className="w-9 h-9 rounded-lg inline-flex items-center justify-center text-[14px] font-semibold text-muted hover:bg-sunk"
+      >
+        ?
+      </button>
+      {help.open && (
+        <ShortcutsPopover
+          anchorRef={ref}
+          onClose={() => {
+            help.setOpen(false);
+            ref.current?.focus();
+          }}
+          onDismiss={() => help.setOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -84,7 +132,9 @@ function SearchBox({
   placeholder,
   onText,
   onEverywhere,
+  inputRef,
 }: {
+  inputRef: RefObject<HTMLInputElement | null>;
   text: string;
   everywhere: boolean;
   placeholder: string;
@@ -98,6 +148,7 @@ function SearchBox({
           <IconSearch />
         </span>
         <input
+          ref={inputRef}
           type="search"
           value={text}
           onChange={(e) => onText(e.target.value)}

@@ -68,7 +68,8 @@ edit it.
    `useNavigation` (open folder, map, back/forward history),
    `useViewOptions` and `useViewControls` (sort, filters, search box; the
    host sorts and filters), `useOverview`, `useSearch` (search everywhere),
-   `useSelection`, `useStaged` (the pending-delete queue), `useDelete` (runs
+   `useSelection`, `useListKeys` (the list's roving focus and keys, over the
+   pure `lib/listKeys.ts`), `useStaged` (the pending-delete queue), `useDelete` (runs
    it) and `useCopy` (batch actions), and
    `useAppsUpdated` (app names and icons arriving). Pure rules live in
    [`src/lib`](../src/lib): `viewOptions.ts`, `history.ts`, `mapGrip.ts`

@@ -1,6 +1,7 @@
-import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useRef, type ReactNode, type RefObject } from "react";
 import { formatNumber } from "../../lib/format";
 import { CATEGORIES, CHANGED_BUCKETS, KINDS, categoryColor } from "../../lib/categories";
+import { useDismiss } from "./useDismiss";
 import { hasOption, optionLabel, type FilterOption, type Filters } from "../../lib/viewOptions";
 
 const GROUPS: { title: string; options: FilterOption[] }[] = [
@@ -130,38 +131,4 @@ function Option({
       <span className="truncate">{optionLabel(option)}</span>
     </label>
   );
-}
-
-/** Escape, or a press outside both the panel and its button, closes the panel. */
-function useDismiss(
-  panelRef: RefObject<HTMLElement | null>,
-  anchorRef: RefObject<HTMLElement | null>,
-  onClose: () => void,
-  onDismiss: () => void,
-) {
-  const closeRef = useRef(onClose);
-  const dismissRef = useRef(onDismiss);
-  useEffect(() => {
-    closeRef.current = onClose;
-    dismissRef.current = onDismiss;
-  });
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        closeRef.current();
-      }
-    };
-    const onPress = (e: PointerEvent) => {
-      const target = e.target as Node;
-      if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
-      dismissRef.current();
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("pointerdown", onPress);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("pointerdown", onPress);
-    };
-  }, [anchorRef, panelRef]);
 }
