@@ -1,4 +1,6 @@
+import type { RefObject } from "react";
 import type { Row, View } from "../../api";
+import type { ListKeyActions } from "../../hooks/useListKeys";
 import { VIEW_PAGE_SIZE, type ScanSession } from "../../hooks/useScanSession";
 import { formatNumber } from "../../lib/format";
 import { folderName } from "../../lib/path";
@@ -10,7 +12,7 @@ import type { Hover, SetHover } from "./hover";
 import { ListBody } from "./ListBody";
 import { ListHeader } from "./ListHeader";
 import type { RowActions } from "./ListRow";
-import { ListToolbar } from "./ListToolbar";
+import { ListToolbar, type Help } from "./ListToolbar";
 
 /** The open folder's rows, or the results of a search everywhere, with everything that steers them. */
 export function ListCard({
@@ -19,12 +21,16 @@ export function ListCard({
   hover,
   onHover,
   onDelete,
+  searchRef,
+  help,
 }: {
   session: ScanSession;
   view: View;
   hover: Hover | null;
   onHover: SetHover;
   onDelete: (targets: Target[]) => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+  help: Help;
 }) {
   const { options, selection, controls, metric, searchResults } = session;
   const searching = options.everywhere && options.text.trim() !== "";
@@ -34,15 +40,22 @@ export function ListCard({
   const picked = targets.filter((t) => selection.has(t.key)).length;
   const folderBytes = sizeOf(view.size, metric);
   const actions = useRowActions(session, targetOf, onDelete);
+  const keys = useListKeyActions(session, targetOf, onDelete);
 
   return (
     <section
       aria-label="Folder contents"
       className="card flex-1 min-h-[280px] flex flex-col overflow-hidden"
     >
-      <ListToolbar session={session} />
+      <ListToolbar session={session} searchRef={searchRef} help={help} />
       <FilterBar session={session} searching={searching} />
-      <div role="table" aria-label="Files and folders" className="flex-1 min-h-0 flex flex-col">
+      <div
+        role="grid"
+        aria-label="Files and folders"
+        aria-multiselectable
+        aria-rowcount={rows.length + 1}
+        className="flex-1 min-h-0 flex flex-col"
+      >
         <ListHeader
           sort={options.sort}
           shown={rows.length}
@@ -62,6 +75,8 @@ export function ListCard({
             hover={hover}
             onHover={onHover}
             actions={actions}
+            keys={keys}
+            resetKey={view.path}
             footer={!searching && view.hidden > 0 && <LoadMore session={session} view={view} />}
           />
         )}
@@ -85,6 +100,22 @@ function useRowActions(
     onDelete: (row) => onDelete([targetOf(row)]),
     copyTarget: copyDestination ? folderName(copyDestination) : null,
     copyBusy: session.copy !== null,
+  };
+}
+
+function useListKeyActions(
+  session: ScanSession,
+  targetOf: (row: Row) => Target,
+  onDelete: (targets: Target[]) => void,
+): ListKeyActions {
+  const { selection, nav } = session;
+  return {
+    back: () => void nav.back(),
+    pick: (picked, on) => selection.setMany(picked.map(targetOf), on),
+    clearPicks: selection.clear,
+    // Same as the action bar's Delete when something is picked.
+    deleteRows: (picked) =>
+      onDelete(selection.items.length > 0 ? selection.items : picked.map(targetOf)),
   };
 }
 

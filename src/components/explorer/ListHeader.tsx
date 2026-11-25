@@ -26,6 +26,7 @@ export function ListHeader({
   return (
     <div
       role="row"
+      aria-rowindex={1}
       className="grid items-center gap-x-3 px-3 h-10 border-b border-line text-[12px] text-muted"
       style={{ gridTemplateColumns: ROW_GRID }}
     >

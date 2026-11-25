@@ -6,6 +6,7 @@ import { filterCount } from "../../lib/viewOptions";
 import type { Hover } from "./hover";
 import { ListCard } from "./ListCard";
 import { MapCard } from "./MapCard";
+import { useExplorerShortcuts } from "./useExplorerShortcuts";
 
 /** The open folder as a map above and a list below, which point at each other. */
 export function ExplorerScreen({
@@ -18,6 +19,9 @@ export function ExplorerScreen({
   onDelete: (targets: Target[]) => void;
 }) {
   const [hover, setHover] = useState<Hover | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useExplorerShortcuts(searchRef, () => setHelpOpen(true));
   const { nav, options, actions, metric, scanInfo } = session;
   useBackForward(nav.back, nav.forward);
   const filtering = filterCount(options.filters) > 0 || options.folderQuery !== null;
@@ -40,6 +44,8 @@ export function ExplorerScreen({
         hover={hover}
         onHover={setHover}
         onDelete={onDelete}
+        searchRef={searchRef}
+        help={{ open: helpOpen, setOpen: setHelpOpen }}
       />
     </div>
   );

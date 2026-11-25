@@ -24,6 +24,9 @@ export interface RowActions {
 
 export function ListRow({
   row,
+  index,
+  active,
+  onActivate,
   share,
   picked,
   highlighted,
@@ -31,6 +34,11 @@ export function ListRow({
   actions,
 }: {
   row: Row;
+  /** Position in the list; the header is row 1 for assistive tech. */
+  index: number;
+  /** The list's one tab stop. */
+  active: boolean;
+  onActivate: () => void;
   /** Its part of the open folder, 0 to 1; null where a share means nothing (search hits). */
   share: number | null;
   picked: boolean;
@@ -43,7 +51,11 @@ export function ListRow({
   return (
     <div
       role="row"
+      aria-rowindex={index + 2}
       aria-selected={picked}
+      data-row-index={index}
+      tabIndex={active ? 0 : -1}
+      onFocus={onActivate}
       data-hovered={highlighted || undefined}
       data-staged={row.staged || undefined}
       className={`list-row grid items-center gap-x-3 px-3 h-full rounded-lg ${
@@ -52,15 +64,8 @@ export function ListRow({
       style={{ gridTemplateColumns: ROW_GRID }}
       onPointerEnter={() => onHoverChange(true)}
       onPointerLeave={() => onHoverChange(false)}
-      onKeyDown={(e) => {
-        // Delete on the focused row, so removing something never needs a mouse.
-        if (e.key === "Delete" && !row.staged) {
-          e.preventDefault();
-          actions.onDelete(row);
-        }
-      }}
     >
-      <span role="cell" className="flex items-center">
+      <span role="gridcell" className="flex items-center">
         <Checkbox
           checked={picked}
           label={`Select ${row.name}`}
@@ -68,7 +73,7 @@ export function ListRow({
         />
       </span>
       <RowName row={row} onOpen={actions.onOpen} onReveal={actions.onReveal} />
-      <span role="cell" className="text-right text-[13px]">
+      <span role="gridcell" className="text-right text-[13px]">
         <SizeCell
           size={row.size}
           measure={row.measure}
@@ -76,7 +81,7 @@ export function ListRow({
           projected={row.staged ? undefined : row.projected}
         />
       </span>
-      <span role="cell">
+      <span role="gridcell">
         {share !== null && row.measure !== "unknown" && <Share row={row} share={share} />}
       </span>
       <Details row={row} />
@@ -90,11 +95,11 @@ function Details({ row }: { row: Row }) {
   const isDir = row.kind === "dir";
   return (
     <>
-      <span role="cell" className="text-[12px] text-muted truncate num">
+      <span role="gridcell" className="text-[12px] text-muted truncate num">
         {isDir ? plural(row.files, "file") : fileKind(row.name)}
       </span>
       <span
-        role="cell"
+        role="gridcell"
         className="text-[12px] text-muted num truncate"
         title={isDir ? "The newest change anywhere inside this folder" : undefined}
       >
@@ -129,7 +134,7 @@ function RowButtons({ row, actions }: { row: Row; actions: RowActions }) {
       : `${row.measure === "partial" ? "at least " : ""}${formatBytes(sizeOf(row.size, actions.metric))}`;
   const target = actions.copyTarget ?? "computer";
   return (
-    <span role="cell" className="row-actions flex items-center justify-end gap-1">
+    <span role="gridcell" className="row-actions flex items-center justify-end gap-1">
       <button
         type="button"
         onClick={() => actions.onCopy(row)}

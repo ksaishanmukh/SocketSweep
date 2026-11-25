@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Row } from "../../api";
+import { useListKeys, type ListKeyActions } from "../../hooks/useListKeys";
 import { nodeKey } from "../../lib/size";
 import { ROW_HEIGHT } from "./columns";
 import type { Hover, SetHover } from "./hover";
@@ -17,6 +18,8 @@ export function ListBody({
   hover,
   onHover,
   actions,
+  keys,
+  resetKey,
   footer,
 }: {
   rows: Row[];
@@ -26,6 +29,9 @@ export function ListBody({
   hover: Hover | null;
   onHover: SetHover;
   actions: RowActions;
+  keys: ListKeyActions;
+  /** Another folder: the active row starts over at the first. */
+  resetKey: string;
   /** Below the last row, e.g. "Load more". */
   footer?: ReactNode;
 }) {
@@ -42,9 +48,23 @@ export function ListBody({
     getItemKey: (i) => (rows[i] ? nodeKey(rows[i].node) : i),
     overscan: 12,
   });
+  const nav = useListKeys({
+    rows,
+    resetKey,
+    listRef: scrollRef,
+    scrollTo: (i) => virtualizer.scrollToIndex(i),
+    pageSize: () => Math.floor((scrollRef.current?.clientHeight ?? 0) / ROW_HEIGHT),
+    isPicked,
+    open: actions.onOpen,
+    keys,
+  });
 
   return (
-    <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-1 pb-2">
+    <div
+      ref={scrollRef}
+      onKeyDown={nav.onKeyDown}
+      className="flex-1 min-h-0 overflow-y-auto px-1 pb-2"
+    >
       <div role="rowgroup" style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((item) => {
           const row = rows[item.index];
@@ -63,6 +83,9 @@ export function ListBody({
             >
               <ListRow
                 row={row}
+                index={item.index}
+                active={item.index === nav.active}
+                onActivate={() => nav.activate(item.index)}
                 share={shareOf(row)}
                 picked={isPicked(row)}
                 highlighted={hover?.key === key && hover.from === "map"}

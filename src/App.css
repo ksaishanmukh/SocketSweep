@@ -199,6 +199,10 @@ input[type="checkbox"] {
 }
 
 /* ── List rows ────────────────────────────────────────────────────────── */
+/* The row sits flush in a clipped scroller, so its ring goes inside. */
+.list-row:focus-visible {
+  outline-offset: -2px;
+}
 .row-actions {
   opacity: 0;
 }
